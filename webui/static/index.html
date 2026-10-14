@@ -4,11 +4,26 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>Multi-Login Modular — Lixo CPA</title>
+  <meta name="theme-color" content="#10171c">
+  <title>Nexora — Gerenciador de Perfis</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <div id="application"><p class="loading">Carregando interface original…</p></div>
+  <!-- Visual-only application chrome. No behavior or state is stored here. -->
+  <header class="workspace-bar" aria-hidden="true">
+    <div class="workspace-brand">
+      <span class="brand-symbol"><span></span></span>
+      <span class="brand-wordmark">NEXORA</span>
+      <span class="brand-divider"></span>
+      <span class="brand-descriptor">BROWSER WORKSPACE</span>
+    </div>
+    <div class="workspace-context">
+      <span class="context-pulse"></span>
+      <span>PROFILE MANAGEMENT</span>
+      <span class="workspace-edition">/ STUDIO</span>
+    </div>
+  </header>
+  <main id="application"><p class="loading">Preparando espaço de trabalho…</p></main>
   <div id="notifications" aria-live="polite"></div>
   <script src="/static/app.js" defer></script>
 </body>
