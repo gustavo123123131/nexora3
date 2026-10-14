@@ -30,6 +30,12 @@ spawn() {
 
 # A cada inicialização, conferir a versão do branch sem mudar os dados.
 npm install --no-audit --no-fund >"$STATE_DIR/install.log" 2>&1
+# npm pode substituir o auxiliar do Chromium ao atualizar dependências.
+# Restaurar suas permissões seguras em todo início de sessão.
+if [[ -f node_modules/electron/dist/chrome-sandbox ]]; then
+  sudo chown root:root node_modules/electron/dist/chrome-sandbox
+  sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+fi
 npm run build >"$STATE_DIR/build.log" 2>&1 || {
   echo "[Órbita] Build falhou: veja $STATE_DIR/build.log" >&2
   exit 1
