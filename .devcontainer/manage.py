@@ -98,16 +98,18 @@ def launch_lock():
 def start():
     with launch_lock():
         pid = supervisor_pid()
-        if health():
-            label = f"supervisionado (PID {pid})" if pid else "já ativo (iniciado manualmente)"
-            print(f"Painel Lixo CPA já está funcionando: {label}. Nenhuma cópia adicional será iniciada.")
+        ready = health()
+        if ready and pid:
+            print(f"Painel Lixo CPA já está funcionando, supervisor PID {pid}. Nenhuma cópia adicional será iniciada.")
             return 0
         if pid:
             print(f"Supervisor PID {pid} já está tentando recuperar o serviço. Aguarde e consulte o log.")
-        elif port_is_busy():
+        elif not ready and port_is_busy():
             print("ERRO: a porta 8765 está ocupada por outro serviço. Não iniciei um segundo servidor.", file=sys.stderr)
             return 1
         else:
+            # An old manually started server may already be serving the UI.
+            # Start a passive supervisor without interrupting its sessions.
             rotate_log(LOG)
             with EVENTS.open("a", encoding="utf-8") as stream:
                 worker = subprocess.Popen(
@@ -165,6 +167,13 @@ def supervise():
         SUPERVISOR_PID.write_text(str(os.getpid()), encoding="utf-8")
         quick_failures = 0
         try:
+            if health():
+                log_event("Servidor antigo já ativo; acompanhando sem encerrá-lo ou duplicá-lo.")
+                while not SHUTDOWN:
+                    if not port_is_busy():
+                        log_event("Servidor antigo encerrou; iniciando instância supervisionada.")
+                        break
+                    time.sleep(1)
             while not SHUTDOWN:
                 started = time.monotonic()
                 with LOG.open("a", encoding="utf-8") as output:
@@ -245,10 +254,14 @@ def stop():
                 return 1
             print("Nenhum supervisor ativo.")
             return 0
+        owns_server = CHILD_PID.exists()
         os.kill(pid, signal.SIGTERM)
         for _ in range(90):
-            if not supervisor_pid() and not port_is_busy():
-                print("Supervisor e servidor parados.")
+            if not supervisor_pid() and (not owns_server or not port_is_busy()):
+                if owns_server:
+                    print("Supervisor e servidor parados.")
+                else:
+                    print("Supervisor encerrado. Servidor externo preservado.")
                 return 0
             time.sleep(0.2)
         print("Aguardando encerramento. Consulte os logs e execute 'status'.", file=sys.stderr)
