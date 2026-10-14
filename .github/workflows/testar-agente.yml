@@ -1,0 +1,23 @@
+name: Testar painel e agente Windows
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  smoke-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Instalar dependencias de teste
+        run: |
+          python -m pip install -r requirements-web.txt pytest httpx
+      - name: Verificar sintaxe Python
+        run: |
+          python -m compileall -q servidor.py agente_windows.py webui Settings main.py
+      - name: Executar testes sem operacoes externas
+        run: |
+          python -m pytest -q tests/test_localhost.py
