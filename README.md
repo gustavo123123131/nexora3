@@ -1,5 +1,52 @@
 # Lixo CPA — servidor localhost
 
+## Nova área Contas — cadastro guiado integrado ao Windows
+
+O painel agora tem uma **quarta aba, Contas**, sem substituir Criar Mãe,
+Criar Filha ou Proxy. Os perfis existentes do Playwright continuam sendo
+abertos diretamente no Windows pelo agente local.
+
+- **Configurar site:** registre nome, URL oficial, caminhos de cadastro/login,
+  seletores CSS reais e autorização explícita. Sem autorização, fica disponível
+  apenas o registro local e abertura manual de perfil.
+- **Adicionar conta:** associe o site a um perfil já existente de Mãe/Filha,
+  com modo desktop/Android/iPhone/misto, número do perfil e conta mãe opcional.
+- **Abrir perfil:** usa o diretório de perfis do Nexora; não exporta cookies.
+  Não abra simultaneamente o mesmo perfil no multi-login e nesta aba.
+- **Preparar cadastro:** visita a página autorizada no Chromium do Windows e
+  identifica os campos configurados. Requer revisão e confirmação do usuário
+  antes de qualquer envio.
+- **Verificar:** mostra `pending` quando há CAPTCHA, SMS, e-mail ou resultado
+  inconclusivo. O estado `completed` exige um seletor de sucesso específico
+  configurado para o provedor; um simples HTTP 200 não confirma cadastro.
+- Os registros ficam em um arquivo SQLite **privado do agente Windows**,
+  fora do GitHub e fora dos perfis. Não são gravadas senhas, cookies, tokens,
+  CPF ou telefone no banco de contas. Dados de preenchimento são transitórios.
+
+O pacote modular original, com os **18 arquivos enviados**, foi preservado
+em `proxybet_registration_bridge/`. Sua API Node.js é uma base/documentação
+de referência; a integração em execução é `nexora_accounts/service.py`,
+adaptada ao Python/Playwright já existente para não exigir Node no Windows.
+
+**Não há integração direta com API ProxyBet**, pois não foi fornecido contrato
+oficial autorizado. Não automatizamos CAPTCHA, MFA, KYC ou antifraude.
+
+### Atualizar a instalação atual (máximo três ações)
+
+1. No terminal do Codespaces na branch `main`, execute
+   `git pull origin main`; o servidor com reload atualiza a interface.
+2. No Windows, feche o agente antigo e execute novamente o mesmo arquivo
+   `iniciar-agente-windows.cmd` já utilizado. Ele baixa o código do GitHub,
+   mantém os perfis e inicia o agente atualizado.
+3. Cole a URL HTTPS privada da porta 8765 no agente e use o novo código de
+   pareamento no painel. Clique em **Contas** para acessar os módulos novos.
+
+Para testes de integração do pacote de origem, no GitHub Actions executamos
+`node --test proxybet_registration_bridge/test/registration.test.js`
+e `pytest tests/test_registration_bridge.py`; nenhum deles registra contas
+em plataformas reais.
+
+
 Este repositório contém os módulos originais em Python com uma camada web que reproduz os controles CustomTkinter no navegador. A interface e a lógica permanecem nos módulos originais; a camada `webui/` apresenta os controles pela API local FastAPI.
 
 ## HTTPS automático nas abas Mãe e Filha
