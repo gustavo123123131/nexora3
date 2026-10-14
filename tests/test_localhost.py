@@ -21,13 +21,24 @@ def test_localhost_ui_and_events():
         tabs = data['tree']['children'][0]['children']
         assert [t['options']['_tab_label'] for t in tabs] == ['Criar Mãe', 'Criar Filha']
         assert len(list(walk(data['tree']))) >= 110  # Duas abas, sem Área Pix
-        # A aba Pix saiu, e os controles exclusivos devem estar ocultos.
+        # A aba Pix saiu, e controles exclusivos não podem estar visíveis.
+        def walk_visible(node):
+            if node.get('hidden'):
+                return
+            yield node
+            for child in node.get('children', []):
+                yield from walk_visible(child)
+
         for tab in tabs:
             elements = list(walk(tab))
             modes = [n for n in elements if n['type'] == 'option' and len(n['options'].get('values', [])) == 5]
             assert modes
             assert 'Mobile — Somente Android' in modes[0]['options']['values']
             assert 'Aplicativo Android (indisponível)' in modes[0]['options']['values']
+            visible_pix = [n for n in walk_visible(tab)
+                           if n['options'].get('text') in
+                           ('AutoPIX', 'AutoChave', 'Iniciar saque', 'PIN do saque', 'Valor depósito')]
+            assert not visible_pix
             pix_widgets = [n for n in elements if n['options'].get('text') in ('AutoPIX', 'AutoChave', 'Iniciar saque')]
             assert pix_widgets
             # The controls can remain as hidden legacy callbacks, but not be visible.
