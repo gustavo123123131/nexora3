@@ -12,7 +12,7 @@ def walk(node):
 
 def test_localhost_ui_and_events():
     with TestClient(servidor.app) as client:
-        for route in ['/', '/static/app.js', '/static/style.css']:
+        for route in ['/', '/static/app.js', '/static/style.css', '/static/proxy_view.js', '/static/proxy_view.css', '/static/workspace_theme.css']:
             assert client.get(route).status_code == 200
         data = client.get('/api/state').json()
         assert len(data['server_version']) > 8
