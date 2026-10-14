@@ -4,6 +4,7 @@ The Android/iPhone CSS viewport must stay constant when the actual Chromium
 window is resized/fitted onto desktops of different sizes.
 """
 import math
+from urllib.parse import quote
 
 from Settings.mobile_window import mobile_window, mobile_window_args, fit_mobile_content
 
@@ -46,7 +47,7 @@ def test_headful_mobile_viewport_and_window_layout():
                     '#screen{height:150vh;width:100%;background:olive}</style>'
                     '<div id="screen"></div>'
                 )
-                page.goto("data:text/html," + html, wait_until="domcontentloaded")
+                page.goto("data:text/html," + quote(html), wait_until="domcontentloaded")
                 before = page.evaluate("""() => ({
                     w: innerWidth, h: innerHeight, dpr: devicePixelRatio,
                     scroll: document.documentElement.scrollWidth,
