@@ -22,4 +22,4 @@ jobs:
           python -m compileall -q servidor.py agente_windows.py webui Settings main.py
       - name: Executar testes sem operacoes externas
         run: |
-          python -m pytest -q tests/test_localhost.py tests/test_agent_windows.py tests/test_device_modes.py
+          python -m pytest -q tests/test_localhost.py tests/test_agent_windows.py tests/test_device_modes.py tests/test_codespaces_startup.py
