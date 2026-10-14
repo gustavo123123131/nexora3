@@ -1869,13 +1869,14 @@ class FilhaTab(ctk.CTkFrame):
         title = ctk.CTkLabel(header, text="Criar Filha", font=ctk.CTkFont(size=20, weight="bold"))
         title.pack(anchor="w", padx=16, pady=(14, 0))
 
-        subtitle = ctk.CTkLabel(header, text="Interface moderna • Controle • Logs ao vivo", text_color="#9CA3AF")
+        subtitle = ctk.CTkLabel(header, text="Abertura de perfis e acompanhamento da execução", text_color="#9CA3AF")
         subtitle.pack(anchor="w", padx=16, pady=(2, 8))
 
         # Speed
         st = self.speed_controller.get()
         speed_row = ctk.CTkFrame(header, corner_radius=14)
         speed_row.pack(fill="x", padx=16, pady=(0, 14))
+        speed_row.pack_forget()  # Simplified account interface; internal speed state preserved.
         speed_row.grid_columnconfigure(3, weight=1)
 
         self.speed_enabled_var = ctk.BooleanVar(value=st.enabled)
@@ -1915,6 +1916,7 @@ class FilhaTab(ctk.CTkFrame):
         # Mirror
         mirror_row = ctk.CTkFrame(header, corner_radius=14)
         mirror_row.pack(fill="x", padx=16, pady=(0, 14))
+        mirror_row.pack_forget()  # Legacy mirror controller preserved.
         mirror_row.grid_columnconfigure(1, weight=1)
 
         self.mirror_enabled_var = ctk.BooleanVar(value=False)
@@ -1933,6 +1935,7 @@ class FilhaTab(ctk.CTkFrame):
 
         quick_games_row = ctk.CTkFrame(header, corner_radius=14)
         quick_games_row.pack(fill="x", padx=16, pady=(0, 14))
+        quick_games_row.pack_forget()  # Game shortcuts kept internally for future use.
         for col in range(QUICK_GAME_BUTTONS_COUNT):
             quick_games_row.grid_columnconfigure(col, weight=1)
 
@@ -1963,7 +1966,7 @@ class FilhaTab(ctk.CTkFrame):
         right.grid(row=0, column=1, sticky="nsew", padx=(8, 14), pady=14)
 
         ctk.CTkLabel(left, text="Configurações", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=16, pady=(16, 4))
-        ctk.CTkLabel(left, text="Defina URLs, modo, proxy e execução.", text_color="#9CA3AF").pack(anchor="w", padx=16, pady=(0, 12))
+        ctk.CTkLabel(left, text="Informe os links, o modo do dispositivo e o intervalo.", text_color="#9CA3AF").pack(anchor="w", padx=16, pady=(0, 12))
 
         self.urls_var = ctk.StringVar()
         ctk.CTkLabel(left, text="URLs (separadas por vírgula)").pack(anchor="w", padx=16)
@@ -1981,7 +1984,7 @@ class FilhaTab(ctk.CTkFrame):
         self.mode_combo.grid(row=1, column=0, sticky="ew", pady=(6, 0), padx=(0, 10))
 
         self.count_var = ctk.StringVar(value="1")
-        ctk.CTkLabel(row1, text="Qtd por link").grid(row=0, column=1, sticky="w")
+        ctk.CTkLabel(row1, text="Quantidade por link").grid(row=0, column=1, sticky="w")
         self.count_entry = ctk.CTkEntry(row1, textvariable=self.count_var, height=36, corner_radius=12)
         self.count_entry.grid(row=1, column=1, sticky="ew", pady=(6, 0), padx=(0, 10))
 
@@ -1997,6 +2000,7 @@ class FilhaTab(ctk.CTkFrame):
 
         flags = ctk.CTkFrame(left, corner_radius=14)
         flags.pack(fill="x", padx=16, pady=(0, 12))
+        flags.pack_forget()  # Hidden legacy identity/game/profile controls.
         flags.grid_columnconfigure((0, 1), weight=1)
 
         self.chk_headless = ctk.CTkCheckBox(flags, text="Rodar invisível (Headless)", variable=self.headless_var)
@@ -2107,9 +2111,12 @@ class FilhaTab(ctk.CTkFrame):
         self.proxy_var = ctk.StringVar()
         self.smartproxy_fixed_ip_var = ctk.BooleanVar(value=False)
 
-        ctk.CTkLabel(left, text="Proxy (ip:porta:user:senha ou ip:porta)").pack(anchor="w", padx=16)
+        self.proxy_label = ctk.CTkLabel(left, text="Proxy (ip:porta:user:senha ou ip:porta)")
+        self.proxy_label.pack(anchor="w", padx=16)
+        self.proxy_label.pack_forget()
         self.proxy_entry = ctk.CTkEntry(left, textvariable=self.proxy_var, height=38, corner_radius=12)
         self.proxy_entry.pack(fill="x", padx=16, pady=(6, 8))
+        self.proxy_entry.pack_forget()
 
         self.chk_smartproxy_fixed_ip = ctk.CTkCheckBox(
             left,
@@ -2117,6 +2124,7 @@ class FilhaTab(ctk.CTkFrame):
             variable=self.smartproxy_fixed_ip_var,
         )
         self.chk_smartproxy_fixed_ip.pack(anchor="w", padx=16, pady=(0, 12))
+        self.chk_smartproxy_fixed_ip.pack_forget()
 
         self.proxy_toggle_button = ctk.CTkButton(
             left,
@@ -2126,6 +2134,7 @@ class FilhaTab(ctk.CTkFrame):
             corner_radius=12,
         )
         self.proxy_toggle_button.pack(fill="x", padx=16, pady=(0, 12))
+        self.proxy_toggle_button.pack_forget()  # Proxy settings reserved for a future shared area.
 
 
         ctk.CTkLabel(right, text="Ações", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=16, pady=(16, 12))
@@ -2135,9 +2144,10 @@ class FilhaTab(ctk.CTkFrame):
             command=self.start_with_automation
         )
         self.btn_start_auto.pack(fill="x", padx=16, pady=(0, 10))
+        self.btn_start_auto.pack_forget()
 
         self.btn_start_manual = ctk.CTkButton(
-            right, text="Iniciar (SEM automação)", height=42, corner_radius=14,
+            right, text="Abrir Conta", height=42, corner_radius=14,
             fg_color="#111827", hover_color="#1F2937",
             command=self.start_without_automation
         )
@@ -2149,6 +2159,7 @@ class FilhaTab(ctk.CTkFrame):
             command=self.open_reopen_guides_selector
         )
         self.btn_reopen_guides.pack(fill="x", padx=16, pady=(0, 10))
+        self.btn_reopen_guides.pack_forget()
 
         self.btn_withdraw = ctk.CTkButton(
             right, text="Iniciar saque", height=42, corner_radius=14,
@@ -2161,6 +2172,7 @@ class FilhaTab(ctk.CTkFrame):
             command=self.request_phone_verification
         )
         self.btn_verify_phone.pack(fill="x", padx=16, pady=(0, 10))
+        self.btn_verify_phone.pack_forget()
 
         self.btn_stop = ctk.CTkButton(
             right, text="PARAR", height=42, corner_radius=14,
@@ -2171,6 +2183,7 @@ class FilhaTab(ctk.CTkFrame):
 
         tools = ctk.CTkFrame(right, corner_radius=16)
         tools.pack(fill="x", padx=16, pady=(0, 14))
+        tools.pack_forget()  # Position and instance-selection actions remain internal.
 
         ctk.CTkButton(
             tools,
