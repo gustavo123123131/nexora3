@@ -1,0 +1,5 @@
+# Used by the new localhost adapter. The original automation still uses Playwright.
+fastapi>=0.110,<1
+uvicorn[standard]>=0.30,<1
+watchfiles>=0.21,<2
+playwright>=1.48,<2

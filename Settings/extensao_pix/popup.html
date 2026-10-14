@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="header">
+    <h2>Pix Auto</h2>
+    <div class="status" id="statusIndicator">Aguardando...</div>
+  </div>
+
+  <div class="controls">
+    <button id="btnStart" class="btn primary">Cadastrar Chaves</button>
+    <button id="btnDelete" class="btn secondary">Excluir Chave</button>
+    <button id="btnStop" class="btn danger">Parar Automação</button>
+  </div>
+
+  <div class="logs-header">
+    <span>Terminal de Logs</span>
+    <button id="btnClearLogs" class="btn-small">Limpar</button>
+  </div>
+  <div id="logArea" class="logs"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+body { margin:0; width:320px; font-family: system-ui, Arial; }
+.topbar { padding:10px; background:#0b6cff; color:#fff; font-weight:700; text-align:center; }
+.wrap { padding:12px; }
+.row { display:flex; flex-direction:column; gap:8px; margin-bottom:10px; }
+.grid { display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin:10px 0; }
+button { width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; font-weight:700; background:#f6f6f6; cursor:pointer; }
+.hint { color:#666; font-size:12px; margin-top:10px; }

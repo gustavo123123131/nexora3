@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="popup.css">
+  <title>Speed Hack</title>
+</head>
+<body>
+  <div class="topbar">HTML5 Universal Speed Hack</div>
+
+  <div class="wrap">
+    <div class="row">
+      <label>Speed: <b id="speedValue">1.0x</b></label>
+      <input id="speed" type="range" min="1" max="100" step="0.5">
+    </div>
+
+    <div class="grid">
+      <label><input id="setInterval" type="checkbox"> setInterval</label>
+      <label><input id="setTimeout" type="checkbox"> setTimeout</label>
+      <label><input id="perfNow" type="checkbox"> performance.now</label>
+      <label><input id="dateNow" type="checkbox"> Date.now</label>
+      <label><input id="raf" type="checkbox"> requestAnimationFrame</label>
+      <label><input id="mediaRate" type="checkbox"> media playbackRate</label>
+      <label><input id="injectIframes" type="checkbox"> Inject iframes (jogos)</label>
+    </div>
+
+    <button id="reset">Reset</button>
+
+    <p class="hint">
+      Para emuladores: deixe “Inject iframes (jogos)” ligado.
+      Se travar no boot, mantenha Date.now desligado.
+    </p>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

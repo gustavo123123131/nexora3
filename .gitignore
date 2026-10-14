@@ -1,0 +1,25 @@
+# Cache e arquivos temporários
+__pycache__/
+.pytest_cache/
+*.pyc
+*.pyo
+*.log
+.venv/
+venv/
+.env
+.env.*
+
+# Dados privados e perfis Chromium: nunca publicar
+Settings/**/__profiles/
+Settings/**/contas/*.json
+Settings/**/settings/settings.json
+Settings/**/extensao_recaptcha/secrets.txt
+Settings/extensao_pix/chavepix.txt
+Settings/cpf.json
+Settings/convite.json
+*.sqlite
+*.sqlite3
+*.db
+
+# Estado local
+.DS_Store

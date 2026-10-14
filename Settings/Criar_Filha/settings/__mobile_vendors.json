@@ -1,0 +1,609 @@
+{
+        "GPUTiers": {
+          "Android": [
+            {
+              "model": "Pixel 4 XL",
+              "vendor": "Google",
+              "renderer": "Adreno (TM) 640"
+            },
+            {
+              "model": "Samsung Galaxy S21",
+              "vendor": "Samsung",
+              "renderer": "Mali-G78"
+            },
+            {
+              "model": "OnePlus 9 Pro",
+              "vendor": "Qualcomm",
+              "renderer": "Adreno (TM) 660"
+            },
+            {
+              "model": "Google Pixel 6",
+              "vendor": "Google",
+              "renderer": "Mali-G78"
+            },
+            {
+              "model": "Samsung Galaxy S22",
+              "vendor": "Samsung",
+              "renderer": "Xclipse 920"
+            },
+            {
+              "model": "Xiaomi Mi 12",
+              "vendor": "Qualcomm",
+              "renderer": "Adreno (TM) 730"
+            },
+            {
+              "model": "Huawei P30 Pro",
+              "vendor": "ARM",
+              "renderer": "Mali-G76 MP10"
+            },
+            {
+              "model": "Samsung Galaxy Z Flip 3",
+              "vendor": "Qualcomm",
+              "renderer": "Adreno (TM) 660"
+            },
+            {
+              "model": "Oppo Reno 6",
+              "vendor": "MediaTek",
+              "renderer": "Mali-G77 MC9"
+            },
+            {
+              "model": "Motorola Edge 20",
+              "vendor": "Qualcomm",
+              "renderer": "Adreno (TM) 642"
+            },
+            {
+              "model": "Vivo X80",
+              "vendor": "MediaTek",
+              "renderer": "Mali-G710 MC10"
+            },
+            {
+              "model": "Google Pixel 5",
+              "vendor": "Qualcomm",
+              "renderer": "Adreno (TM) 620"
+            },
+            {
+              "model": "Samsung Galaxy Note 20 Ultra",
+              "vendor": "Qualcomm",
+              "renderer": "Adreno (TM) 650"
+            },
+            {
+              "model": "Xiaomi Redmi Note 10",
+              "vendor": "Qualcomm",
+              "renderer": "Adreno (TM) 618"
+            },
+            {
+              "model": "Samsung Galaxy S21 Ultra",
+              "vendor": "Samsung",
+              "renderer": "Mali-G78 MP14"
+            },
+            {
+              "model": "Oppo A74",
+              "vendor": "Qualcomm",
+              "renderer": "Adreno (TM) 619"
+            },
+            {
+              "model": "Google Pixel 5a",
+              "vendor": "Qualcomm",
+              "renderer": "Adreno (TM) 618"
+            },
+            {
+              "model": "LG V60 ThinQ",
+              "vendor": "Qualcomm",
+              "renderer": "Adreno (TM) 650"
+            },
+            {
+              "model": "OnePlus 11",
+              "vendor": "Qualcomm",
+              "renderer": "Adreno (TM) 740"
+            },
+            {
+              "model": "Xiaomi Mi 11 Ultra",
+              "vendor": "Qualcomm",
+              "renderer": "Adreno (TM) 660"
+            },
+            {
+              "model": "Samsung Galaxy S21 FE",
+              "vendor": "Samsung",
+              "renderer": "Mali-G78"
+            },
+            {
+              "model": "Xiaomi Redmi Note 11 Pro",
+              "vendor": "MediaTek",
+              "renderer": "Mali-G68 MC4"
+            },
+            {
+              "model": "Oppo Reno 8 Pro",
+              "vendor": "MediaTek",
+              "renderer": "Mali-G710 MC10"
+            },
+            {
+              "model": "Google Pixel 5",
+              "vendor": "Qualcomm",
+              "renderer": "Adreno (TM) 620"
+            },
+            {
+              "model": "Samsung Galaxy A51",
+              "vendor": "Samsung",
+              "renderer": "Mali-G72 MP3"
+            },
+            {
+              "model": "Motorola Moto G100",
+              "vendor": "Qualcomm",
+              "renderer": "Adreno (TM) 642"
+            },
+            {
+              "model": "Huawei Mate 50 Pro",
+              "vendor": "ARM",
+              "renderer": "Mali-G78 MP24"
+            },
+            {
+              "model": "Realme Narzo 50",
+              "vendor": "MediaTek",
+              "renderer": "Mali-G57 MC2"
+            },
+            {
+              "model": "Oppo A74 5G",
+              "vendor": "Qualcomm",
+              "renderer": "Adreno (TM) 619"
+            },
+            {
+              "model": "Xiaomi Poco X3 Pro",
+              "vendor": "Qualcomm",
+              "renderer": "Adreno (TM) 640"
+            },
+            {
+              "model": "Vivo Y73",
+              "vendor": "MediaTek",
+              "renderer": "Mali-G52 MC2"
+            },
+            {
+              "model": "Poco F4",
+              "vendor": "Qualcomm",
+              "renderer": "Adreno (TM) 730"
+            },
+            {
+              "model": "Honor Magic 5 Pro",
+              "vendor": "Qualcomm",
+              "renderer": "Adreno (TM) 740"
+            },
+            {
+              "model": "Oppo F19 Pro",
+              "vendor": "MediaTek",
+              "renderer": "Mali-G76 MC4"
+            },
+            {
+              "model": "Realme 7 Pro",
+              "vendor": "Qualcomm",
+              "renderer": "Adreno (TM) 618"
+            },
+            {
+              "model": "Xiaomi Mi 10T Pro",
+              "vendor": "Qualcomm",
+              "renderer": "Adreno (TM) 650"
+            },
+            {
+              "model": "Huawei P50 Pro",
+              "vendor": "ARM",
+              "renderer": "Mali-G78 MP24"
+            },
+            {
+              "model": "Samsung Galaxy M31",
+              "vendor": "Samsung",
+              "renderer": "Mali-G72 MP3"
+            },
+            {
+              "model": "Google Pixel 4",
+              "vendor": "Qualcomm",
+              "renderer": "Adreno (TM) 640"
+            },
+            {
+              "model": "OnePlus Nord 2",
+              "vendor": "MediaTek",
+              "renderer": "Mali-G77 MC9"
+            },
+            {
+              "model": "LG Velvet",
+              "vendor": "Qualcomm",
+              "renderer": "Adreno (TM) 620"
+            },
+            {
+                "model": "Google Pixel 4a",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 620"
+              },
+              {
+                "model": "Samsung Galaxy A72",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 642"
+              },
+              {
+                "model": "Vivo Y51",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 610"
+              },
+              {
+                "model": "Oppo F21 Pro",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 619"
+              },
+              {
+                "model": "Huawei Nova 9",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 642"
+              },
+              {
+                "model": "OnePlus 8 Pro",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 650"
+              },
+              {
+                "model": "Xiaomi Redmi Note 11",
+                "vendor": "MediaTek",
+                "renderer": "Mali-G57 MC2"
+              },
+              {
+                "model": "Samsung Galaxy A33 5G",
+                "vendor": "Samsung",
+                "renderer": "Mali-G68 MP5"
+              },
+              {
+                "model": "Realme 8 Pro",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 619"
+              },
+              {
+                "model": "Oppo Reno 6 Pro 5G",
+                "vendor": "MediaTek",
+                "renderer": "Mali-G77 MC9"
+              },
+              {
+                "model": "Xiaomi Mi 11X",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 660"
+              },
+              {
+                "model": "Samsung Galaxy M12",
+                "vendor": "Samsung",
+                "renderer": "Mali-G52 MP2"
+              },
+              {
+                "model": "OnePlus 10 Pro",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 730"
+              },
+              {
+                "model": "Realme GT 5G",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 660"
+              },
+              {
+                "model": "Xiaomi Mi Mix 4",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 660"
+              },
+              {
+                "model": "Motorola Moto G60",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 618"
+              },
+              {
+                "model": "Google Pixel 6a",
+                "vendor": "Google",
+                "renderer": "Mali-G78"
+              },
+              {
+                "model": "Oppo F19",
+                "vendor": "MediaTek",
+                "renderer": "Mali-G57 MC2"
+              },
+              {
+                "model": "Samsung Galaxy A52",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 619"
+              },
+              {
+                "model": "Vivo V23 5G",
+                "vendor": "MediaTek",
+                "renderer": "Mali-G68 MC4"
+              },
+              {
+                "model": "Motorola Moto G200",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 642"
+              },
+              {
+                "model": "Xiaomi Mi 10i",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 642"
+              },
+              {
+                "model": "Samsung Galaxy S23",
+                "vendor": "Samsung",
+                "renderer": "Xclipse 920"
+              },
+              {
+                "model": "Google Pixel 4",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 640"
+              },
+              {
+                "model": "OnePlus 9",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 660"
+              },
+              {
+                "model": "Huawei P40 Pro",
+                "vendor": "ARM",
+                "renderer": "Mali-G78 MP24"
+              },
+              {
+                "model": "Xiaomi Redmi K40",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 650"
+              },
+              {
+                "model": "Samsung Galaxy M21",
+                "vendor": "Samsung",
+                "renderer": "Mali-G72 MP3"
+              },
+              {
+                "model": "Oppo Reno 5",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 619"
+              },
+              {
+                "model": "OnePlus Nord CE 2",
+                "vendor": "MediaTek",
+                "renderer": "Mali-G68 MC4"
+              },
+              {
+                "model": "Realme GT Master Edition",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 642"
+              },
+              {
+                "model": "Xiaomi Poco F3",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 650"
+              },
+              {
+                "model": "Motorola Edge 30",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 642"
+              },
+              {
+                "model": "Samsung Galaxy Z Fold 3",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 660"
+              },
+              {
+                "model": "Xiaomi Mi 12X",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 730"
+              },
+              {
+                "model": "Oppo Find X5",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 730"
+              },
+              {
+                "model": "Vivo Y73s",
+                "vendor": "MediaTek",
+                "renderer": "Mali-G57 MC3"
+              },
+              {
+                "model": "OnePlus 7T Pro",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 640"
+              },
+              {
+                "model": "Huawei Mate 40 Pro",
+                "vendor": "ARM",
+                "renderer": "Mali-G78 MP24"
+              },
+              {
+                "model": "LG Q6",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 505"
+              },
+              {
+                "model": "Google Pixel 7 Pro",
+                "vendor": "Google",
+                "renderer": "Mali-G710 MP7"
+              },
+              {
+                "model": "Xiaomi Poco X3",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 618"
+              },
+              {
+                "model": "Realme 9i",
+                "vendor": "MediaTek",
+                "renderer": "Mali-G57 MC2"
+              },
+              {
+                "model": "Samsung Galaxy M42",
+                "vendor": "Samsung",
+                "renderer": "Mali-G68 MP5"
+              },
+              {
+                "model": "Sony Xperia 10 II",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 610"
+              },
+              {
+                "model": "Oppo A93",
+                "vendor": "MediaTek",
+                "renderer": "Mali-G57 MC2"
+              },
+              {
+                "model": "Xiaomi Mi 10 Pro",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 650"
+              },
+              {
+                "model": "Galaxy S9",
+                "vendor": "Samsung",
+                "renderer": "Mali-G72 MP18"
+              },
+              {
+                "model": "Pixel 6",
+                "vendor": "Google",
+                "renderer": "Mali-G78"
+              },
+              {
+                "model": "OnePlus 7",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 640"
+              },
+              {
+                "model": "Realme 9 Pro",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 619"
+              },
+              {
+                "model": "Google Pixel 3",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 630"
+              },
+              {
+                "model": "Oppo Reno 4",
+                "vendor": "MediaTek",
+                "renderer": "Mali-G57 MC3"
+              },
+              {
+                "model": "Sony Xperia 1 II",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 650"
+              },
+              {
+                "model": "LG Wing",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 640"
+              },
+              {
+                "model": "Motorola Moto G9",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 610"
+              },
+              {
+                "model": "Vivo X50 Pro",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 620"
+              },
+              {
+                "model": "OnePlus Nord",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 619"
+              },
+              {
+                "model": "Oppo F17",
+                "vendor": "MediaTek",
+                "renderer": "Mali-G57 MC3"
+              },
+              {
+                "model": "Nokia X20",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 619"
+              },
+              {
+                "model": "Huawei P40",
+                "vendor": "ARM",
+                "renderer": "Mali-G76 MP16"
+              },
+              {
+                "model": "Oppo Find X3",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 650"
+              },
+              {
+                "model": "Samsung Galaxy Z Fold",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 640"
+              },
+              {
+                "model": "Samsung Galaxy Note 20",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 650"
+              },
+              {
+                "model": "Xiaomi Redmi Note 9",
+                "vendor": "MediaTek",
+                "renderer": "Mali-G76 MC4"
+              },
+              {
+                "model": "LG G8X",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 640"
+              },
+              {
+                "model": "Realme X7",
+                "vendor": "MediaTek",
+                "renderer": "Mali-G57 MC3"
+              },
+              {
+                "model": "Galaxy Z Fold 2",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 650"
+              },
+              {
+                "model": "Vivo X60 Pro",
+                "vendor": "Samsung",
+                "renderer": "Mali-G78 MP14"
+              },
+              {
+                "model": "Asus Zenfone 9",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 730"
+              },
+              {
+                "model": "SM-A205U",
+                "vendor": "Samsung",
+                "renderer": "Mali-G71 MP2"
+              },
+              {
+                "model": "SM-A102U",
+                "vendor": "Samsung",
+                "renderer": "Mali-G71 MP2"
+              },
+              {
+                "model": "SM-G960U",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 630"
+              },
+              {
+                "model": "SM-N960U",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 630"
+              },
+              {
+                "model": "LM-Q720",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 610"
+              },
+              {
+                "model": "LM-X420",
+                "vendor": "Qualcomm",
+                "renderer": "Adreno (TM) 610"
+              }
+
+          ],
+          "iPhone": [
+            {
+              "model": "iPhone (iOS 12-13)",
+              "vendor": "Apple",
+              "renderer": "Apple A12 GPU"
+            },
+            {
+              "model": "iPhone (iOS 14-15)",
+              "vendor": "Apple",
+              "renderer": "Apple A14 GPU"
+            },
+            {
+              "model": "iPhone (iOS 16+)",
+              "vendor": "Apple",
+              "renderer": "Apple A15/A16 GPU"
+            }
+          ]
+        }
+      }

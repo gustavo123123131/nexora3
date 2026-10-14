@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "Gerenciador Pix Automation",
+  "version": "1.0",
+  "description": "Automação de cadastro de chaves Pix",
+  "permissions": [
+    "tabs",
+    "scripting",
+    "storage"
+  ],
+"host_permissions": [
+    "*://*.emailrush.com.br/*",
+    "*://*.mercadopago.com.br/*",
+    "*://*.mercadolivre.com.br/*",
+    "*://*.mercadolivre.com/*",
+    "*://*.mercadolibre.com/*",
+    "*://*.google.com/*" 
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["chavepix.txt"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
