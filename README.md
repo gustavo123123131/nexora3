@@ -42,10 +42,37 @@ Os testes verificam os comandos **Abrir Conta** das duas abas usando um
 worker simulado, sem cadastros ou sites externos, e validam a interface real
 no Chromium.
 
+## Workspace Proxy — interface visual (sem integração)
+
+A navegação web agora possui **três áreas**: **Criar Mãe**, **Criar Filha**
+e **Proxy**. A terceira área é renderizada apenas pelo JavaScript do
+navegador (arquivos `webui/static/proxy_view.js` e
+`webui/static/proxy_view.css`). **Não foi criada nenhuma rota nova ou
+configuração de proxy no backend.** O gateway local e os perfis existentes
+continuam intactos.
+
+A tela Proxy contém nome, host, porta, protocolo (HTTP/HTTPS/SOCKS5),
+usuário opcional, senha opcional com mostrar/ocultar, área de listagem
+vazia, indicador **Integração pendente** e ações de salvar, editar e remover
+**desabilitadas**. Todos os campos são demonstrativos: **não salvam nem
+transmitem os dados**, não consultam APIs e não conectam/testam proxies.
+Se a página for recarregada, o conteúdo digitado nessa tela desaparece.
+A ligação entre os campos e uma futura API deverá ser implementada
+explicitamente na próxima etapa, com validação e tratamento seguro de
+credenciais.
+
+A nova aparência grafite com acentos azul-violeta está concentrada em
+`webui/static/workspace_theme.css`. Ela é aplicada tanto às telas de
+contas quanto à navegação e à tela de pareamento, sem mudar os comandos
+`Abrir Conta`, `Parar`, normalização HTTPS ou funcionamento localhost.
+O teste `tests/test_visual_ui.py` confere as três telas em Chromium e
+verifica que interagir com a visualização Proxy não dispara requisições
+POST às APIs.
+
 ## Identidade visual Nexora
 
 O painel web (localhost e GitHub Codespaces) usa a identidade **NEXORA —
-Browser Workspace**: grafite azulado, acento cobre, navegação lateral,
+Browser Workspace**: grafite escuro, acento azul-violeta, navegação lateral,
 tipografia de interface desktop e cartões compactos para as configurações,
 ações e logs. As abas **Criar Mãe** e **Criar Filha**, os controles de perfis,
 modais, notificações e a tela de pareamento Windows utilizam o mesmo tema.
