@@ -47,7 +47,11 @@ def profile_mode(mode: str, idx: int) -> str:
 
 def profile_directory(base, mode: str, idx: int):
     """Desktop legacy profiles keep their paths; new mobile modes never share data."""
-    name = profile_mode(mode, idx)
+    selected = resolve_mode(mode)
+    name = profile_mode(selected, idx)
     if name == "desktop":
         return base / f"profile_{idx}"
+    # A combined choice has its own sessions, separate from the single mode.
+    if selected == "mixed":
+        return base / "mixed" / name / f"profile_{idx}"
     return base / name / f"profile_{idx}"
