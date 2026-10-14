@@ -82,6 +82,21 @@ computador, permanece local e precisa estar ligado e pareado;
 uma hospedagem online não consegue abrir janelas num PC desligado.
 Não exponha a porta 8767 nem perfis, cookies ou credenciais no GitHub.
 
+### Exibição mobile em janelas do Windows
+
+Em perfis Android e iPhone, o Chromium usa o **viewport CSS original**
+(412 × 915 para Android; 390 × 844 para iPhone) e mantém a densidade
+de pixels definida para o dispositivo. O ajuste de `Settings/mobile_window.py`
+afeta apenas **o tamanho, a posição e a escala visual uniforme da janela**
+quando o monitor é menor que a tela emulada; não altera cookies, perfil,
+proxies, HTML/CSS dos sites visitados nem o modo desktop. O ajuste visual
+não transforma um site mobile em desktop. Em monitores menores, a escala
+de apresentação pode ser inferior a 100%, preservando o viewport CSS.
+
+Se um site específico definir sua própria largura fixa ou fundo colorido,
+essas características pertencem ao CSS do site; o projeto não injeta
+estilos externos para forçar seu layout.
+
 ## Modos de dispositivo e Área Pix
 
 As abas **Criar Mãe** e **Criar Filha** permanecem; a aba **Área Pix** e os
