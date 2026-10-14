@@ -68,6 +68,21 @@ def test_codespaces_private_forwarded_origin(monkeypatch):
         assert client.get('/api/state').status_code == 200
         assert client.post('/api/event', json={'id': 'not-found', 'event': 'click'},
                            headers={'Origin': url}).status_code == 404
+        # GitHub's forwarded-port proxy can rewrite Origin to localhost.
+        # Accept this ONLY when HTTPS Referer belongs to the exact Codespace.
+        rewritten = {'Origin': 'http://localhost:8765',
+                     'Referer': url + '/painel',
+                     'Sec-Fetch-Site': 'same-origin'}
+        assert client.post('/api/event', json={'id': 'not-found', 'event': 'click'},
+                           headers=rewritten).status_code == 404
+        assert client.post('/api/event', json={'id': 'not-found', 'event': 'click'},
+                           headers={**rewritten, 'Referer': 'https://attacker.example/page'}).status_code == 403
+        assert client.post('/api/event', json={'id': 'not-found', 'event': 'click'},
+                           headers={**rewritten, 'Referer': ''}).status_code == 403
+        assert client.post('/api/event', json={'id': 'not-found', 'event': 'click'},
+                           headers={**rewritten, 'Sec-Fetch-Site': 'cross-site'}).status_code == 403
+        assert client.post('/api/event', json={'id': 'not-found', 'event': 'click'},
+                           headers={'Origin': 'http://localhost:8765'}).status_code == 403
         assert client.post('/api/event', json={'id': 'not-found', 'event': 'click'},
                            headers={'Origin': 'https://attacker.example'}).status_code == 403
         assert client.get('/', headers={'Host': 'other-8765.app.github.dev'}).status_code == 403
