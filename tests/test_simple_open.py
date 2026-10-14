@@ -35,7 +35,8 @@ def test_abrir_conta_uses_existing_manual_browser_flow(monkeypatch):
                 finished.set()
 
             monkeypatch.setattr(module, "run_all", fake_run_all)
-            monkeypatch.setattr(module, "clear_invite_file", lambda _log: None)
+            if hasattr(module, "clear_invite_file"):
+                monkeypatch.setattr(module, "clear_invite_file", lambda _log: None)
             monkeypatch.setattr(controller, "save_settings", lambda: None)
 
             previous_url = controller.urls_var.get()
