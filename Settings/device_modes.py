@@ -6,7 +6,7 @@ run native iOS Safari or a native Android application.
 MODE_LABELS = {
     "android": "Mobile — Somente Android",
     "iphone": "Mobile — Somente iPhone",
-    "mixed": "Mobile — Android e iPhone (alternados por instância)",
+    "mixed": "Mobile — Android e iPhone",
     "app": "Aplicativo Android (indisponível)",
     "desktop": "Computador",
 }
