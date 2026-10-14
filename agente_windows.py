@@ -58,10 +58,10 @@ def main():
     print("AGENTE PRONTO - deixe esta janela aberta enquanto usar o painel.")
     print("Cole o codigo de pareamento no painel do GitHub Codespaces:")
     print(f"\n{key}\n")
-    print(f"Endereco de emergencia: http://127.0.0.1:{args.port}")
+    print(f"Endereco de emergencia: http://127.0.0.1:{args.porta}")
     print("O Chromium abrira normalmente na area de trabalho do Windows.")
     print("=" * 64 + "\n", flush=True)
-    uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="info")
+    uvicorn.run(app, host="127.0.0.1", port=args.porta, log_level="info")
 
 
 if __name__ == "__main__":
