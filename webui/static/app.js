@@ -49,11 +49,11 @@ async function checkCloudServer() {
     setTimeout(checkCloudServer, 3500);
   }
 }
-if (runningInCodespaces) checkCloudServer();
 
 // On a GitHub Codespaces link, the UI runs remotely but browser actions
 // go to the user's Windows-only companion, never to the cloud Playwright.
 const runningInCodespaces = location.hostname.endsWith('.app.github.dev');
+if (runningInCodespaces) checkCloudServer();
 const localAgentBase = 'http://127.0.0.1:8767';
 let agentKey = runningInCodespaces ? (sessionStorage.getItem('lixocpa-agent-key') || '') : '';
 let agentConnected = false;
