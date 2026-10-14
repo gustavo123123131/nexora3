@@ -1,0 +1,17 @@
+[
+  {
+    "id": "exemplo",
+    "displayName": "Site de demonstração — NÃO USAR EM PRODUÇÃO",
+    "baseUrl": "https://example.com",
+    "authorized": false,
+    "registrationPath": "/register",
+    "loginPath": "/login",
+    "fields": {      "username": { "selector": "input[name='username']", "required": true },
+      "email": { "selector": "input[type='email']", "required": true },
+      "password": { "selector": "input[name='password']", "required": true },
+      "confirmPassword": { "selector": "input[name='confirmPassword']", "required": true }
+    },
+    "loginFields": { "username": {"selector":"#login"}, "password": {"selector":"#password"} },
+    "submitSelector": "button[type='submit']"
+  }
+]
