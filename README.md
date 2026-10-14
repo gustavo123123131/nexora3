@@ -2,6 +2,22 @@
 
 Este repositório contém os módulos originais em Python com uma camada web que reproduz os controles CustomTkinter no navegador. A interface e a lógica permanecem nos módulos originais; a camada `webui/` apresenta os controles pela API local FastAPI.
 
+## HTTPS automático nas abas Mãe e Filha
+
+Ao clicar em **Abrir Conta**, endereços sem protocolo são normalizados
+automaticamente: `exemplo.com` → `https://exemplo.com` e
+`www.exemplo.com` → `https://www.exemplo.com`.
+Os links com `https://` ou `http://` explícitos são preservados e
+espaços nas extremidades são removidos. Para vários links separados por
+vírgula, todos são normalizados e validados antes de iniciar os perfis.
+
+URLs inválidas apresentam aviso nos logs e não iniciam a execução.
+Em falhas de navegação HTTPS (incluindo falha de TLS), o sistema
+registra uma mensagem clara e **não repete o ciclo de abertura** da
+mesma URL nem tenta trocar automaticamente para HTTP. Não há
+requisições antecipadas de validação: o erro de conexão é identificado
+na navegação original do Playwright, preservando proxies e sessões.
+
 ## Interface essencial de abertura de contas
 
 As abas **Criar Mãe** e **Criar Filha** mostram somente campos de links,
