@@ -6,6 +6,8 @@ import importlib.util
 import os
 from pathlib import Path
 import signal
+import subprocess
+import sys
 import time
 from urllib.request import urlopen
 
@@ -59,6 +61,50 @@ def test_codespaces_service_start_stop_recovery():
             break
         time.sleep(0.25)
     assert not manager.health()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Linux Codespaces supervisor only")
+def test_adopt_running_legacy_server_without_interrupting_it():
+    """An existing nohup server stays alive until it exits, then is recovered."""
+    assert not manager.port_is_busy()
+    legacy = subprocess.Popen(
+        [sys.executable, str(ROOT / "servidor.py"), "--no-reload"],
+        cwd=ROOT, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+        stderr=subprocess.STDOUT, start_new_session=True,
+    )
+    try:
+        for _ in range(60):
+            if manager.health():
+                break
+            time.sleep(0.2)
+        assert manager.health()
+        assert manager.start() == 0
+        observed_supervisor = manager.supervisor_pid()
+        for _ in range(30):
+            if observed_supervisor:
+                break
+            time.sleep(0.1)
+            observed_supervisor = manager.supervisor_pid()
+        assert observed_supervisor is not None
+        assert legacy.poll() is None
+        assert not manager.CHILD_PID.exists(), "Não deve criar um segundo servidor"
+
+        # After the old process exits, ownership automatically transfers.
+        os.killpg(os.getpgid(legacy.pid), signal.SIGTERM)
+        legacy.wait(timeout=6)
+        recovered = False
+        for _ in range(100):
+            if manager.health() and manager.CHILD_PID.exists():
+                recovered = True
+                break
+            time.sleep(0.2)
+        assert recovered, manager.EVENTS.read_text()[-2000:]
+        assert manager.supervisor_pid() == observed_supervisor
+    finally:
+        if legacy.poll() is None:
+            os.killpg(os.getpgid(legacy.pid), signal.SIGTERM)
+            legacy.wait(timeout=6)
+        manager.stop()
 
 
 def test_crash_loop_is_bounded_without_launching_browser(tmp_path, monkeypatch):
