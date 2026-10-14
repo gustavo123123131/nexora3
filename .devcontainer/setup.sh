@@ -35,8 +35,30 @@ update_apt() {
   for source in /etc/apt/sources.list.d/*.sources; do
     [[ -f "$source" ]] || continue
     if grep -Eq '^URIs:.*dl\.yarnpkg\.com/debian' "$source"; then
-      if [[ "$(grep -Ec '^URIs:' "$source")" == '1' ]] && \
-         ! grep -E '^URIs:' "$source" | grep -Eq 'https?://(?!dl\.yarnpkg\.com)' ; then
+      if [[ "$(grep -Ec '^[[:space:]]*URIs:' "$source")" == '1' ]] && \
+         grep -Eq '^[[:space:]]*URIs:[[:space:]]*https?://dl\.yarnpkg\.com/debian/?[[:space:]]*
+        sudo mv "$source" "$source.lixocpa-disabled"
+        changed=1
+      fi
+    fi
+  done
+  if [[ "$changed" == 0 ]]; then
+    echo 'Nao foi possivel localizar uma fonte Yarn isolada para desativar.' >&2
+    return 1
+  fi
+  sudo apt-get update -qq
+}
+
+update_apt
+
+# Display virtual, dialogos Tk e Chromium remoto.
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+  python3-tk xvfb x11vnc novnc websockify xauth
+
+python -m pip install -r requirements-web.txt
+python -m playwright install --with-deps chromium
+python -c 'import tkinter, fastapi, playwright, uvicorn; print("Dependencias verificadas.")'
+ "$source"; then
         sudo mv "$source" "$source.lixocpa-disabled"
         changed=1
       fi
