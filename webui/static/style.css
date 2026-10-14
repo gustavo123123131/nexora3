@@ -137,6 +137,20 @@ a:focus-visible, .ctk-checkbox:focus-within, .ctk-switch:focus-within {
   margin: 0 !important; width: 100%; background: transparent !important;
   border: none !important; padding: 0 !important; box-shadow: none !important;
 }
+/* A real CTk tab contains a nested screen frame. Keep both transparent;
+   the header/body/log styles below belong to the children of that screen. */
+.tab-content > .ctk-frame > .ctk-frame {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
 .tab-content > .ctk-frame::before {
   content: "NAVEGADORES  /  GERENCIAMENTO DE PERFIS";
   font-size: 10px; letter-spacing: .18em; font-weight: 750;
@@ -160,63 +174,75 @@ a:focus-visible, .ctk-checkbox:focus-within, .ctk-switch:focus-within {
   background: transparent !important; border: 0 !important; box-shadow: none !important;
 }
 /* Original header becomes a compact control surface. All original controls remain. */
-.tab-content > .ctk-frame > .ctk-frame:first-child {
+.tab-content > .ctk-frame > .ctk-frame > .ctk-frame:first-child {
   display: grid !important; grid-template-columns: minmax(0,1fr) minmax(0,1fr);
   gap: 0 12px; align-items: center; padding: 22px 16px 12px !important;
   background: #1b292e !important; border: 1px solid #35464b;
   border-radius: 15px !important; box-shadow: 0 3px 18px #090f1326;
   margin: 0 0 16px !important;
 }
-.tab-content > .ctk-frame > .ctk-frame:first-child > .ctk-label {
+.tab-content > .ctk-frame > .ctk-frame > .ctk-frame:first-child > .ctk-label {
   grid-column: 1/-1; margin-left: 14px !important; margin-right: 14px !important;
 }
-.tab-content > .ctk-frame > .ctk-frame:first-child > .ctk-label:first-child {
+.tab-content > .ctk-frame > .ctk-frame > .ctk-frame:first-child > .ctk-label:first-child {
   color: #f6eee7 !important; font-size: 23px !important; font-weight: 750 !important;
   line-height: 1.2; letter-spacing: -.03em;
 }
-.tab-content > .ctk-frame > .ctk-frame:first-child > .ctk-label:nth-child(2) {
+.tab-content > .ctk-frame > .ctk-frame > .ctk-frame:first-child > .ctk-label:nth-child(2) {
   color: #9fb0af !important; font-size: 12px !important; font-weight: 500;
   padding-bottom: 9px;
 }
-.tab-content > .ctk-frame > .ctk-frame:first-child > .ctk-frame {
+.tab-content > .ctk-frame > .ctk-frame > .ctk-frame:first-child > .ctk-frame {
   min-width: 0; margin: 0 8px 10px !important; border-radius: 11px !important;
   background: #213136 !important; border: 1px solid #38494e;
   padding: 4px !important;
 }
-.tab-content > .ctk-frame > .ctk-frame:first-child > .ctk-frame:last-child {
+.tab-content > .ctk-frame > .ctk-frame > .ctk-frame:first-child > .ctk-frame:last-child {
   grid-column: 1/-1; background: #17262b !important;
 }
-.tab-content > .ctk-frame > .ctk-frame:first-child > .ctk-frame:last-child .ctk-button {
+.tab-content > .ctk-frame > .ctk-frame > .ctk-frame:first-child > .ctk-frame:last-child .ctk-button {
   background: #28383d !important; color: #b4c4c1 !important;
   border: 1px dashed #4a595c !important; font-weight: 600;
 }
-.tab-content > .ctk-frame > .ctk-frame:first-child > .ctk-frame:last-child .ctk-button:hover:not(:disabled) {
+.tab-content > .ctk-frame > .ctk-frame > .ctk-frame:first-child > .ctk-frame:last-child .ctk-button:hover:not(:disabled) {
   color: #f8ecdf !important; background: #35474b !important; border-style: solid !important;
 }
 
 /* Configuration / action columns */
-.tab-content > .ctk-frame > .ctk-frame:nth-child(2) {
+.tab-content > .ctk-frame > .ctk-frame > .ctk-frame:nth-child(2) {
   display: grid !important; grid-template-columns: minmax(0,1.38fr) minmax(290px,.84fr) !important;
   gap: 16px; align-items: stretch; margin: 0 0 16px !important;
   padding: 0 !important; background: transparent !important; border: 0 !important;
 }
-.tab-content > .ctk-frame > .ctk-frame:nth-child(2) > .ctk-frame {
+.tab-content > .ctk-frame > .ctk-frame > .ctk-frame:nth-child(2) > .ctk-frame {
   margin: 0 !important; padding: 19px 18px 21px !important;
   background: var(--panel) !important; border: 1px solid var(--line);
   border-radius: 15px !important; min-width: 0; box-shadow: 0 5px 16px #0a131725;
 }
-.tab-content > .ctk-frame > .ctk-frame:nth-child(2) > .ctk-frame:nth-child(2) {
+.tab-content > .ctk-frame > .ctk-frame > .ctk-frame:nth-child(2) > .ctk-frame:nth-child(2) {
   background: #1a262c !important;
 }
-.tab-content > .ctk-frame > .ctk-frame:nth-child(2) > .ctk-frame > .ctk-label:first-child {
+.tab-content > .ctk-frame > .ctk-frame > .ctk-frame:nth-child(2) > .ctk-frame > .ctk-label:first-child {
   color: #f1eae2 !important; font-size: 17px !important; font-weight: 730 !important;
   letter-spacing: -.02em;
 }
-.tab-content > .ctk-frame > .ctk-frame:nth-child(2) > .ctk-frame > .ctk-label:nth-child(2) {
+.tab-content > .ctk-frame > .ctk-frame > .ctk-frame:nth-child(2) > .ctk-frame > .ctk-label:nth-child(2) {
   color: var(--muted) !important; font-size: 12px !important;
 }
-.tab-content > .ctk-frame > .ctk-frame:nth-child(2) .ctk-frame.grid-layout {
+.tab-content > .ctk-frame > .ctk-frame > .ctk-frame:nth-child(2) .ctk-frame.grid-layout {
   border-radius: 10px !important; border-color: var(--line-soft);
+}
+
+/* Prevent the device selector's legacy fixed width from clipping the
+   quantity and delay fields in compact configuration cards. */
+.tab-content .ctk-frame.grid-layout:has(> select.ctk-option) {
+  grid-template-columns: minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) !important;
+}
+.tab-content .ctk-frame.grid-layout > select.ctk-option {
+  width: 100% !important; min-width: 0 !important;
+}
+.tab-content .ctk-frame.grid-layout:has(> select.ctk-option) > .ctk-label {
+  overflow-wrap: anywhere; font-size: 11px !important; min-width: 0;
 }
 
 /* Forms, selectors, menus, toggles. Backend values/callbacks not touched. */
@@ -298,15 +324,15 @@ a:focus-visible, .ctk-checkbox:focus-within, .ctk-switch:focus-within {
 .ctk-button.ui-action-utility:hover:not(:disabled) { background: #394e54 !important; }
 
 /* Status and log console */
-.tab-content > .ctk-frame > .ctk-frame:nth-child(3) {
+.tab-content > .ctk-frame > .ctk-frame > .ctk-frame:nth-child(3) {
   margin: 0 !important; padding: 8px 13px 15px !important;
   background: #18262b !important; border: 1px solid #34464b;
   border-radius: 15px !important; min-height: 260px;
 }
-.tab-content > .ctk-frame > .ctk-frame:nth-child(3) > .ctk-frame:first-child {
+.tab-content > .ctk-frame > .ctk-frame > .ctk-frame:nth-child(3) > .ctk-frame:first-child {
   background: transparent !important; border: 0 !important;
 }
-.tab-content > .ctk-frame > .ctk-frame:nth-child(3) .ctk-label.ui-section-title {
+.tab-content > .ctk-frame > .ctk-frame > .ctk-frame:nth-child(3) .ctk-label.ui-section-title {
   font-size: 14px !important; color: #eceee9 !important;
 }
 .ctk-label.ui-status {
@@ -384,18 +410,18 @@ a:focus-visible, .ctk-checkbox:focus-within, .ctk-switch:focus-within {
 @media (max-width: 1250px) {
   .ctk-root > .ctk-tabs { grid-template-columns: 198px minmax(0,1fr); }
   .tab-content { padding: 20px 14px 42px; }
-  .tab-content > .ctk-frame > .ctk-frame:nth-child(2) { grid-template-columns: minmax(0,1.22fr) minmax(260px,.86fr) !important; gap: 10px; }
-  .tab-content > .ctk-frame > .ctk-frame:nth-child(2) > .ctk-frame { padding: 14px 10px 18px !important; }
-  .tab-content > .ctk-frame > .ctk-frame:first-child { padding: 18px 8px 10px !important; }
+  .tab-content > .ctk-frame > .ctk-frame > .ctk-frame:nth-child(2) { grid-template-columns: minmax(0,1.22fr) minmax(260px,.86fr) !important; gap: 10px; }
+  .tab-content > .ctk-frame > .ctk-frame > .ctk-frame:nth-child(2) > .ctk-frame { padding: 14px 10px 18px !important; }
+  .tab-content > .ctk-frame > .ctk-frame > .ctk-frame:first-child { padding: 18px 8px 10px !important; }
   .brand-descriptor { display: none; }
 }
 @media (max-width: 1000px) {
   .ctk-root > .ctk-tabs { grid-template-columns: 178px minmax(0,1fr); }
   .tab-bar { padding-left: 7px; padding-right: 7px; }
   .tab-bar button { font-size: 12px; padding: 9px; }
-  .tab-content > .ctk-frame > .ctk-frame:first-child { grid-template-columns: 1fr; }
-  .tab-content > .ctk-frame > .ctk-frame:first-child > .ctk-frame:last-child { grid-column: 1; }
-  .tab-content > .ctk-frame > .ctk-frame:nth-child(2) { grid-template-columns: 1fr !important; }
+  .tab-content > .ctk-frame > .ctk-frame > .ctk-frame:first-child { grid-template-columns: 1fr; }
+  .tab-content > .ctk-frame > .ctk-frame > .ctk-frame:first-child > .ctk-frame:last-child { grid-column: 1; }
+  .tab-content > .ctk-frame > .ctk-frame > .ctk-frame:nth-child(2) { grid-template-columns: 1fr !important; }
 }
 @media (max-width: 800px) {
   body { min-width: 0; }
@@ -408,8 +434,8 @@ a:focus-visible, .ctk-checkbox:focus-within, .ctk-switch:focus-within {
   .tab-content { min-height: auto; padding: 19px 9px 30px; }
   .ctk-grid-layout, .grid-layout { column-gap: 5px; }
   .ctk-option { min-width: 100px; }
-  .tab-content > .ctk-frame > .ctk-frame:first-child { padding: 14px 5px !important; }
-  .tab-content > .ctk-frame > .ctk-frame:nth-child(2) { grid-template-columns: minmax(0,1fr) !important; }
+  .tab-content > .ctk-frame > .ctk-frame > .ctk-frame:first-child { padding: 14px 5px !important; }
+  .tab-content > .ctk-frame > .ctk-frame > .ctk-frame:nth-child(2) { grid-template-columns: minmax(0,1fr) !important; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; scroll-behavior: auto !important; }
