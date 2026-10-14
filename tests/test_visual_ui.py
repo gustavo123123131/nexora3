@@ -44,7 +44,7 @@ def test_nexora_visual_and_existing_controls(tmp_path):
             try:
                 page = browser.new_page(viewport={"width": 1440, "height": 900})
                 page.goto(URL, wait_until="domcontentloaded")
-                expect(page.locator(".tab-bar button")).to_have_count(3, timeout=15000)
+                expect(page.locator(".tab-bar button")).to_have_count(4, timeout=15000)
                 expect(page.locator(".brand-wordmark")).to_have_text("NEXORA")
                 expect(page.locator(".tab-bar button.active")).to_have_text("Criar Mãe")
                 expect(page.get_by_role("button", name="Abrir Conta")).to_be_visible()
@@ -157,6 +157,14 @@ def test_nexora_visual_and_existing_controls(tmp_path):
                     assert overflow <= 2, f"Proxy horizontal overflow at {width}px: {overflow}"
                 page.screenshot(path=str(screenshot_dir / "nexora-proxy-mobile.png"), full_page=True)
                 page.set_viewport_size({"width": 1440, "height": 900})
+                # Separate functional accounts tab must not alter original Mãe/Filha.
+                page.get_by_role("button", name="Contas", exact=True).click()
+                expect(page.get_by_role("heading", name="Contas e cadastro")).to_be_visible()
+                expect(page.get_by_role("heading", name="01 · Configurar site")).to_be_visible()
+                expect(page.get_by_role("heading", name="02 · Adicionar conta")).to_be_visible()
+                expect(page.get_by_role("heading", name="03 · Suas contas")).to_be_visible()
+                expect(page.locator(".accounts-list")).to_be_visible()
+                page.screenshot(path=str(screenshot_dir / "nexora-contas.png"), full_page=True)
                 page.get_by_role("button", name="Criar Mãe").click()
                 expect(page.get_by_role("button", name="Abrir Conta")).to_be_visible()
                 page.get_by_role("button", name="Criar Filha").click()
