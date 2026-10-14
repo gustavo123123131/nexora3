@@ -1,0 +1,63 @@
+/* Dedicated Nexora account/registration page. Does not modify existing controls. */
+.accounts-workspace{width:100%;padding:4px 1px 20px;color:#e3eaf7}
+.accounts-heading{display:flex;justify-content:space-between;align-items:center;gap:16px;margin:14px 0 19px}
+.accounts-heading h1{font-size:27px;font-weight:800;letter-spacing:-.04em;margin:10px 0 6px;color:#f2f5ff}
+.accounts-heading p{font-size:12px;line-height:1.6;margin:0;color:#95a7c4}
+.accounts-refresh{border:1px solid #42547c;background:#233451;color:#d7e0f8;border-radius:8px;padding:11px 17px;font-size:12px;cursor:pointer}
+.accounts-refresh:hover{background:#304568}
+.accounts-notice{margin:0 0 20px;border:1px solid #3b5278;border-left:3px solid #8098f3;border-radius:9px;background:#1e2c44;color:#b4c7e4;padding:14px 17px;line-height:1.7;font-size:11px}
+.accounts-main-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;margin-bottom:17px}
+.accounts-panel{min-width:0;border:1px solid #35465f;background:#192639;border-radius:13px;box-shadow:0 12px 30px #09132222;overflow:hidden;margin-bottom:17px}
+.accounts-panel>header{display:flex;align-items:center;justify-content:space-between;gap:15px;border-bottom:1px solid #30425f;padding:20px}
+.accounts-panel>header h2{font-size:15px;margin:0 0 6px;color:#f3f6ff;font-weight:750}
+.accounts-panel>header p{font-size:11px;color:#92a5c2;line-height:1.5;margin:0}
+.accounts-panel form{display:flex;flex-direction:column;gap:15px;padding:21px}
+.accounts-panel label{display:flex;flex-direction:column;gap:7px;color:#cddbf0;font-size:11px;font-weight:690;min-width:0}
+.accounts-panel label>span{color:#cddbf0}
+.accounts-panel input:not([type=checkbox]),.accounts-panel select{width:100%;background:#111e30;color:#f1f5ff;border:1px solid #42536f;min-width:0;border-radius:8px;padding:11px 12px;font-size:12px;outline:none;min-height:42px}
+.accounts-panel input:focus-visible,.accounts-panel select:focus-visible{border-color:#869cf7;outline:1px solid #869cf7}
+.accounts-panel input::placeholder{color:#6f83a4}
+.accounts-two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.accounts-primary{align-self:flex-start;background:#576fdb;border:1px solid #8599fa;border-radius:8px;color:#fafbff;padding:12px 17px;font-size:11px;font-weight:780;cursor:pointer;min-height:41px}
+.accounts-primary:hover:not(:disabled){background:#667ef0}
+.accounts-primary:disabled{opacity:.45;cursor:not-allowed}
+.accounts-detail{background:#1f304b;border:1px solid #374e73;padding:12px;border-radius:8px}
+.accounts-detail summary{cursor:pointer;color:#bdd1f0;font-size:11px;font-weight:800}
+.accounts-fields{display:grid;gap:11px;margin-top:16px}
+.accounts-selector-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}
+.accounts-panel .accounts-required{display:flex;align-items:center;flex-direction:row;gap:6px;padding:12px 0}
+.accounts-required input{accent-color:#8a9df6}
+.accounts-consent{display:flex!important;flex-direction:row!important;align-items:flex-start;gap:9px!important;border:1px solid #3f5670;background:#203048;border-radius:8px;padding:11px!important;line-height:1.5}
+.accounts-consent input{margin:2px 0 0;accent-color:#8898ff}
+.accounts-consent span{font-size:11px;font-weight:600}
+.accounts-tip{font-size:11px;line-height:1.7;color:#9baecf;margin:0;padding:11px 12px;background:#1f2c44;border-left:2px solid #667bd0}
+.accounts-message{padding:13px 15px;border-radius:9px;font-size:11px;line-height:1.5;margin:0 0 17px}
+.accounts-message[hidden]{display:none}
+.accounts-message.is-ok{color:#b8f2dc;background:#19362f;border:1px solid #386559}
+.accounts-message.is-error{color:#ffc2ca;background:#3d2b36;border:1px solid #804e62}
+.accounts-directory header{align-items:flex-start}
+.accounts-directory-tools{display:flex;gap:8px}
+.accounts-panel .accounts-directory-tools input{min-width:150px;max-width:180px}
+.accounts-panel .accounts-directory-tools select{max-width:140px}
+.accounts-table-scroll{overflow-x:auto}
+.accounts-table-scroll table{border-collapse:collapse;width:100%;min-width:790px}
+.accounts-table-scroll th{color:#8196b8;background:#152137;font-size:10px;letter-spacing:.07em;text-transform:uppercase;text-align:left;border-bottom:1px solid #35465f;padding:15px 16px}
+.accounts-table-scroll td{font-size:11px;color:#bdc9e0;padding:16px;border-bottom:1px solid #30415a}
+.accounts-table-scroll tr:last-child td{border-bottom:none}
+.accounts-table-scroll td strong{display:block;font-size:12px;color:#f0f5ff;margin-bottom:4px}
+.accounts-table-scroll td small{display:block;color:#8fa2c3;font-size:10px}
+.accounts-status{display:inline-block;padding:6px 9px;border-radius:6px;background:#2c3a58;border:1px solid #4e607f;color:#cad9f5;font-size:10px;font-weight:700;white-space:nowrap}
+.accounts-status-completed{background:#17382e;border-color:#41755f;color:#91daba}
+.accounts-status-pending{background:#443721;border-color:#775f3a;color:#ffdaa4}
+.accounts-status-failed{background:#462d38;border-color:#865061;color:#ffbdc9}
+.accounts-actions{min-width:340px}
+.accounts-small-button{font-size:10px;font-weight:700;padding:8px 10px;margin:2px 4px 2px 0;background:#283b56;border:1px solid #53688a;color:#d9e4f9;border-radius:7px;cursor:pointer}
+.accounts-small-button:hover:not(:disabled){background:#354d73}
+.accounts-small-button:disabled{opacity:.4;cursor:not-allowed}
+.accounts-empty{text-align:center;padding:40px!important;color:#94a6c4!important}
+.accounts-review-info{margin:0 21px 10px;padding:10px 12px;border:1px solid #3e567d;background:#243650;color:#cedcfa;font-size:11px;line-height:1.7;border-radius:8px;overflow-wrap:anywhere}
+.accounts-review .accounts-submit-form{padding-top:10px}
+.accounts-review .accounts-submit-fields{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+.accounts-close-review{background:#253752;border:1px solid #4e6588;border-radius:7px;color:#cad6ed;font-size:10px;padding:9px 12px;cursor:pointer}
+@media(max-width:1050px){.accounts-main-grid{grid-template-columns:1fr}.accounts-directory header{flex-direction:column}.accounts-directory-tools{width:100%}.accounts-directory-tools input{flex:1}}
+@media(max-width:620px){.accounts-heading{align-items:flex-start;flex-direction:column}.accounts-two,.accounts-review .accounts-submit-fields{grid-template-columns:1fr}.accounts-panel form,.accounts-panel>header{padding:15px}.accounts-selector-row{grid-template-columns:1fr}.accounts-panel .accounts-required{padding:4px}}
