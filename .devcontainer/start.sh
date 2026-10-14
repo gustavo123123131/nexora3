@@ -28,10 +28,11 @@ if ! pgrep -f 'websockify --web=/usr/share/novnc ' >/dev/null 2>&1; then
     > /tmp/lixocpa-novnc.log 2>&1 < /dev/null &
 fi
 
-# O reloader continua ativo: alterações JS/CSS/Python atualizam o site.
-if ! curl -fsS --max-time 2 http://127.0.0.1:8765/ >/dev/null 2>&1; then
-  nohup python servidor.py > /tmp/lixocpa-web.log 2>&1 < /dev/null &
-fi
+# O gerente mantém exatamente um servidor, acompanha falhas e conserva o reload.
+# Rodar este script novamente é seguro: não abre processos duplicados.
+python .devcontainer/manage.py start
 
-echo 'Lixo CPA: abra a porta privada 8765 (Painel Web) em PORTS.'
+echo 'Lixo CPA: abra a porta PRIVADA 8765 (Painel Web) em PORTS.'
+echo 'Status: python .devcontainer/manage.py status'
+echo 'Logs: tail -n 60 .runtime/lixocpa/server.log'
 echo 'Janelas Chromium: porta privada 6080, /vnc.html?autoconnect=true (opcional).'
