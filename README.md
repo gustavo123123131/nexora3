@@ -127,6 +127,15 @@ informacoes do navegador do PC.
    use `%LOCALAPPDATA%\LixoCPA-Agent\iniciar-agente-local.cmd`.
    O agente pedira novamente o link atual da porta 8765.
 
+**Saida do instalador Windows:** o arquivo `iniciar-agente-windows.cmd`
+mostra apenas as etapas de instalacao, o **codigo de pareamento**, o
+estado de inicializacao e avisos/erros. As mensagens detalhadas do pip e
+do download do Chromium ficam em
+`%LOCALAPPDATA%\\LixoCPA-Agent\\logs\\instalacao.log`.
+O agente omite os logs repetitivos de requisições HTTP, mantendo avisos e
+erros do servidor na janela. O codigo de pareamento **nao e gravado**
+nesse arquivo de instalacao.
+
 **Seguranca:** o agente escuta exclusivamente em `127.0.0.1:8767`. Somente a
 origem HTTPS do Codespace informada na inicializacao recebe CORS; comandos remotos
 precisam de um codigo forte de pareamento e de token anti-CSRF. Nunca torne
