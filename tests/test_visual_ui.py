@@ -1,0 +1,113 @@
+"""Visual-only browser regression checks of the unchanged localhost frontend.
+
+Runs a local no-reload server on a test-only port. Never starts real browsers
+from the multi-login controls or sends credentials to external websites.
+"""
+from pathlib import Path
+import os
+import signal
+import subprocess
+import sys
+import time
+from urllib.request import urlopen
+
+from playwright.sync_api import sync_playwright, expect
+
+ROOT = Path(__file__).resolve().parents[1]
+PORT = 18765
+URL = f"http://127.0.0.1:{PORT}"
+
+
+def wait_for_server(proc):
+    for _ in range(80):
+        if proc.poll() is not None:
+            raise AssertionError("Servidor de teste encerrou inesperadamente")
+        try:
+            with urlopen(URL + "/api/health", timeout=0.35) as response:
+                if response.status == 200:
+                    return
+        except OSError:
+            time.sleep(0.15)
+    raise AssertionError("Servidor de teste não iniciou")
+
+
+def test_nexora_visual_and_existing_controls(tmp_path):
+    server = subprocess.Popen(
+        [sys.executable, "servidor.py", "--no-reload", "--port", str(PORT)],
+        cwd=ROOT, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+        stderr=subprocess.STDOUT, start_new_session=(os.name == "posix"),
+    )
+    try:
+        wait_for_server(server)
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            try:
+                page = browser.new_page(viewport={"width": 1440, "height": 900})
+                page.goto(URL, wait_until="domcontentloaded")
+                expect(page.locator(".tab-bar button")).to_have_count(2, timeout=15000)
+                expect(page.locator(".brand-wordmark")).to_have_text("NEXORA")
+                expect(page.locator(".tab-bar button.active")).to_have_text("Criar Mãe")
+                expect(page.locator(".ui-action-manual")).to_be_visible()
+                expect(page.locator(".ui-action-start")).to_be_visible()
+                assert page.locator(".ctk-tabs").evaluate(
+                    "(el) => getComputedStyle(el).display"
+                ) == "grid"
+                assert page.locator(".workspace-bar").evaluate(
+                    "(el) => getComputedStyle(el).height"
+                ) == "70px"
+                assert page.locator(".tab-bar").bounding_box()["width"] >= 175
+                assert page.locator(".ctk-option").count() > 0
+                assert page.locator("input.ctk-entry").count() > 2
+                assert page.locator(".ctk-textbox").count() > 0
+                # Check CSS signature to reject an incomplete/stale deployment.
+                assert page.locator("body").evaluate(
+                    "(el) => getComputedStyle(el).backgroundColor"
+                ) == "rgb(16, 23, 28)"
+                # Editable control continues syncing through original /api/event.
+                first_field = page.locator("input.ctk-entry").first
+                first_field.fill("https://example.test")
+                expect(first_field).to_have_value("https://example.test")
+                expect(page.locator(".ui-action-utility").first).to_be_visible()
+                # Original instance selector modal still opens; no automation.
+                page.get_by_role("button", name="Selecionar instâncias").click()
+                expect(page.locator(".ctk-modal")).to_be_visible(timeout=10000)
+                assert page.locator(".ctk-modal").evaluate(
+                    "(el) => getComputedStyle(el).position"
+                ) == "fixed"
+                page.get_by_role("button", name="Cancelar").click()
+                expect(page.locator(".ctk-modal")).to_have_count(0)
+                # Alternate tab navigation retains its original event wiring.
+                page.locator(".tab-bar button").nth(1).click()
+                expect(page.locator(".tab-bar button.active")).to_have_text("Criar Filha")
+                expect(page.locator(".ui-action-manual")).to_be_visible()
+                expect(page.locator(".ui-action-start")).to_be_visible()
+                page.locator(".tab-bar button").nth(0).click()
+                expect(page.locator(".tab-bar button.active")).to_have_text("Criar Mãe")
+                # Compact layout keeps the existing controls usable at 960 px.
+                page.set_viewport_size({"width": 960, "height": 850})
+                expect(page.locator(".ui-action-manual")).to_be_visible()
+                assert page.locator(".tab-content").bounding_box()["width"] > 550
+                page.set_viewport_size({"width": 760, "height": 900})
+                expect(page.locator(".tab-bar button").first).to_be_visible()
+                expect(page.locator(".ui-action-manual")).to_be_visible()
+                # Screenshots retained in CI artifacts for visual review.
+                screenshot_dir = ROOT / "ui-screenshots"
+                screenshot_dir.mkdir(exist_ok=True)
+                page.screenshot(path=str(screenshot_dir / "nexora-compact.png"), full_page=True)
+                page.set_viewport_size({"width": 1440, "height": 900})
+                page.screenshot(path=str(screenshot_dir / "nexora-mae.png"), full_page=True)
+                page.locator(".tab-bar button").nth(1).click()
+                page.screenshot(path=str(screenshot_dir / "nexora-filha.png"), full_page=True)
+            finally:
+                browser.close()
+    finally:
+        if server.poll() is None:
+            if os.name == "posix":
+                os.killpg(os.getpgid(server.pid), signal.SIGTERM)
+            else:
+                server.terminate()
+            try:
+                server.wait(timeout=8)
+            except subprocess.TimeoutExpired:
+                server.kill()
+                server.wait()
