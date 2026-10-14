@@ -7,6 +7,7 @@ import argparse
 from contextlib import asynccontextmanager
 import logging
 import os
+import secrets
 import uuid
 import sys
 import threading
@@ -23,6 +24,7 @@ ROOT_DIR = Path(__file__).resolve().parent
 UI_LOCK = threading.RLock()
 _GUI = None
 _SERVER_VERSION = uuid.uuid4().hex
+_CSRF_TOKEN = secrets.token_urlsafe(32)
 
 
 def init_original_ui():
@@ -79,30 +81,14 @@ async def only_loopback(request: Request, call_next):
     cloud = host in _codespaces_hosts()
     if not local and not cloud:
         return JSONResponse({'detail': 'Host não autorizado.'}, status_code=403)
-    origin = request.headers.get('origin', '')
-    if origin:
-        if cloud:
-            valid_origins = {f'https://{host}'}
-            # GitHub Codespaces may rewrite an HTTPS browser Origin to
-            # http://localhost:PORT while preserving the original Referer.
-            # Trust that rewritten value ONLY for the exact private Codespace
-            # hostname, and ONLY with a same-origin HTTPS Referer.
-            referer = request.headers.get('referer', '')
-            if (
-                origin in ('http://localhost:8765', 'http://127.0.0.1:8765')
-                and referer.startswith(f'https://{host}/')
-                and request.headers.get('sec-fetch-site', 'same-origin') == 'same-origin'
-            ):
-                valid_origins.add(origin)
-        else:
-            port = request.url.port or 80
-            valid_origins = {f'http://{h}:{port}' for h in ('localhost', '127.0.0.1')}
-        if origin not in valid_origins:
-            logging.warning(
-                'Rejeitando origem HTTP para host autorizado: host=%s origin=%s',
-                host, origin,
-            )
-            return JSONResponse({'detail': 'Origem não autorizada.'}, status_code=403)
+    # Codespaces can rewrite Origin/Referer through its HTTPS port proxy.
+    # A per-server random CSRF token protects browser-triggered commands
+    # regardless of forwarded header transformations. It is only delivered
+    # via the same-origin JSON API, with no CORS and no caching.
+    if request.method in ('POST', 'PUT', 'PATCH', 'DELETE') and request.url.path.startswith('/api/'):
+        presented = request.headers.get('x-lixocpa-csrf', '')
+        if not presented or not secrets.compare_digest(presented, _CSRF_TOKEN):
+            return JSONResponse({'detail': 'Sessão de segurança inválida. Atualize a página.'}, status_code=403)
     response = await call_next(request)
     response.headers['Cache-Control'] = 'no-store'
     response.headers['X-Content-Type-Options'] = 'nosniff'
@@ -118,7 +104,7 @@ async def index():
 @app.get('/api/state')
 async def state():
     gui = init_original_ui()
-    return {'server_version': _SERVER_VERSION, 'tree': ctk.serialize(gui), 'dialogs': dialogs.list_pending()}
+    return {'server_version': _SERVER_VERSION, 'csrf_token': _CSRF_TOKEN, 'tree': ctk.serialize(gui), 'dialogs': dialogs.list_pending()}
 
 
 class UiEvent(BaseModel):
@@ -170,7 +156,7 @@ def main():
     args = parser.parse_args()
     import uvicorn
     # Codespaces forwards a private HTTPS URL to this container's port.
-    # The HTTP middleware still rejects other hosts/origins.
+    # The HTTP middleware restricts hosts and requires CSRF tokens on commands.
     bind_host = '0.0.0.0' if os.environ.get('CODESPACES') == 'true' else '127.0.0.1'
     kwargs = {'host': bind_host, 'port': args.port, 'log_level': 'info'}
     if not args.no_reload:
