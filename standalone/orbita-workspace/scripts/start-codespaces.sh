@@ -23,7 +23,8 @@ spawn() {
   local name="$1"
   shift
   if running "$name"; then return; fi
-  nohup "$@" >>"$STATE_DIR/$name.log" 2>&1 </dev/null &
+  # O filho não herda o lock do iniciador; o comando pode ser repetido com segurança.
+  nohup "$@" >>"$STATE_DIR/$name.log" 2>&1 </dev/null 9>&- &
   echo "$!" > "$STATE_DIR/$name.pid"
 }
 
