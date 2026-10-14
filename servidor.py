@@ -14,7 +14,7 @@ import threading
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -73,28 +73,89 @@ def _codespaces_hosts():
     return {f'{base}.{domain}', f'{base}.preview.{domain}'}
 
 
-@app.middleware('http')
-async def only_loopback(request: Request, call_next):
-    """Keep local access restricted; Codespaces must use its exact private URL."""
-    host = (request.url.hostname or '').lower()
-    local = host in ('localhost', '127.0.0.1', '::1', 'testserver')
-    cloud = host in _codespaces_hosts()
-    if not local and not cloud:
-        return JSONResponse({'detail': 'Host não autorizado.'}, status_code=403)
-    # Codespaces can rewrite Origin/Referer through its HTTPS port proxy.
-    # A per-server random CSRF token protects browser-triggered commands
-    # regardless of forwarded header transformations. It is only delivered
-    # via the same-origin JSON API, with no CORS and no caching.
-    if request.method in ('POST', 'PUT', 'PATCH', 'DELETE') and request.url.path.startswith('/api/'):
-        presented = request.headers.get('x-lixocpa-csrf', '')
-        if not presented or not secrets.compare_digest(presented, _CSRF_TOKEN):
-            return JSONResponse({'detail': 'Sessão de segurança inválida. Atualize a página.'}, status_code=403)
-    response = await call_next(request)
-    response.headers['Cache-Control'] = 'no-store'
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'DENY'
+def _agent_allowed_origin():
+    return os.environ.get("LIXOCPA_AGENT_ORIGIN", "").rstrip("/")
+
+
+def _cors_agent_response(response, origin):
+    if origin == _agent_allowed_origin() and origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = (
+            "Content-Type, X-LixoCPA-CSRF, X-LixoCPA-Agent-Key"
+        )
+        response.headers["Access-Control-Allow-Private-Network"] = "true"
+        response.headers["Access-Control-Max-Age"] = "300"
+        response.headers["Vary"] = "Origin"
+    response.headers["Cache-Control"] = "no-store"
     return response
 
+
+@app.middleware("http")
+async def only_loopback(request: Request, call_next):
+    """Protect the local agent while allowing a paired private Codespaces panel.
+
+    The GitHub proxy can rewrite Origin, so the CLOUD panel uses CSRF tokens.
+    On Windows only an explicitly paired Codespaces Origin gets CORS access;
+    actions additionally require an unguessable key and CSRF protection.
+    """
+    host = (request.url.hostname or "").lower()
+    local = host in ("localhost", "127.0.0.1", "::1", "testserver")
+    cloud = host in _codespaces_hosts()
+    agent_origin = _agent_allowed_origin()
+    origin = request.headers.get("origin", "")
+    agent_mode = bool(agent_origin)
+
+    if not local and not cloud:
+        return JSONResponse({"detail": "Host não autorizado."}, status_code=403)
+
+    if agent_mode:
+        # Pairing is not a public API; no wildcard origins, no LAN listening.
+        local_origins = {
+            f"http://localhost:{request.url.port or 8767}",
+            f"http://127.0.0.1:{request.url.port or 8767}",
+        }
+        if origin and origin != agent_origin and origin not in local_origins:
+            return JSONResponse({"detail": "Origem não autorizada no agente."}, status_code=403)
+        if request.method == "OPTIONS":
+            if origin != agent_origin:
+                return JSONResponse({"detail": "Origem não autorizada."}, status_code=403)
+            from fastapi.responses import Response
+            return _cors_agent_response(Response(status_code=204), origin)
+        if origin == agent_origin and request.url.path.startswith("/api/"):
+            presented_key = request.headers.get("x-lixocpa-agent-key", "")
+            expected_key = os.environ.get("LIXOCPA_AGENT_KEY", "")
+            if not expected_key or not secrets.compare_digest(presented_key, expected_key):
+                return _cors_agent_response(
+                    JSONResponse({"detail": "Código de pareamento inválido."}, status_code=403),
+                    origin,
+                )
+    elif os.environ.get("CODESPACES") == "true" and request.method == "POST" and request.url.path.startswith("/api/"):
+        # Never open Chromium in the Codespaces container when the user wants
+        # Windows-local execution. The static cloud panel connects to the agent.
+        return JSONResponse(
+            {"detail": "Use o agente Windows para executar comandos pelo painel."},
+            status_code=403,
+        )
+
+    if request.method in ("POST", "PUT", "PATCH", "DELETE") and request.url.path.startswith("/api/"):
+        presented = request.headers.get("x-lixocpa-csrf", "")
+        if not presented or not secrets.compare_digest(presented, _CSRF_TOKEN):
+            return _cors_agent_response(
+                JSONResponse(
+                    {"detail": "Sessão de segurança inválida. Atualize a página."},
+                    status_code=403,
+                ),
+                origin if agent_mode else "",
+            )
+
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    if agent_mode:
+        _cors_agent_response(response, origin)
+    return response
 
 @app.get('/')
 async def index():
