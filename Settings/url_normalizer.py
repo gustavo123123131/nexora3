@@ -10,7 +10,6 @@ import ipaddress
 import re
 from urllib.parse import urlsplit
 
-_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
 _HOST_LABEL = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
 
 
@@ -19,15 +18,21 @@ def normalize_url(value: str) -> str:
     if not raw:
         raise ValueError("Informe um domínio ou uma URL válida.")
 
-    # Evita a interpretação de 'http:exemplo.com' como domínio.
-    if _SCHEME.match(raw):
+    # 'exemplo.com:443' e 'localhost:8767' são host:porta, NÃO schemes.
+    # Reconhecer explicitamente outros protocolos para não os converter
+    # silenciosamente em HTTPS.
+    if "://" in raw:
         if not re.match(r"^https?://", raw, re.IGNORECASE):
             raise ValueError(
                 f"Protocolo não suportado em '{raw}'. Use HTTP ou HTTPS explicitamente."
             )
         url = raw
+    elif re.match(r"^(?:https?|ftp|file|javascript|data|mailto):", raw, re.IGNORECASE):
+        raise ValueError(
+            f"Protocolo inválido em '{raw}'. Informe uma URL HTTP ou HTTPS completa."
+        )
     else:
-        if raw.startswith(("/", "\\", "?")) or "://" in raw:
+        if raw.startswith(("/", "\\", "?")):
             raise ValueError(f"Endereço inválido: '{raw}'.")
         url = "https://" + raw
 
