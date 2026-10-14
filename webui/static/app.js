@@ -11,6 +11,46 @@ let disconnectedAfterSuccess = false;
 let lastStateString = '';
 let lastServerVersion = null;
 let csrfToken = null;
+let connectionWarning = null;
+function showConnectionWarning(message) {
+  if (!connectionWarning) {
+    connectionWarning = document.createElement('div');
+    connectionWarning.id = 'connection-warning';
+    connectionWarning.setAttribute('role', 'status');
+    document.body.appendChild(connectionWarning);
+  }
+  connectionWarning.textContent = message;
+  connectionWarning.hidden = !message;
+}
+
+// The Codespaces page may remain open in a tab after its backend stops.
+// Checking the cloud *separately* from the Windows agent avoids incorrectly
+// reporting an agent failure as a Codespaces failure.
+let cloudServerVersion = null;
+let cloudWasOffline = false;
+async function checkCloudServer() {
+  if (!runningInCodespaces) return;
+  try {
+    const response = await fetch('/api/health', {cache: 'no-store'});
+    if (!response.ok) throw Error(String(response.status));
+    const status = await response.json();
+    if (status.service !== 'lixocpa') throw Error('Serviço inesperado');
+    if (cloudWasOffline || (cloudServerVersion && cloudServerVersion !== status.server_version)) {
+      location.reload();
+      return;
+    }
+    cloudServerVersion = status.server_version;
+    cloudWasOffline = false;
+    showConnectionWarning('');
+  } catch (_) {
+    cloudWasOffline = true;
+    showConnectionWarning('Servidor do Codespaces indisponível. Reabra o Codespace e execute: bash .devcontainer/start.sh');
+  } finally {
+    setTimeout(checkCloudServer, 3500);
+  }
+}
+if (runningInCodespaces) checkCloudServer();
+
 // On a GitHub Codespaces link, the UI runs remotely but browser actions
 // go to the user's Windows-only companion, never to the cloud Playwright.
 const runningInCodespaces = location.hostname.endsWith('.app.github.dev');
@@ -408,6 +448,7 @@ async function poll() {
     }
     lastServerVersion = data.server_version;
     hadSuccessfulConnection = true;
+    if (!runningInCodespaces) showConnectionWarning('');
     if (runningInCodespaces) agentConnected = true;
     const serialized = JSON.stringify(data.tree);
     csrfToken = data.csrf_token;
@@ -428,7 +469,8 @@ async function poll() {
       }
     } else {
       if (hadSuccessfulConnection) disconnectedAfterSuccess = true;
-      else if (!currentState) app.textContent = 'Aguardando o servidor local…';
+      else if (!currentState) app.textContent = 'Servidor local indisponível.';
+      showConnectionWarning('Servidor localhost fora do ar. Execute o comando de inicialização e aguarde a reconexão automática.');
     }
   } finally {
     setTimeout(poll, 550);
