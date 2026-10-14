@@ -1339,6 +1339,10 @@ def run_instance(
                             shared_phone_key=shared_phone_key,
                         )
 
+                except HttpsNavigationError:
+                    # Fall through the context cleanup and stop the retry
+                    # loop. Do not silently downgrade HTTPS to HTTP.
+                    raise
                 except Exception as e:
                     err_msg = str(e)
                     if "Timeout" in err_msg or "Formulário não apareceu" in err_msg:
