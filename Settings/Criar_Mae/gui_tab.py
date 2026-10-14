@@ -11,6 +11,7 @@ import tkinter.messagebox as tkmb
 import tkinter.simpledialog as tksd
 import customtkinter as ctk
 from Settings.device_modes import MODE_LABELS, mode_label, resolve_mode, profile_directory
+from Settings.url_normalizer import normalize_url_list, is_https_url, HttpsNavigationError
 from Settings.mobile_window import mobile_window_args, fit_mobile_content
 from Settings.speed_controller import SpeedController
 from Settings.window_pos_controller import WindowPosController
@@ -1251,7 +1252,18 @@ def run_instance(
 
                 try:
                     if auto_goto:
-                        page.goto(url, wait_until="domcontentloaded", timeout=15000)
+                        try:
+                            page.goto(url, wait_until="domcontentloaded", timeout=15000)
+                        except Exception as exc:
+                            if is_https_url(url):
+                                raise HttpsNavigationError(
+                                    f"Não foi possível abrir '{url}' por HTTPS. "
+                                    "O site pode não oferecer HTTPS ou a conexão pode estar "
+                                    "indisponível (certificado, DNS, proxy ou rede). "
+                                    "Verifique o endereço e tente novamente. "
+                                    f"Detalhes: {exc}"
+                                ) from exc
+                            raise
 
                         try:
                             vw = int((cfg.viewport or {}).get("width", 420))
@@ -1356,6 +1368,10 @@ def run_instance(
                     except Exception:
                         pass
 
+        except HttpsNavigationError as e:
+            log(f"[#{idx}] ⚠️ {e}")
+            log(f"[#{idx}] Navegação HTTPS interrompida sem novas tentativas.")
+            return
         except Exception as e:
             log(f"[#{idx}] Erro crítico ao abrir navegador: {e}")
 
@@ -1417,9 +1433,10 @@ def run_all(
         log(f"[+] Extensões carregadas: {[e.name for e in exts]}")
 
     if instance_plans is None:
-        urls = [u.strip() for u in (urls_string or "").split(",") if u.strip()]
-        if not urls:
-            urls = ["https://google.com"]
+        if not str(urls_string or "").strip():
+            urls = ["https://google.com"]  # fallback legado de chamadas internas
+        else:
+            urls = normalize_url_list(urls_string)
         instance_plans = _build_instance_plans(urls, count_per_url, use_same_identity)
     else:
         instance_plans = [dict(plan or {}) for plan in instance_plans if isinstance(plan, dict)]
@@ -2513,7 +2530,14 @@ class MaeTab(ctk.CTkFrame):
         if self.worker_thread and self.worker_thread.is_alive():
             return
 
-        urls = self.urls_var.get().strip()
+        try:
+            normalized_urls = normalize_url_list(self.urls_var.get())
+        except ValueError as exc:
+            self._set_status(str(exc))
+            self._log(f"[UI] URL inválida: {exc}")
+            return
+        urls = ", ".join(normalized_urls)
+        self.urls_var.set(urls)
         try:
             mode = self._device_mode_for_launch()
         except ValueError as exc:
