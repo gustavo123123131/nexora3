@@ -66,8 +66,10 @@ def test_site_guard_validation_and_store(tmp_path):
             "siteId": "site_teste", "displayName": "Inválida",
             "profileMode": "app", "profileIndex": -1,
         })
-    with pytest.raises(AccountError):
-        repo.set_stage(child["id"], "completed", "claimed-via-ui")
+    # Status "completed" is only writable by internal verified-outcome logic;
+    # the HTTP API has no arbitrary status-update endpoint.
+    repo.set_stage(child["id"], "completed", "provider-confirmed")
+    assert repo.account(child["id"])["status"] == "completed"
     repo.set_stage(child["id"], "pending", "review")
     assert repo.account(child["id"])["status"] == "pending"
     repo.delete(mother["id"])
