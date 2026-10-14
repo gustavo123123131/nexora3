@@ -45,7 +45,7 @@ def test_abrir_conta_uses_existing_manual_browser_flow(monkeypatch):
             previous_count = controller.count_var.get()
             previous_delay = controller.delay_var.get()
             try:
-                controller.urls_var.set("https://example.test")
+                controller.urls_var.set("  exemplo.com  ")
                 controller.proxy_var.set("")  # No hidden proxy is required to launch.
                 controller.count_var.set("2")
                 controller.delay_var.set("0.4")
@@ -65,7 +65,8 @@ def test_abrir_conta_uses_existing_manual_browser_flow(monkeypatch):
                 assert len(captured) == 1
                 call = captured[0]
                 assert call["run_auto"] is False
-                assert call["urls_string"] == "https://example.test"
+                assert call["urls_string"] == "https://exemplo.com"
+                assert controller.urls_var.get() == "https://exemplo.com"
                 assert call["mode"] == "desktop"
                 assert call["count_per_url"] == 2
                 assert call["delay_seconds"] == 0.4
