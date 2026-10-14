@@ -1039,7 +1039,7 @@ def run_instance(
 
         log(f"\n[#{idx}] 🔄 CICLO {attempt}/{MAX_BROWSER_RESTARTS}: Iniciando navegador no link: {url}")
 
-        user_data_dir = profile_directory(PROFILES_DIR, cfg.mode, idx)
+        user_data_dir = profile_directory(PROFILES_DIR, mode, idx)
         ensure_clean_profile_dir(user_data_dir, keep=keep_profiles)
 
         # --- abre o Chrome já na posição/tamanho salvo (por idx) ---
