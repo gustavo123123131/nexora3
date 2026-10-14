@@ -25,3 +25,23 @@ jobs:
       - name: Executar testes sem operacoes externas
         run: |
           python -m pytest -q tests/test_localhost.py tests/test_agent_windows.py tests/test_device_modes.py tests/test_codespaces_startup.py
+
+  windows-installer-syntax:
+    runs-on: windows-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validar sintaxe do PowerShell sem executar instalacao
+        shell: powershell
+        run: |
+          $tokens = $null
+          $syntaxErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $PWD 'instalar-agente-windows.ps1'),
+            [ref]$tokens,
+            [ref]$syntaxErrors
+          ) | Out-Null
+          if ($syntaxErrors.Count -gt 0) {
+            $syntaxErrors | Format-List
+            exit 1
+          }
