@@ -83,10 +83,25 @@ async def only_loopback(request: Request, call_next):
     if origin:
         if cloud:
             valid_origins = {f'https://{host}'}
+            # GitHub Codespaces may rewrite an HTTPS browser Origin to
+            # http://localhost:PORT while preserving the original Referer.
+            # Trust that rewritten value ONLY for the exact private Codespace
+            # hostname, and ONLY with a same-origin HTTPS Referer.
+            referer = request.headers.get('referer', '')
+            if (
+                origin in ('http://localhost:8765', 'http://127.0.0.1:8765')
+                and referer.startswith(f'https://{host}/')
+                and request.headers.get('sec-fetch-site', 'same-origin') == 'same-origin'
+            ):
+                valid_origins.add(origin)
         else:
             port = request.url.port or 80
             valid_origins = {f'http://{h}:{port}' for h in ('localhost', '127.0.0.1')}
         if origin not in valid_origins:
+            logging.warning(
+                'Rejeitando origem HTTP para host autorizado: host=%s origin=%s',
+                host, origin,
+            )
             return JSONResponse({'detail': 'Origem não autorizada.'}, status_code=403)
     response = await call_next(request)
     response.headers['Cache-Control'] = 'no-store'
