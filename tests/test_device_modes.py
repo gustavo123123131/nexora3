@@ -36,8 +36,10 @@ def test_device_modes_without_crossing_profiles(make_config, tmp_path):
     cfg2 = make_config("mixed", 2)
     cfg3 = make_config("mixed", 3)
     assert [cfg1.mode, cfg2.mode, cfg3.mode] == ["android", "iphone", "android"]
-    assert profile_directory(tmp_path, "mixed", 1) == profile_directory(tmp_path, "android", 1)
-    assert profile_directory(tmp_path, "mixed", 2) == profile_directory(tmp_path, "iphone", 2)
+    assert profile_directory(tmp_path, "mixed", 1) == tmp_path / "mixed" / "android" / "profile_1"
+    assert profile_directory(tmp_path, "mixed", 2) == tmp_path / "mixed" / "iphone" / "profile_2"
+    assert profile_directory(tmp_path, "mixed", 1) != profile_directory(tmp_path, "android", 1)
+    assert profile_directory(tmp_path, "mixed", 2) != profile_directory(tmp_path, "iphone", 2)
 
     desktop = profile_directory(tmp_path, "desktop", 1)
     android = profile_directory(tmp_path, "android", 1)
