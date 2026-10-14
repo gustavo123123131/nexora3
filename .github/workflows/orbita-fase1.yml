@@ -25,6 +25,20 @@ jobs:
         run: npm test
       - name: Validar TypeScript e compilar Electron/React
         run: npm run build
+      - name: Preparar display virtual Linux
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb libgtk-3-0 libnss3 libasound2t64 libxss1 libgbm1
+      - name: Validar aplicativo Electron e isolamento real de cookies
+        run: xvfb-run -a -s "-screen 0 1440x900x24" npm run smoke
+      - name: Disponibilizar capturas do aplicativo
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbita-workspace-capturas
+          path: standalone/orbita-workspace/ui-screenshots/*.png
+          retention-days: 14
+          if-no-files-found: ignore
       - name: Conferir arquivos executáveis
         run: |
           test -s dist-electron/main.js
