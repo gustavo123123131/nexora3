@@ -5,6 +5,14 @@ const nodes = new Map();
 const selectedTabs = new Map();
 const pendingInput = new Map();
 const shownDialogs = new Set();
+// Proxy is a client-only visual workspace. It is never sent to the API and
+// does not modify any of the real Python tabs or their events.
+const PROXY_PREVIEW_ID = '__nexora_proxy_visual__';
+let proxyPreviewNode = null;
+function proxyPreview() {
+  if (!proxyPreviewNode) proxyPreviewNode = window.NexoraProxyView.create();
+  return proxyPreviewNode;
+}
 let currentState = null;
 let hadSuccessfulConnection = false;
 let disconnectedAfterSuccess = false;
@@ -381,7 +389,7 @@ function renderNode(obj) {
     if (obj.type === 'tabs') {
       const tabs = obj.children || [];
       let active = selectedTabs.get(obj.id);
-      if (!tabs.some(tab => tab.id === active)) active = tabs[0]?.id;
+      if (active !== PROXY_PREVIEW_ID && !tabs.some(tab => tab.id === active)) active = tabs[0]?.id;
       selectedTabs.set(obj.id, active);
       const bar = el.querySelector('.tab-bar');
       const oldButtons = new Map([...bar.children].map(button => [button.dataset.tabid, button]));
@@ -400,11 +408,29 @@ function renderNode(obj) {
         b.classList.toggle('active', tab.id === active);
         return b;
       });
-      patchChildren(bar, buttons);
+      // Append a frontend-only third item; existing Mãe/Filha navigation is
+      // unchanged, as are the backend tab IDs and callback bindings.
+      let proxyButton = oldButtons.get(PROXY_PREVIEW_ID);
+      if (!proxyButton) {
+        proxyButton = document.createElement('button');
+        proxyButton.type = 'button';
+        proxyButton.dataset.tabid = PROXY_PREVIEW_ID;
+        proxyButton.className = 'proxy-tab';
+        proxyButton.addEventListener('click', () => {
+          selectedTabs.set(obj.id, PROXY_PREVIEW_ID);
+          if (currentState) updateTree(currentState.tree);
+        });
+      }
+      proxyButton.textContent = 'Proxy';
+      proxyButton.classList.toggle('active', active === PROXY_PREVIEW_ID);
+      proxyButton.setAttribute('aria-current', active === PROXY_PREVIEW_ID ? 'page' : 'false');
+      patchChildren(bar, [...buttons, proxyButton]);
       const activeTab = tabs.find(tab => tab.id === active);
-      el.dataset.activeView = activeTab?.options?._tab_label || '';
+      el.dataset.activeView = active === PROXY_PREVIEW_ID
+        ? 'Proxy' : (activeTab?.options?._tab_label || '');
       const content = el.querySelector('.tab-content');
-      patchChildren(content, activeTab ? [renderNode(activeTab)] : []);
+      patchChildren(content, active === PROXY_PREVIEW_ID
+        ? [proxyPreview()] : (activeTab ? [renderNode(activeTab)] : []));
     } else {
       renderContainerLayout(el, obj);
       const children = obj.children || [];
