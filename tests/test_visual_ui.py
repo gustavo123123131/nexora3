@@ -100,6 +100,12 @@ def test_nexora_visual_and_existing_controls(tmp_path):
                 page.set_viewport_size({"width": 760, "height": 900})
                 expect(page.locator(".tab-bar button").first).to_be_visible()
                 expect(page.locator(".ui-action-manual")).to_be_visible()
+                panels = page.locator(screen + " > .ctk-frame:nth-child(2) > .ctk-frame")
+                assert panels.count() == 2
+                settings_compact = panels.nth(0).bounding_box()
+                actions_compact = panels.nth(1).bounding_box()
+                assert settings_compact and actions_compact
+                assert actions_compact["y"] >= settings_compact["y"] + settings_compact["height"] - 2
                 # Screenshots retained in CI artifacts for visual review.
                 screenshot_dir = ROOT / "ui-screenshots"
                 screenshot_dir.mkdir(exist_ok=True)
