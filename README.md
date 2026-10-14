@@ -22,7 +22,9 @@ No seletor **Modo**, estão disponíveis:
 
 Os perfis Android e iPhone novos ficam em
 `Settings/Criar_Mae/__profiles/android|iphone/profile_N` (ou caminho
-equivalente em `Criar_Filha`), separados entre si e do perfil desktop.
+equivalente em `Criar_Filha`). O modo combinado usa pastas próprias
+`__profiles/mixed/android/profile_N` e `__profiles/mixed/iphone/profile_N`,
+sem compartilhar sessões com os modos individuais ou com o desktop.
 **Os perfis legados não foram apagados ou migrados automaticamente**, pois o
 modo antigo "celular" não distinguia Android de iPhone; a migração teria risco
 de misturar sessões. A opção **Manter perfis** continua a determinar se o
