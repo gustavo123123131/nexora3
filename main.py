@@ -4,7 +4,6 @@ import customtkinter as ctk
 from Settings.speed_controller import SpeedController
 from Settings.Criar_Mae.gui_tab import MaeTab
 from Settings.Criar_Filha.gui_tab import FilhaTab
-from Settings.Area_Pix.gui_tab import AreaPixTab
 from Settings import local_proxy_gateway
 
 
@@ -34,11 +33,9 @@ class MainWindow(ctk.CTk):
 
         tab_mae = tabs.add("Criar Mãe")
         tab_filha = tabs.add("Criar Filha")
-        tab_area_pix = tabs.add("Área Pix")
 
         MaeTab(tab_mae, speed_controller=self.speed_mae).pack(fill="both", expand=True)
         FilhaTab(tab_filha, speed_controller=self.speed_filha).pack(fill="both", expand=True)
-        AreaPixTab(tab_area_pix).pack(fill="both", expand=True)
 
     def _start_local_proxy_gateway(self):
         if self.gateway_thread and self.gateway_thread.is_alive():
