@@ -37,8 +37,9 @@ manutenção intencional. O supervisor permite até **três falhas rápidas**
 (< 60 segundos por tentativa), registra os motivos e interrompe as
 tentativas se houver um erro persistente de configuração. Ele não encerra
 processos alheios que estejam usando a porta. Caso já exista um servidor
-iniciado manualmente, o comando não cria uma segunda cópia, mas só
-os processos lançados pelo supervisor têm recuperação automática.
+iniciado manualmente, o comando não cria uma segunda cópia: acompanha
+o processo existente sem interrompê-lo e inicia uma instância supervisionada
+quando a porta ficar livre.
 
 O reload automático do Uvicorn permanece habilitado para mudanças de
 Python, HTML, CSS e JavaScript. O navegador detecta quedas do backend e
