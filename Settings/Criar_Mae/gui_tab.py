@@ -10,6 +10,7 @@ import urllib.error
 import tkinter.messagebox as tkmb
 import tkinter.simpledialog as tksd
 import customtkinter as ctk
+from Settings.device_modes import MODE_LABELS, mode_label, resolve_mode, profile_directory
 from Settings.speed_controller import SpeedController
 from Settings.window_pos_controller import WindowPosController
 from Settings.mirror_easy import MirrorEasy
@@ -1041,18 +1042,19 @@ def run_instance(
             return
 
         cfg = make_config(mode, idx)
+        log(f"[#{idx}] Dispositivo selecionado: {cfg.mode} (navegador Chromium).")
         proxy_dict = build_proxy_dict(proxy, idx=idx) if proxy else None
 
         log(f"\n[#{idx}] 🔄 CICLO {attempt}/{MAX_BROWSER_RESTARTS}: Iniciando navegador no link: {url}")
 
-        user_data_dir = PROFILES_DIR / f"profile_{idx}"
+        user_data_dir = profile_directory(PROFILES_DIR, cfg.mode, idx)
         ensure_clean_profile_dir(user_data_dir, keep=keep_profiles)
 
         # --- abre o Chrome já na posição/tamanho salvo (por idx) ---
         saved_bounds = None
         try:
             st_ui = load_settings()
-            by_idx = st_ui.get("window_bounds_by_idx") or {}
+            by_idx = (st_ui.get("window_bounds_by_idx") or {}) if cfg.mode == "desktop" else {}
             rec = by_idx.get(str(idx))
 
             # compat: se estiver no formato antigo (dict direto)
@@ -1068,7 +1070,7 @@ def run_instance(
         saved_vp = None
         try:
             st_ui = load_settings()
-            by_idx = st_ui.get("window_bounds_by_idx") or {}
+            by_idx = (st_ui.get("window_bounds_by_idx") or {}) if cfg.mode == "desktop" else {}
             rec = by_idx.get(str(idx))
 
             if isinstance(rec, dict) and isinstance(rec.get("viewport"), dict):
@@ -1923,7 +1925,7 @@ class MaeTab(ctk.CTkFrame):
 
         self.mode_var = ctk.StringVar()
         ctk.CTkLabel(row1, text="Modo").grid(row=0, column=0, sticky="w")
-        self.mode_combo = ctk.CTkOptionMenu(row1, variable=self.mode_var, values=["desktop", "celular", "app"], height=36, corner_radius=12)
+        self.mode_combo = ctk.CTkOptionMenu(row1, variable=self.mode_var, values=list(MODE_LABELS.values()), height=36, corner_radius=12)
         self.mode_combo.grid(row=1, column=0, sticky="ew", pady=(6, 0), padx=(0, 10))
 
         self.count_var = ctk.StringVar(value="1")
@@ -2036,8 +2038,10 @@ class MaeTab(ctk.CTkFrame):
         self.deposit_amount_entry.grid(
             row=0, column=2, padx=(16, 12), pady=(12, 6), sticky="ew"
         )
+        # Módulo Pix retirado da interface, preservado para possível retorno.
+        autopix_card.pack_forget()
 
-        ctk.CTkLabel(right, text="PIN do saque").pack(anchor="w", padx=16, pady=(4, 4))
+        # Controle exclusivo de saque/Pix temporariamente oculto.
 
         self.withdraw_pin_entry = ctk.CTkEntry(
             right,
@@ -2045,7 +2049,7 @@ class MaeTab(ctk.CTkFrame):
             height=38,
             corner_radius=12,
         )
-        self.withdraw_pin_entry.pack(fill="x", padx=16, pady=(0, 10))
+        self.withdraw_pin_entry.pack_forget()
 
 
         self.proxy_var = ctk.StringVar()
@@ -2098,7 +2102,7 @@ class MaeTab(ctk.CTkFrame):
             right, text="Iniciar saque", height=42, corner_radius=14,
             command=self.request_withdrawal
         )
-        self.btn_withdraw.pack(fill="x", padx=16, pady=(0, 10))
+        self.btn_withdraw.pack_forget()
 
         self.btn_verify_phone = ctk.CTkButton(
             right, text="Verificar Numero", height=42, corner_radius=14,
@@ -2152,10 +2156,13 @@ class MaeTab(ctk.CTkFrame):
         self.log_text.pack(fill="both", expand=True, padx=16, pady=(0, 16))
         self.log_text.configure(state="disabled")
 
+    def _device_mode_for_launch(self):
+        return resolve_mode(self.mode_var.get())
+
     def _load_settings(self):
         st = load_settings()
         self.urls_var.set(st.get("url", "https://google.com"))
-        self.mode_var.set(st.get("mode", "desktop"))
+        self.mode_var.set(mode_label(st.get("mode", "desktop")))
         self.count_var.set(str(st.get("count", 1)))
         self.delay_var.set(str(st.get("delay_seconds", 1.0)))
         self.headless_var.set(bool(st.get("headless", False)))
@@ -2173,8 +2180,8 @@ class MaeTab(ctk.CTkFrame):
         self.same_identity_var.set(bool(st.get(_scope_key("same_identity_enabled"), st.get("same_identity_enabled", False))))
         self.generated_cpf_var.set(bool(st.get(_scope_key("use_generated_cpf"), True)))
         self.auto_close_popups_var.set(bool(st.get(_scope_key("auto_close_popups"), False)))
-        self.autopix_enabled_var.set(bool(st.get(_scope_key("autopix_enabled"), st.get("autopix_enabled", False))))
-        self.autochave_enabled_var.set(bool(st.get(_scope_key("autochave_enabled"), st.get("autochave_enabled", False))))
+        self.autopix_enabled_var.set(False)  # Pix pausado, inclusive em configurações antigas.
+        self.autochave_enabled_var.set(False)  # Evita iniciar sessões Pix ocultas.
         self.verify_phone_var.set(bool(st.get(_scope_key("verify_phone_enabled"), False)))
         self.withdraw_pin_var.set(
             _clean_withdraw_pin(st.get(_scope_key("withdraw_pin"), st.get("withdraw_pin", DEFAULT_WITHDRAW_PIN)))
@@ -2200,7 +2207,7 @@ class MaeTab(ctk.CTkFrame):
         st = load_settings()
         st.update({
             "url": self.urls_var.get().strip(),
-            "mode": self.mode_var.get().strip(),
+            "mode": self._device_mode_for_launch(),
             "count": count,
             "delay_seconds": delay_seconds,
             "headless": bool(self.headless_var.get()),
@@ -2395,7 +2402,12 @@ class MaeTab(ctk.CTkFrame):
         self.available_instance_ids = list(range(1, len(instance_plans) + 1))
         self._update_instance_target_label()
 
-        mode = (self.mode_var.get().strip() or "desktop").lower()
+        try:
+            mode = self._device_mode_for_launch()
+        except ValueError as exc:
+            self._set_status(str(exc))
+            self._log(f"[UI] {exc}")
+            return
         headless = bool(self.headless_var.get())
         keep_profiles = bool(self.keep_profiles_var.get())
 
@@ -2465,7 +2477,12 @@ class MaeTab(ctk.CTkFrame):
             return
 
         urls = self.urls_var.get().strip()
-        mode = (self.mode_var.get().strip() or "desktop").lower()
+        try:
+            mode = self._device_mode_for_launch()
+        except ValueError as exc:
+            self._set_status(str(exc))
+            self._log(f"[UI] {exc}")
+            return
         count = self._get_int(self.count_var, default=1, min_v=1, max_v=50)
 
         url_list = [u.strip() for u in urls.split(",") if u.strip()]
@@ -2484,7 +2501,6 @@ class MaeTab(ctk.CTkFrame):
         if self.proxy_var.get().strip() and proxy is None:
             return
 
-        clear_pix_file(self._log)
         clear_invite_file(self._log)
         self.save_settings()
 
