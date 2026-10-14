@@ -56,6 +56,16 @@ def test_nexora_visual_and_existing_controls(tmp_path):
                     "(el) => getComputedStyle(el).height"
                 ) == "70px"
                 assert page.locator(".tab-bar").bounding_box()["width"] >= 175
+                # The header, configuration grid and logs must stack vertically,
+                # rather than appearing as two equal columns on wide screens.
+                screen = ".tab-content > .ctk-frame > .ctk-frame"
+                header_box = page.locator(screen + " > .ctk-frame:first-child").bounding_box()
+                settings_box = page.locator(screen + " > .ctk-frame:nth-child(2)").bounding_box()
+                logs_box = page.locator(screen + " > .ctk-frame:nth-child(3)").bounding_box()
+                assert header_box and settings_box and logs_box
+                assert settings_box["y"] >= header_box["y"] + header_box["height"] - 2
+                assert logs_box["y"] >= settings_box["y"] + settings_box["height"] - 2
+                assert settings_box["width"] > 700
                 assert page.locator(".ctk-option").count() > 0
                 assert page.locator("input.ctk-entry").count() > 2
                 assert page.locator(".ctk-textbox").count() > 0
