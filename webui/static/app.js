@@ -8,10 +8,24 @@ const shownDialogs = new Set();
 // Proxy is a client-only visual workspace. It is never sent to the API and
 // does not modify any of the real Python tabs or their events.
 const PROXY_PREVIEW_ID = '__nexora_proxy_visual__';
+const ACCOUNTS_VIEW_ID = '__nexora_accounts_local__';
+let accountsViewNode = null;
+let accountsViewInstance = null;
 let proxyPreviewNode = null;
 function proxyPreview() {
   if (!proxyPreviewNode) proxyPreviewNode = window.NexoraProxyView.create();
   return proxyPreviewNode;
+}
+function accountsView() {
+  if (!accountsViewInstance) {
+    accountsViewInstance = window.NexoraAccountsView.create({
+      get: getRegistration,
+      post: post,
+    });
+    accountsViewNode = accountsViewInstance.node;
+  }
+  accountsViewInstance.onShow();
+  return accountsViewNode;
 }
 let currentState = null;
 let hadSuccessfulConnection = false;
@@ -181,6 +195,20 @@ async function post(path, body) {
     } catch (_) {}
     throw new Error(`HTTP ${res.status}${detail ? ': ' + detail : ''}`);
   }
+  return res.json();
+}
+async function getRegistration(path) {
+  if (runningInCodespaces && !agentConnected) {
+    throw Error('Conecte o agente Windows para acessar suas contas.');
+  }
+  const headers = {};
+  if (runningInCodespaces) headers['X-LixoCPA-Agent-Key'] = agentKey;
+  const res = await fetch((runningInCodespaces ? localAgentBase : '') + path, {
+    method: 'GET', mode: 'cors',
+    credentials: runningInCodespaces ? 'omit' : 'same-origin',
+    cache: 'no-store', headers,
+  });
+  if (!res.ok) throw new Error('Erro ao consultar contas (HTTP ' + res.status + ').');
   return res.json();
 }
 async function send(id, event, value = null) {
@@ -389,7 +417,7 @@ function renderNode(obj) {
     if (obj.type === 'tabs') {
       const tabs = obj.children || [];
       let active = selectedTabs.get(obj.id);
-      if (active !== PROXY_PREVIEW_ID && !tabs.some(tab => tab.id === active)) active = tabs[0]?.id;
+      if (active !== PROXY_PREVIEW_ID && active !== ACCOUNTS_VIEW_ID && !tabs.some(tab => tab.id === active)) active = tabs[0]?.id;
       selectedTabs.set(obj.id, active);
       const bar = el.querySelector('.tab-bar');
       const oldButtons = new Map([...bar.children].map(button => [button.dataset.tabid, button]));
@@ -424,13 +452,27 @@ function renderNode(obj) {
       proxyButton.textContent = 'Proxy';
       proxyButton.classList.toggle('active', active === PROXY_PREVIEW_ID);
       proxyButton.setAttribute('aria-current', active === PROXY_PREVIEW_ID ? 'page' : 'false');
-      patchChildren(bar, [...buttons, proxyButton]);
+      let accountsButton = oldButtons.get(ACCOUNTS_VIEW_ID);
+      if (!accountsButton) {
+        accountsButton = document.createElement('button');
+        accountsButton.type = 'button';
+        accountsButton.dataset.tabid = ACCOUNTS_VIEW_ID;
+        accountsButton.addEventListener('click', () => {
+          selectedTabs.set(obj.id, ACCOUNTS_VIEW_ID);
+          if (currentState) updateTree(currentState.tree);
+        });
+      }
+      accountsButton.textContent = 'Contas';
+      accountsButton.classList.toggle('active', active === ACCOUNTS_VIEW_ID);
+      accountsButton.setAttribute('aria-current', active === ACCOUNTS_VIEW_ID ? 'page' : 'false');
+      patchChildren(bar, [...buttons, proxyButton, accountsButton]);
       const activeTab = tabs.find(tab => tab.id === active);
-      el.dataset.activeView = active === PROXY_PREVIEW_ID
-        ? 'Proxy' : (activeTab?.options?._tab_label || '');
+      el.dataset.activeView = active === PROXY_PREVIEW_ID ? 'Proxy'
+        : active === ACCOUNTS_VIEW_ID ? 'Contas' : (activeTab?.options?._tab_label || '');
       const content = el.querySelector('.tab-content');
       patchChildren(content, active === PROXY_PREVIEW_ID
-        ? [proxyPreview()] : (activeTab ? [renderNode(activeTab)] : []));
+        ? [proxyPreview()] : active === ACCOUNTS_VIEW_ID
+        ? [accountsView()] : (activeTab ? [renderNode(activeTab)] : []));
     } else {
       renderContainerLayout(el, obj);
       const children = obj.children || [];
