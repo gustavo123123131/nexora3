@@ -24,7 +24,15 @@ async function post(path, body) {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     credentials: 'same-origin', body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) {
+    // Include FastAPI's safe error description instead of an opaque 403.
+    let detail = '';
+    try {
+      const response = await res.json();
+      if (typeof response?.detail === 'string') detail = response.detail;
+    } catch (_) {}
+    throw new Error(`HTTP ${res.status}${detail ? ': ' + detail : ''}`);
+  }
   return res.json();
 }
 async function send(id, event, value = null) {
