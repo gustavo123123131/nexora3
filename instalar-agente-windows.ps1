@@ -46,6 +46,16 @@ try {
     New-Item -ItemType Directory -Path $AgentDir -Force | Out-Null
     # Nao apaga perfis nem configuracoes locais de execucoes anteriores.
     Copy-Item -Path (Join-Path $Source "*") -Destination $AgentDir -Recurse -Force
+    # Na proxima vez, basta executar o CMD abaixo: sem download ou pip.
+    $ResumeFile = Join-Path $AgentDir "iniciar-agente-local.cmd"
+    $resume = @(
+        '@echo off',
+        'cd /d "%~dp0"',
+        '".venv\Scripts\python.exe" agente_windows.py',
+        'pause'
+    ) -join [Environment]::NewLine
+    [IO.File]::WriteAllText($ResumeFile, $resume, [Text.Encoding]::ASCII)
+    Write-Host "Proxima execucao: $ResumeFile"
     $VenvDir = Join-Path $AgentDir ".venv"
     $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
     if (-not (Test-Path $VenvPython)) {
