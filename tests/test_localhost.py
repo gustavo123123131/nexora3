@@ -79,6 +79,7 @@ def test_localhost_ui_and_events():
 
 
 def test_codespaces_private_forwarded_origin(monkeypatch):
+    """The GitHub-hosted page must not launch cloud Playwright."""
     monkeypatch.setenv('CODESPACES', 'true')
     monkeypatch.setenv('CODESPACE_NAME', 'exemplo-seguro-123')
     monkeypatch.setenv('GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN', 'app.github.dev')
@@ -86,25 +87,56 @@ def test_codespaces_private_forwarded_origin(monkeypatch):
     with TestClient(servidor.app, base_url=url) as client:
         assert client.get('/').status_code == 200
         data = client.get('/api/state').json()
-        csrf_headers = {'X-LixoCPA-CSRF': data['csrf_token']}
+        headers = {'X-LixoCPA-CSRF': data['csrf_token']}
         payload = {'id': 'not-found', 'event': 'click'}
-
-        # Codespaces can rewrite browser Origin and strip/change Referer.
-        # The token permits actions only when read through our own UI origin.
-        for proxy_headers in [
-            {'Origin': url},
-            {'Origin': 'http://localhost:8765'},
-            {'Origin': 'http://localhost:8765', 'Referer': ''},
-            {'Origin': 'https://studious-sniffle-8765.app.github.dev'},
-            {},
-        ]:
-            assert client.post('/api/event', json=payload,
-                               headers={**proxy_headers, **csrf_headers}).status_code == 404
-            assert client.post('/api/event', json=payload,
-                               headers=proxy_headers).status_code == 403
-
-        assert client.post('/api/event', json=payload,
-                           headers={'Origin': 'https://attacker.example'}).status_code == 403
+        assert client.post('/api/event', json=payload, headers=headers).status_code == 403
+        assert client.post('/api/event', json=payload).status_code == 403
         assert client.get('/', headers={'Host': 'other-8765.app.github.dev'}).status_code == 403
-        assert client.get('/', headers={'Host': 'exemplo-seguro-8765.app.github.dev'}).status_code == 403
-        assert client.get('/', headers={'Host': 'exemplo-seguro-123-8765.preview.app.github.dev'}).status_code == 200
+
+
+def test_windows_agent_paired_cloud_origin(monkeypatch):
+    """Authorized HTTPS panel may command the Windows-only localhost agent."""
+    origin = 'https://my-private-codespace-8765.app.github.dev'
+    monkeypatch.delenv('CODESPACES', raising=False)
+    monkeypatch.setenv('LIXOCPA_AGENT_ORIGIN', origin)
+    monkeypatch.setenv('LIXOCPA_AGENT_KEY', 'test-only-randomly-generated-value')
+    with TestClient(servidor.app, base_url='http://127.0.0.1:8767') as client:
+        preflight = client.options('/api/event', headers={
+            'Origin': origin,
+            'Access-Control-Request-Method': 'POST',
+            'Access-Control-Request-Headers': 'x-lixocpa-agent-key,x-lixocpa-csrf',
+            'Access-Control-Request-Private-Network': 'true',
+        })
+        assert preflight.status_code == 204
+        assert preflight.headers['access-control-allow-origin'] == origin
+        assert preflight.headers['access-control-allow-private-network'] == 'true'
+
+        assert client.get('/api/state', headers={'Origin': origin}).status_code == 403
+        wrong = client.get('/api/state', headers={
+            'Origin': origin, 'X-LixoCPA-Agent-Key': 'incorrect'
+        })
+        assert wrong.status_code == 403
+        assert wrong.headers['access-control-allow-origin'] == origin
+
+        allowed = {'Origin': origin, 'X-LixoCPA-Agent-Key': 'test-only-randomly-generated-value'}
+        response = client.get('/api/state', headers=allowed)
+        assert response.status_code == 200
+        assert response.headers['access-control-allow-origin'] == origin
+        csrf = response.json()['csrf_token']
+        payload = {'id': 'not-found', 'event': 'click'}
+        assert client.post('/api/event', headers=allowed, json=payload).status_code == 403
+        assert client.post('/api/event', headers={**allowed, 'X-LixoCPA-CSRF': csrf},
+                           json=payload).status_code == 404
+
+        wrong_origin = {'Origin': 'https://evil-8765.app.github.dev',
+                        'X-LixoCPA-Agent-Key': 'test-only-randomly-generated-value'}
+        rejected = client.get('/api/state', headers=wrong_origin)
+        assert rejected.status_code == 403
+        assert 'access-control-allow-origin' not in rejected.headers
+        assert client.options('/api/state', headers=wrong_origin).status_code == 403
+
+        # Browser opened directly to local fallback does not need the pairing
+        # key, but still must send CSRF on POST.
+        assert client.get('/api/state').status_code == 200
+        assert client.post('/api/event', headers={'X-LixoCPA-CSRF': csrf},
+                           json=payload).status_code == 404
