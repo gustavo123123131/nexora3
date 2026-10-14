@@ -31,6 +31,15 @@ jobs:
           sudo apt-get install -y xvfb libgtk-3-0 libnss3 libasound2t64 libxss1 libgbm1
       - name: Validar aplicativo Electron e isolamento real de cookies
         run: xvfb-run -a -s "-screen 0 1440x900x24" npm run smoke
+      - name: Testar scripts de inicialização do Codespaces
+        run: |
+          bash -n scripts/setup-codespaces.sh
+          bash -n scripts/start-codespaces.sh
+          bash -n scripts/status-codespaces.sh
+          sudo apt-get install -y x11vnc novnc websockify openbox xdotool
+          CODESPACES=true bash scripts/start-codespaces.sh
+          curl --fail --silent http://127.0.0.1:6081/vnc.html > /dev/null
+          DISPLAY=:98 xdotool search --name 'Órbita Workspace'
       - name: Disponibilizar capturas do aplicativo
         if: always()
         uses: actions/upload-artifact@v4
