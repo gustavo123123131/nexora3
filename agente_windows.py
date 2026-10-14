@@ -61,7 +61,10 @@ def main():
     print(f"Endereco de emergencia: http://127.0.0.1:{args.porta}")
     print("O Chromium abrira normalmente na area de trabalho do Windows.")
     print("=" * 64 + "\n", flush=True)
-    uvicorn.run(app, host="127.0.0.1", port=args.porta, log_level="info")
+    # HTTP polling happens several times per second. Show only warnings/errors,
+    # not a line for each GET/POST. Pairing details above stay visible.
+    uvicorn.run(app, host="127.0.0.1", port=args.porta,
+                log_level="warning", access_log=False)
 
 
 if __name__ == "__main__":
