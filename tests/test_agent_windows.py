@@ -11,8 +11,8 @@ def test_agente_windows_inicia_com_porta(monkeypatch, capsys):
     fake_uvicorn = ModuleType("uvicorn")
     called = {}
 
-    def fake_run(app, host, port, log_level):
-        called.update(app=app, host=host, port=port, log_level=log_level)
+    def fake_run(app, host, port, log_level, access_log):
+        called.update(app=app, host=host, port=port, log_level=log_level, access_log=access_log)
 
     fake_uvicorn.run = fake_run
     monkeypatch.setitem(sys.modules, "servidor", fake_server)
@@ -29,3 +29,5 @@ def test_agente_windows_inicia_com_porta(monkeypatch, capsys):
     assert called["app"] is fake_server.app
     assert called["host"] == "127.0.0.1"
     assert called["port"] == 8767
+    assert called["log_level"] == "warning"
+    assert called["access_log"] is False
