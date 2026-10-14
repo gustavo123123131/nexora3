@@ -170,66 +170,57 @@ def _viewport_from_settings(idx: Optional[int]) -> Optional[dict]:
 
 
 def make_config(mode: str, idx: Optional[int] = None) -> ModeConfig:
-    mode = mode.lower().strip()
+    """Build a Chromium browser profile for the selected environment.
+
+    Mobile modes are *browser emulations*. A native Android app and iOS
+    Safari are not available in this Playwright Chromium implementation.
+    """
+    from Settings.device_modes import profile_mode
+
+    mode = profile_mode(mode, idx or 1)
 
     if mode == "desktop":
         ua = pick_desktop_ua()
         v, r = pick_desktop_gpu()
         cfg = ModeConfig(
-            "desktop",
-            ua,
-            {"width": 1366, "height": 768},
-            1,
-            False,
-            False,  # desktop sem touch
-            v,
-            r,
-            {}
+            "desktop", ua, {"width": 1366, "height": 768}, 1,
+            False, False, v, r, {},
         )
 
-    elif mode == "celular":
-        ua = pick_mobile_ua()
-
-        if "Android" in ua:
-            android_ua, v, r = (ua, *pick_android_profile()[1:])
-        else:
-            v, r = ("Apple", "Apple A15/A16 GPU")
-
-        cfg = ModeConfig(
-            "celular",
-            ua,
-            {"width": 390, "height": 844},
-            3,
-            True,
-            True,
-            v,
-            r,
-            {}
-        )
-
-    elif mode == "app":
+    elif mode == "android":
         ua, v, r = pick_android_profile()
-        app_ua = _to_webview_ua(ua)
-
+        if "Android" not in ua:
+            raise ValueError("Não há User-Agent Android válido nas configurações.")
         cfg = ModeConfig(
-            "app",
-            app_ua,
-            {"width": 412, "height": 915},
-            2.75,
-            True,
-            True,
-            v,
-            r,
-            {"X-Requested-With": "com.android.webview"}
+            "android", ua, {"width": 412, "height": 915}, 2.75,
+            True, True, v, r, {},
+        )
+
+    elif mode == "iphone":
+        # Never accept Android/iPad in the iPhone-only browser configuration.
+        from .utils import load_json, MOBILE_UA_PATH
+        items = load_json(MOBILE_UA_PATH).get("userAgents", [])
+        iphones = [ua for ua in items if isinstance(ua, str)
+                   and "iPhone" in ua and "Android" not in ua]
+        ua = random.choice(iphones) if iphones else (
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+            "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 "
+            "Mobile/15E148 Safari/604.1"
+        )
+        cfg = ModeConfig(
+            "iphone", ua, {"width": 390, "height": 844}, 3,
+            True, True, "Apple", "Apple GPU", {},
         )
 
     else:
-        raise ValueError("Modo inválido")
+        raise ValueError("Modo de dispositivo inválido")
 
-    # ✅ override do viewport por idx (se tiver salvo)
-    vp = _viewport_from_settings(idx)
-    if isinstance(vp, dict):
-        cfg.viewport = vp
+    # Keep the original desktop window-size settings compatible.
+    # New mobile profiles use their own viewport to avoid mixing modes.
+    if mode == "desktop":
+        vp = _viewport_from_settings(idx)
+        if isinstance(vp, dict):
+            cfg.viewport = vp
 
     return cfg
 
