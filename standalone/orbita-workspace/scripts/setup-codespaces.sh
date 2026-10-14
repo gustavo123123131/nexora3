@@ -15,5 +15,11 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
   libxdamage1 libxcomposite1 libxfixes3 libx11-xcb1 \
   fonts-dejavu-core ca-certificates openssl
 npm install --no-audit --no-fund
+# O Chromium exige sandbox SUID corretamente configurado no Linux.
+# Não usar --no-sandbox para páginas de terceiros.
+if [[ -f node_modules/electron/dist/chrome-sandbox ]]; then
+  sudo chown root:root node_modules/electron/dist/chrome-sandbox
+  sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+fi
 npm run build
 echo "[Órbita] Preparação concluída no Codespaces."
