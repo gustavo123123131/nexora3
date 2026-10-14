@@ -6,6 +6,7 @@ Original main.py and Settings modules are intentionally not modified.
 import argparse
 from contextlib import asynccontextmanager
 import logging
+import os
 import uuid
 import sys
 import threading
@@ -58,15 +59,35 @@ app = FastAPI(title='Lixo CPA - localhost', docs_url=None, redoc_url=None, opena
 app.mount('/static', StaticFiles(directory=ROOT_DIR / 'webui' / 'static'), name='static')
 
 
+def _codespaces_hosts():
+    """Only permit the exact forwarded address of this private Codespace."""
+    if os.environ.get('CODESPACES') != 'true':
+        return set()
+    name = os.environ.get('CODESPACE_NAME', '').lower().strip()
+    domain = os.environ.get('GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN', 'app.github.dev').lower().strip('.')
+    if not name or not domain:
+        return set()
+    base = f'{name}-8765'
+    return {f'{base}.{domain}', f'{base}.preview.{domain}'}
+
+
 @app.middleware('http')
 async def only_loopback(request: Request, call_next):
-    """Prevent drive-by origins or DNS rebinding from invoking automation."""
-    host = request.headers.get('host', '').split(':', 1)[0].lower()
-    if host not in ('localhost', '127.0.0.1', '[::1]', 'testserver'):
-        return JSONResponse({'detail': 'Acesso apenas via localhost.'}, status_code=403)
+    """Keep local access restricted; Codespaces must use its exact private URL."""
+    host = (request.url.hostname or '').lower()
+    local = host in ('localhost', '127.0.0.1', '::1', 'testserver')
+    cloud = host in _codespaces_hosts()
+    if not local and not cloud:
+        return JSONResponse({'detail': 'Host não autorizado.'}, status_code=403)
     origin = request.headers.get('origin', '')
-    if origin and not any(origin == f'http://{h}:{request.url.port or 80}' for h in ('localhost', '127.0.0.1')):
-        return JSONResponse({'detail': 'Origem não autorizada.'}, status_code=403)
+    if origin:
+        if cloud:
+            valid_origins = {f'https://{host}'}
+        else:
+            port = request.url.port or 80
+            valid_origins = {f'http://{h}:{port}' for h in ('localhost', '127.0.0.1')}
+        if origin not in valid_origins:
+            return JSONResponse({'detail': 'Origem não autorizada.'}, status_code=403)
     response = await call_next(request)
     response.headers['Cache-Control'] = 'no-store'
     response.headers['X-Content-Type-Options'] = 'nosniff'
@@ -133,7 +154,10 @@ def main():
     parser.add_argument('--no-reload', action='store_true', help='Desliga reload automático de Python/CSS/JS')
     args = parser.parse_args()
     import uvicorn
-    kwargs = {'host': '127.0.0.1', 'port': args.port, 'log_level': 'info'}
+    # Codespaces forwards a private HTTPS URL to this container's port.
+    # The HTTP middleware still rejects other hosts/origins.
+    bind_host = '0.0.0.0' if os.environ.get('CODESPACES') == 'true' else '127.0.0.1'
+    kwargs = {'host': bind_host, 'port': args.port, 'log_level': 'info'}
     if not args.no_reload:
         # watchfiles reloads the server on original modules and web UI edits.
         kwargs.update(reload=True, reload_dirs=[str(ROOT_DIR)], reload_includes=['*.py', '*.js', '*.css', '*.html'])
