@@ -346,6 +346,7 @@ function updateOptions(el, obj) {
     const appearance = {
       'Iniciar (COM automação)': 'ui-action-start',
       'Iniciar (SEM automação)': 'ui-action-manual',
+      'Abrir Conta': 'ui-action-start',
       'Reabrir guias': 'ui-action-reopen',
       'PARAR': 'ui-action-stop',
     };
