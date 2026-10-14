@@ -1,0 +1,24 @@
+{
+  "name": "Lixo CPA - navegador (sem instalar no computador)",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.11-bookworm",
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+  "postStartCommand": "bash .devcontainer/start.sh",
+  "forwardPorts": [8765, 6080],
+  "portsAttributes": {
+    "8765": {
+      "label": "Lixo CPA - Painel Web",
+      "onAutoForward": "openBrowser",
+      "protocol": "http"
+    },
+    "6080": {
+      "label": "Chromium remoto (opcional)",
+      "onAutoForward": "silent",
+      "protocol": "http"
+    }
+  },
+  "customizations": {
+    "codespaces": {
+      "openFiles": ["README.md"]
+    }
+  }
+}
