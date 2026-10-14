@@ -65,8 +65,12 @@ if ! curl -fsS --max-time 2 http://127.0.0.1:6081/vnc.html >/dev/null; then
   echo "[Órbita] noVNC indisponível; veja $STATE_DIR/novnc.log" >&2
   exit 1
 fi
-if ! running electron; then
-  echo "[Órbita] Electron não iniciou; veja $STATE_DIR/electron.log" >&2
+for _ in $(seq 1 60); do
+  if xdotool search --name 'Órbita Workspace' >/dev/null 2>&1; then break; fi
+  sleep .2
+done
+if ! running electron || ! xdotool search --name 'Órbita Workspace' >/dev/null 2>&1; then
+  echo "[Órbita] A janela Electron não apareceu; veja $STATE_DIR/electron.log" >&2
   exit 1
 fi
 cat <<'EOF'
