@@ -12,6 +12,11 @@ export DISPLAY=:99
 if ! pgrep -f 'Xvfb :99 ' >/dev/null 2>&1; then
   nohup Xvfb :99 -screen 0 1600x900x24 -nolisten tcp > /tmp/lixocpa-xvfb.log 2>&1 < /dev/null &
 fi
+# O servidor X pode levar alguns instantes para criar o socket.
+for _ in $(seq 1 30); do
+  [[ -S /tmp/.X11-unix/X99 ]] && break
+  sleep 0.2
+done
 
 # VNC permanece atrás do proxy PRIVADO do Codespaces; não configure portas públicas.
 if ! pgrep -f 'x11vnc -display :99 ' >/dev/null 2>&1; then
