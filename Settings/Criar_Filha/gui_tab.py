@@ -1950,10 +1950,11 @@ class FilhaTab(ctk.CTkFrame):
         row1 = ctk.CTkFrame(left, fg_color="transparent")
         row1.pack(fill="x", padx=16, pady=(0, 12))
         row1.grid_columnconfigure((0, 1, 2), weight=1)
+        row1.grid_columnconfigure(0, weight=2)  # Dar espaço aos nomes de dispositivo.
 
         self.mode_var = ctk.StringVar()
         ctk.CTkLabel(row1, text="Modo").grid(row=0, column=0, sticky="w")
-        self.mode_combo = ctk.CTkOptionMenu(row1, variable=self.mode_var, values=list(MODE_LABELS.values()), height=36, corner_radius=12)
+        self.mode_combo = ctk.CTkOptionMenu(row1, variable=self.mode_var, values=list(MODE_LABELS.values()), width=250, height=36, corner_radius=12)
         self.mode_combo.grid(row=1, column=0, sticky="ew", pady=(6, 0), padx=(0, 10))
 
         self.count_var = ctk.StringVar(value="1")
