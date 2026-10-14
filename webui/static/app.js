@@ -340,6 +340,27 @@ function updateOptions(el, obj) {
     el.setAttribute('role', 'dialog');
     el.setAttribute('aria-modal', 'true');
   }
+  // Presentation-only roles; events, widget IDs and API behavior are unchanged.
+  if (obj.type === 'button') {
+    const label = String(o.text || '');
+    const appearance = {
+      'Iniciar (COM automação)': 'ui-action-start',
+      'Iniciar (SEM automação)': 'ui-action-manual',
+      'Reabrir guias': 'ui-action-reopen',
+      'PARAR': 'ui-action-stop',
+    };
+    for (const token of ['ui-action-start', 'ui-action-manual', 'ui-action-reopen', 'ui-action-stop', 'ui-action-utility']) {
+      el.classList.toggle(token, appearance[label] === token ||
+        (token === 'ui-action-utility' && !appearance[label]));
+    }
+  }
+  if (obj.type === 'label') {
+    const label = String(o.text || '');
+    el.classList.toggle('ui-section-title',
+      ['Criar Mãe', 'Criar Filha', 'Configurações', 'Ações', 'Logs ao vivo'].includes(label));
+    el.classList.toggle('ui-status',
+      /^(Pronto\.?|Executando\.{0,3}|Parando\.{0,3}|Reabrindo guias\.{0,3}|Configurações salvas\.?|Proxy Ligado|Proxy Desativado)$/.test(label));
+  }
 }
 function patchChildren(host, newChildren) {
   const old = [...host.children];
@@ -380,6 +401,7 @@ function renderNode(obj) {
       });
       patchChildren(bar, buttons);
       const activeTab = tabs.find(tab => tab.id === active);
+      el.dataset.activeView = activeTab?.options?._tab_label || '';
       const content = el.querySelector('.tab-content');
       patchChildren(content, activeTab ? [renderNode(activeTab)] : []);
     } else {
