@@ -2,16 +2,52 @@
 
 Este repositório contém os módulos originais em Python com uma camada web que reproduz os controles CustomTkinter no navegador. A interface e a lógica permanecem nos módulos originais; a camada `webui/` apresenta os controles pela API local FastAPI.
 
-## Abrir no navegador **sem baixar arquivos** (GitHub Codespaces)
+## Painel no Codespaces + Chromium na area de trabalho do Windows
 
-1. Entre na sua conta do GitHub e abra **[Criar Codespace do nexora3](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=1419118374)**. Alternativamente, na página deste repositório, clique em **Code → Codespaces → Create codespace on main**.
-2. O Codespaces instala automaticamente Python, as dependências e o Chromium no servidor remoto, **não no seu PC**, e inicia a aplicação.
-3. Abra a aba **PORTS / PORTAS** no editor web. Na porta **8765 — Lixo CPA - Painel Web**, clique em **Open in Browser / Abrir no navegador**. Também pode aparecer uma notificação automática para abrir o site.
-4. Para visualizar e interagir com as janelas do Chromium que a automação abre no servidor, use a porta privada **6080** e acrescente `/vnc.html?autoconnect=true` ao endereço HTTPS dela (opcional).
+**Objetivo:** acessar a interface pelo endereco HTTPS do GitHub Codespaces (porta 8765)
+e abrir/controlar as janelas do Chromium **no PC Windows**, nao no servidor remoto.
 
-**Importante:** o endereço gerado tem o formato `https://NOME-DO-CODESPACE-8765.app.github.dev`, **não** `localhost` do seu PC. Os processos e as automações rodam no Codespace. Mantenha ambas as portas com visibilidade **Private / Privada**, porque o painel não tem login próprio. O Codespace pode parar quando fica inativo e a utilização pode consumir cotas ou gerar custos do GitHub. Os perfis/sessões antigos (que não foram publicados por segurança) não são automaticamente migrados para a nuvem. Integrações externas e automações completas precisam ser verificadas no ambiente remoto.
+Como navegadores comuns nao podem iniciar programas Windows sozinhos, e **obrigatoria
+uma pequena instalacao local inicial**. O instalador baixa o codigo-fonte original
+e o Playwright/Chromium no computador; o repositorio nao recebe cookies, perfis ou
+informacoes do navegador do PC.
 
-O modo localhost tradicional continua disponível abaixo.
+1. Abra [GitHub Codespaces](https://github.com/codespaces). Se necessario, crie o
+   Codespace do `nexora3`. Na aba **PORTS**, use o link HTTPS privado da
+   **porta 8765** e mantenha essa aba aberta. O painel mostrara **Conectar Chromium do Windows**.
+2. No **Windows**, baixe somente o pequeno arquivo
+   [`iniciar-agente-windows.cmd`](iniciar-agente-windows.cmd)
+   (no GitHub, clique em **Download raw file**) e execute-o. Ele
+   baixa a copia necessaria do codigo do repositorio e instala o Chromium
+   automaticamente. Precisa ter Python 3.11+ instalado; veja [python.org](https://www.python.org/downloads/windows/).
+   Alternativamente, execute diretamente `instalar-agente-windows.ps1` no PowerShell.
+3. Quando o agente perguntar, cole a URL **HTTPS da porta 8765** da aba **PORTS**
+   (por exemplo `https://exemplo-8765.app.github.dev`).
+   O terminal do Windows exibira um **codigo de pareamento temporario**.
+4. Copie esse codigo no painel GitHub e clique **Conectar ao meu Windows**.
+   Quando pressionar **Iniciar** na interface original, o Playwright abre janelas
+   do Chromium na area de trabalho do Windows. Deixe a janela do agente aberta.
+5. Depois da instalacao inicial, para iniciar novamente o agente sem reinstalar,
+   use `%LOCALAPPDATA%\LixoCPA-Agent\iniciar-agente-local.cmd`.
+   O agente pedira novamente o link atual da porta 8765.
+
+**Seguranca:** o agente escuta exclusivamente em `127.0.0.1:8767`. Somente a
+origem HTTPS do Codespace informada na inicializacao recebe CORS; comandos remotos
+precisam de um codigo forte de pareamento e de token anti-CSRF. Nunca torne
+a porta 8767 publica nem exponha o codigo de pareamento. Mantenha a
+porta 8765 do Codespaces configurada como **Private**. O site remoto nao
+executa automacoes no Codespaces quando o modo Windows esta ativo.
+
+**Plano alternativo:** navegadores podem exigir permissao para um site HTTPS
+se conectar ao `127.0.0.1`. Se a conexao do painel hospedado no Codespaces for
+bloqueada pelo navegador, abra diretamente
+**http://127.0.0.1:8767** no proprio PC (com o agente aberto).
+Esta alternativa usa a **mesma interface e mesma logica original**, hospedada
+localmente, e abre as janelas na area de trabalho.
+
+O Codespaces pode consumir cotas ou custos e ser suspenso quando inativo. O
+agente local nao requer o Codespaces ativo quando voce usa o endereco local
+alternativo.
 
 ## Executar no Windows
 
