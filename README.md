@@ -2,6 +2,22 @@
 
 Este repositório contém os módulos originais em Python com uma camada web que reproduz os controles CustomTkinter no navegador. A interface e a lógica permanecem nos módulos originais; a camada `webui/` apresenta os controles pela API local FastAPI.
 
+## Identidade visual Nexora
+
+O painel web (localhost e GitHub Codespaces) usa a identidade **NEXORA —
+Browser Workspace**: grafite azulado, acento cobre, navegação lateral,
+tipografia de interface desktop e cartões compactos para as configurações,
+ações e logs. As abas **Criar Mãe** e **Criar Filha**, os controles de perfis,
+modais, notificações e a tela de pareamento Windows utilizam o mesmo tema.
+Em janelas estreitas, a navegação volta para o topo para manter os controles
+acessíveis.
+
+A mudança é **somente de apresentação**: arquivos de servidor, perfis,
+proxies, persistência, scripts de automação e funções dos botões continuam
+iguais. As classes visuais em `webui/static/app.js` classificam apenas os
+botões/títulos existentes; não alteram callbacks ou comandos de rede.
+As capturas de verificação visual são geradas pelos testes no GitHub Actions.
+
 ## Abrir ou recuperar o Codespaces (um comando)
 
 Depois de abrir o [seu Codespaces](https://github.com/codespaces), no
