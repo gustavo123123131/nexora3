@@ -1,0 +1,79 @@
+# Lixo CPA - instalador do agente local de Windows.
+# Baixa somente o codigo publico do GitHub e instala Chromium no PC.
+param([string]$Painel = "")
+$ErrorActionPreference = "Stop"
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+Write-Host ""
+Write-Host "=== Lixo CPA: Chromium no Windows ===" -ForegroundColor Cyan
+Write-Host "O painel fica no Codespaces; Chromium e perfis ficam neste PC."
+Write-Host "Instalacao local necessaria (Python e Chromium)."
+Write-Host ""
+if (-not $Painel) {
+    $Painel = Read-Host "Cole o link HTTPS da porta 8765 (Codespaces)"
+}
+if ($Painel -notmatch '^https://[a-zA-Z0-9-]+-8765(\.preview)?\.app\.github\.dev/?$') {
+    throw "Link invalido. Copie o link HTTPS da porta 8765 do GitHub Codespaces."
+}
+$Painel = $Painel.TrimEnd('/')
+
+$PythonLauncher = $null
+if (Get-Command py -ErrorAction SilentlyContinue) {
+    $PythonLauncher = "py"
+} elseif (Get-Command python -ErrorAction SilentlyContinue) {
+    $PythonLauncher = "python"
+} else {
+    Write-Host "Python nao foi encontrado neste Windows." -ForegroundColor Red
+    Write-Host "Instale Python 3.11 ou mais recente de https://www.python.org/downloads/windows/"
+    Write-Host "Marque 'Add Python to PATH'. Depois execute este instalador novamente."
+    exit 1
+}
+
+$AgentDir = Join-Path $env:LOCALAPPDATA "LixoCPA-Agent"
+$Scratch = Join-Path $env:TEMP ("lixocpa-agent-" + [Guid]::NewGuid().ToString("N"))
+$Archive = Join-Path $Scratch "main.zip"
+$Expanded = Join-Path $Scratch "repo"
+New-Item -ItemType Directory -Path $Scratch -Force | Out-Null
+try {
+    Write-Host "Baixando o codigo do seu repositorio GitHub..."
+    Invoke-WebRequest -Uri "https://github.com/gustavo123123131/nexora3/archive/refs/heads/main.zip" -OutFile $Archive -UseBasicParsing
+    Expand-Archive -LiteralPath $Archive -DestinationPath $Expanded -Force
+    $Source = Join-Path $Expanded "nexora3-main"
+    if (-not (Test-Path (Join-Path $Source "agente_windows.py"))) {
+        throw "O ZIP do repositorio nao contem o agente Windows."
+    }
+
+    New-Item -ItemType Directory -Path $AgentDir -Force | Out-Null
+    # Nao apaga perfis nem configuracoes locais de execucoes anteriores.
+    Copy-Item -Path (Join-Path $Source "*") -Destination $AgentDir -Recurse -Force
+    $VenvDir = Join-Path $AgentDir ".venv"
+    $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
+    if (-not (Test-Path $VenvPython)) {
+        Write-Host "Criando o ambiente virtual de Python..."
+        if ($PythonLauncher -eq "py") {
+            & py -3 -m venv $VenvDir
+        } else {
+            & python -m venv $VenvDir
+        }
+        if ($LASTEXITCODE -ne 0) { throw "Falha ao criar ambiente virtual Python." }
+    }
+    Push-Location $AgentDir
+    try {
+        Write-Host "Instalando dependencias do Lixo CPA..."
+        & $VenvPython -m pip install --disable-pip-version-check -r requirements-web.txt
+        if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar dependencias Python." }
+        Write-Host "Instalando navegador Chromium no computador..."
+        & $VenvPython -m playwright install chromium
+        if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar Chromium." }
+        Write-Host ""
+        Write-Host "Iniciando agente. Nao feche esta janela enquanto usar o Lixo CPA." -ForegroundColor Green
+        & $VenvPython agente_windows.py --painel $Painel
+        if ($LASTEXITCODE -ne 0) { throw "O agente encerrou com erro." }
+    } finally {
+        Pop-Location
+    }
+} finally {
+    if (Test-Path $Scratch) {
+        Remove-Item -Path $Scratch -Force -Recurse -ErrorAction SilentlyContinue
+    }
+}
