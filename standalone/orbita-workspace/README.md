@@ -1,5 +1,46 @@
 # Órbita Workspace — Fase 1
 
+## Usar somente pelo GitHub — sem baixar nem instalar no PC
+
+Esta branch contém uma configuração **GitHub Codespaces** própria. Ela
+executa **Electron e os perfis dentro da máquina remota** e permite operar
+a tela pelo navegador usando noVNC. O Windows não precisa de instalador.
+
+1. Abra a [branch fase1-orbita-workspace](https://github.com/gustavo123123131/nexora3/tree/fase1-orbita-workspace) no GitHub.
+2. Selecione **Code → Codespaces → Create codespace on fase1-orbita-workspace**.
+   Confira a branch antes de criar. A configuração `.devcontainer/devcontainer.json`
+   desta branch instala automaticamente as dependências no Codespaces,
+   compila o app e inicia o display remoto.
+3. Na aba **PORTS**, localize **6081 · Órbita Workspace**.
+   **Mantenha a visibilidade em Private**. Abra a URL encaminhada pelo GitHub,
+   adicionando `/vnc.html?autoconnect=true` se necessário.
+4. No terminal do Codespaces, execute
+   `bash standalone/orbita-workspace/scripts/status-codespaces.sh`.
+   Copie a **senha VNC** mostrada para o prompt da tela remota.
+5. Use o menu Contas e Perfis no desktop remoto. Janelas de perfis também
+   aparecerão nessa tela; nada será instalado no computador local.
+
+Se o Codespace reiniciar, ele tenta recuperar automaticamente a aplicação.
+Para reiniciar manualmente, execute:
+
+    bash standalone/orbita-workspace/scripts/start-codespaces.sh
+
+Para diagnóstico:
+
+    bash standalone/orbita-workspace/scripts/status-codespaces.sh
+    tail -n 60 ~/.local/share/orbita-codespaces/electron.log
+
+**Limites e segurança:** o Codespaces não é hospedagem permanente; ele pode
+parar por inatividade e terá custos/cotas conforme o plano GitHub. Enquanto
+ele estiver desligado, o painel fica inacessível. Se o Codespace for apagado,
+o banco e as sessões armazenadas nele poderão ser perdidos. Faça backup
+dos seus próprios dados com cuidado, sem colocar cookies ou senhas no Git.
+Não torne a porta 6081 pública. A senha VNC é criada no Codespaces,
+não fica no repositório e não é enviada ao aplicativo Electron.
+O desktop remoto apenas transmite a interface; as sessões e cookies ficam
+na máquina remota, não no computador local.
+
+
 Aplicativo **independente** de gerenciamento **local** de contas e perfis de navegador. Código novo, sem marcas, assets, endpoints ou módulos do ProxyBet. A implementação é deliberadamente limitada à Fase 1.
 
 ## Estrutura
@@ -15,7 +56,7 @@ Aplicativo **independente** de gerenciamento **local** de contas e perfis de nav
 - src/styles.css — tema próprio
 - tests/ — testes de persistência, validação, isolamento e relacionamentos
 
-## Pré-requisitos e instalação
+## Alternativa opcional: executar localmente
 
 **Node.js 22 LTS ou superior** (com npm) em Windows, macOS ou Linux.
 
