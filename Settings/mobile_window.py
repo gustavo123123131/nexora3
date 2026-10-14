@@ -63,7 +63,7 @@ def work_area() -> tuple[int, int, int, int]:
     return (0, 0, 1366, 768)
 
 
-def mobile_window(viewport: dict, area: Optional[tuple[int, int, int, int]] = None) -> MobileWindow:
+def mobile_window(viewport: dict, area: Optional[tuple[int, int, int, int]] = None, idx: int = 1) -> MobileWindow:
     """Fit a physical *view* into desktop work area without altering CSS viewport.
 
     Browser chrome/decorations occupy space above the page. Preserve the whole
@@ -83,24 +83,26 @@ def mobile_window(viewport: dict, area: Optional[tuple[int, int, int, int]] = No
     # requests the exact content dimensions independently of that minimum.
     outer_w = content_w + 26
     outer_h = content_h + 104
-    left = x + max(0, (screen_w - outer_w) // 2)
-    top = y + max(0, (screen_h - outer_h) // 2)
+    # Cascade multi-login windows slightly instead of stacking perfectly.
+    shift = max(0, (int(idx) - 1) % 8) * 24
+    left = x + min(max(0, (screen_w - outer_w) // 2) + shift, max(0, screen_w - outer_w))
+    top = y + min(max(0, (screen_h - outer_h) // 2) + shift, max(0, screen_h - outer_h))
     return MobileWindow(
         css_w, css_h, content_w, content_h, scale,
         outer_w, outer_h, left, top,
     )
 
 
-def mobile_window_args(viewport: dict, area=None) -> list[str]:
+def mobile_window_args(viewport: dict, area=None, idx: int = 1) -> list[str]:
     """Chromium *window-only* flags; no zoom/deviceScaleFactor overrides."""
-    p = mobile_window(viewport, area)
+    p = mobile_window(viewport, area, idx)
     return [
         f"--window-position={p.left},{p.top}",
         f"--window-size={p.outer_width},{p.outer_height}",
     ]
 
 
-def fit_mobile_content(context, page, viewport: dict, dpr: float, area=None) -> MobileWindow:
+def fit_mobile_content(context, page, viewport: dict, dpr: float, area=None, idx: int = 1):
     """Best-effort native window sizing using the public Chrome DevTools API.
 
     The viewport stays at the selected logical Android/iPhone dimensions.
@@ -108,7 +110,7 @@ def fit_mobile_content(context, page, viewport: dict, dpr: float, area=None) -> 
     emulated device DPR. Unsupported CDP versions leave the original
     Playwright mobile context working rather than failing to launch.
     """
-    plan = mobile_window(viewport, area)
+    plan = mobile_window(viewport, area, idx)
     session = context.new_cdp_session(page)
     try:
         target = session.send("Browser.getWindowForTarget")
@@ -141,6 +143,10 @@ def fit_mobile_content(context, page, viewport: dict, dpr: float, area=None) -> 
                 "mobile": True,
                 "scale": plan.scale,
             })
-    finally:
+    except Exception:
+        # Keep Playwright's emulated viewport even when native window sizing fails.
         session.detach()
-    return plan
+        raise
+    # Retain the CDP session for as long as this page is open. Detaching a
+    # session can clear its compositor scale, leaving a half-rendered view.
+    return plan, session
