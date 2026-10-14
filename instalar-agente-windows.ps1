@@ -67,14 +67,42 @@ try {
         }
         if ($LASTEXITCODE -ne 0) { throw "Falha ao criar ambiente virtual Python." }
     }
+    # Mostrar somente etapas e eventuais erros. Detalhes ficam em arquivo local.
+    $LogDir = Join-Path $AgentDir "logs"
+    New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
+    $InstallLog = Join-Path $LogDir "instalacao.log"
+
+    function Invoke-QuietInstall {
+        param([string]$Label, [string[]]$CommandArgs)
+
+        Write-Host $Label
+        $StandardOut = Join-Path $LogDir "instalacao.stdout.tmp"
+        $StandardErr = Join-Path $LogDir "instalacao.stderr.tmp"
+        Add-Content -LiteralPath $InstallLog -Value ("--- " + (Get-Date -Format s) + ": " + $Label)
+        $Process = Start-Process -FilePath $VenvPython -ArgumentList $CommandArgs `
+            -WorkingDirectory $AgentDir -Wait -PassThru -NoNewWindow `
+            -RedirectStandardOutput $StandardOut -RedirectStandardError $StandardErr
+        foreach ($TempLog in @($StandardOut, $StandardErr)) {
+            if (Test-Path -LiteralPath $TempLog) {
+                Get-Content -LiteralPath $TempLog | Add-Content -LiteralPath $InstallLog
+                Remove-Item -LiteralPath $TempLog -Force
+            }
+        }
+        if ($Process.ExitCode -ne 0) {
+            Write-Host "ERRO ao concluir: $Label" -ForegroundColor Red
+            Write-Host "Ultimas mensagens do diagnostico:" -ForegroundColor Yellow
+            Get-Content -LiteralPath $InstallLog -Tail 12
+            throw "Consulte o log completo: $InstallLog"
+        }
+        Write-Host "OK" -ForegroundColor Green
+    }
+
     Push-Location $AgentDir
     try {
-        Write-Host "Instalando dependencias do Lixo CPA..."
-        & $VenvPython -m pip install --disable-pip-version-check -r requirements-web.txt
-        if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar dependencias Python." }
-        Write-Host "Instalando navegador Chromium no computador..."
-        & $VenvPython -m playwright install chromium
-        if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar Chromium." }
+        Invoke-QuietInstall -Label "Verificando dependencias Python..." `
+            -CommandArgs @("-m", "pip", "install", "--quiet", "--disable-pip-version-check", "-r", "requirements-web.txt")
+        Invoke-QuietInstall -Label "Verificando Chromium..." `
+            -CommandArgs @("-m", "playwright", "install", "chromium")
         Write-Host ""
         Write-Host "Iniciando agente. Nao feche esta janela enquanto usar o Lixo CPA." -ForegroundColor Green
         & $VenvPython agente_windows.py --painel $Painel
