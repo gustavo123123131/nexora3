@@ -19,8 +19,21 @@ def test_localhost_ui_and_events():
         assert len(data['csrf_token']) > 32
         headers = {'X-LixoCPA-CSRF': data['csrf_token']}
         tabs = data['tree']['children'][0]['children']
-        assert [t['options']['_tab_label'] for t in tabs] == ['Criar Mãe', 'Criar Filha', 'Área Pix']
+        assert [t['options']['_tab_label'] for t in tabs] == ['Criar Mãe', 'Criar Filha']
         assert len(list(walk(data['tree']))) >= 150
+        # A aba Pix saiu, e os controles exclusivos devem estar ocultos.
+        for tab in tabs:
+            elements = list(walk(tab))
+            modes = [n for n in elements if n['type'] == 'option' and len(n['options'].get('values', [])) == 5]
+            assert modes
+            assert 'Mobile — Somente Android' in modes[0]['options']['values']
+            assert 'Aplicativo Android (indisponível)' in modes[0]['options']['values']
+            pix_widgets = [n for n in elements if n['options'].get('text') in ('AutoPIX', 'AutoChave', 'Iniciar saque')]
+            assert pix_widgets
+            # The controls can remain as hidden legacy callbacks, but not be visible.
+            for item in pix_widgets:
+                if item['options'].get('text') == 'Iniciar saque':
+                    assert item['hidden']
         assert client.get('/api/state', headers={'Host': 'attacker.example'}).status_code == 403
         assert client.post('/api/event', json={'id': '1', 'event': 'click'},
                            headers={'Origin': 'http://attacker.example'}).status_code == 403
