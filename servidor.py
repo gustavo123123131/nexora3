@@ -157,6 +157,12 @@ async def only_loopback(request: Request, call_next):
         _cors_agent_response(response, origin)
     return response
 
+@app.get('/api/health')
+async def health():
+    """Lightweight liveness check; does not initialize accounts or GUI."""
+    return {'service': 'lixocpa', 'status': 'ok', 'server_version': _SERVER_VERSION}
+
+
 @app.get('/')
 async def index():
     return FileResponse(ROOT_DIR / 'webui' / 'static' / 'index.html')
