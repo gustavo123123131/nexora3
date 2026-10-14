@@ -56,3 +56,20 @@ def test_localhost_ui_and_events():
                 break
             time.sleep(.025)
         assert not any(n['type']=='modal' for n in walk(client.get('/api/state').json()['tree']))
+
+
+def test_codespaces_private_forwarded_origin(monkeypatch):
+    monkeypatch.setenv('CODESPACES', 'true')
+    monkeypatch.setenv('CODESPACE_NAME', 'exemplo-seguro-123')
+    monkeypatch.setenv('GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN', 'app.github.dev')
+    url = 'https://exemplo-seguro-123-8765.app.github.dev'
+    with TestClient(servidor.app, base_url=url) as client:
+        assert client.get('/').status_code == 200
+        assert client.get('/api/state').status_code == 200
+        assert client.post('/api/event', json={'id': 'not-found', 'event': 'click'},
+                           headers={'Origin': url}).status_code == 404
+        assert client.post('/api/event', json={'id': 'not-found', 'event': 'click'},
+                           headers={'Origin': 'https://attacker.example'}).status_code == 403
+        assert client.get('/', headers={'Host': 'other-8765.app.github.dev'}).status_code == 403
+        assert client.get('/', headers={'Host': 'exemplo-seguro-8765.app.github.dev'}).status_code == 403
+        assert client.get('/', headers={'Host': 'exemplo-seguro-123-8765.preview.app.github.dev'}).status_code == 200
