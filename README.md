@@ -2,6 +2,36 @@
 
 Este repositório contém os módulos originais em Python com uma camada web que reproduz os controles CustomTkinter no navegador. A interface e a lógica permanecem nos módulos originais; a camada `webui/` apresenta os controles pela API local FastAPI.
 
+## Modos de dispositivo e Área Pix
+
+As abas **Criar Mãe** e **Criar Filha** permanecem; a aba **Área Pix** e os
+controles exclusivos de Pix/saque estão ocultos por enquanto. Os módulos
+compartilhados não foram apagados, para não interromper o multi-login.
+
+No seletor **Modo**, estão disponíveis:
+
+- **Mobile — Somente Android:** Chromium com viewport, toque e User-Agent Android.
+- **Mobile — Somente iPhone:** Chromium com viewport, toque e User-Agent iPhone.
+  É emulação de navegador móvel, **não Safari nativo no iOS**.
+- **Mobile — Android e iPhone (alternados por instância):** instâncias ímpares
+  usam Android e pares usam iPhone, com indicação no log. Essa ordem é
+  determinística; para usar apenas um sistema, selecione o modo correspondente.
+- **Aplicativo Android (indisponível):** a interface informa a limitação e não
+  inicia um navegador fingindo ser um app nativo.
+- **Computador:** Chromium desktop, com suporte ao caminho de perfis antigo.
+
+Os perfis Android e iPhone novos ficam em
+`Settings/Criar_Mae/__profiles/android|iphone/profile_N` (ou caminho
+equivalente em `Criar_Filha`), separados entre si e do perfil desktop.
+**Os perfis legados não foram apagados ou migrados automaticamente**, pois o
+modo antigo "celular" não distinguia Android de iPhone; a migração teria risco
+de misturar sessões. A opção **Manter perfis** continua a determinar se o
+perfil será reutilizado ou recriado, como antes. As dimensões desktop
+persistidas não sobrescrevem os novos perfis móveis.
+
+Os testes de CI usam páginas locais de teste e contextos reais do Playwright
+Chromium; nenhum cadastro, banco, saque ou API de terceiros é acionado.
+
 ## Painel no Codespaces + Chromium na area de trabalho do Windows
 
 **Objetivo:** acessar a interface pelo endereco HTTPS do GitHub Codespaces (porta 8765)
