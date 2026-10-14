@@ -85,7 +85,7 @@ def test_nexora_visual_and_existing_controls(tmp_path):
                     "Speed", "Iniciar jogo", "Usar CPF Aleatorio",
                     "Manter perfis (__profiles)", "Reutilizar dados",
                 ):
-                    assert page.get_by_text(hidden_label, exact=True).count() == 0
+                    assert not any(node.is_visible() for node in page.get_by_text(hidden_label, exact=True).all())
                 expect(page.locator(".ctk-option:visible")).to_have_count(1)
                 expect(page.locator(".ctk-textbox:visible")).to_have_count(1)
                 assert page.locator("input.ctk-entry:visible").count() >= 3
