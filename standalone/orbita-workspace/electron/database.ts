@@ -18,7 +18,7 @@ export class Repository {
   private constructor(private readonly sql: SqlDatabase, private readonly filename: string) {}
 
   static async open(filename: string): Promise<Repository> {
-    const wasmBinary = new Uint8Array(readFileSync(require.resolve('sql.js/dist/sql-wasm.wasm')));
+    const wasmBinary = Uint8Array.from(readFileSync(require.resolve('sql.js/dist/sql-wasm.wasm'))).buffer;
     const SQL = await initSqlJs({ wasmBinary });
     const sql = existsSync(filename)
       ? new SQL.Database(new Uint8Array(readFileSync(filename)))
