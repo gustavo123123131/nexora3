@@ -47,8 +47,8 @@ def test_nexora_visual_and_existing_controls(tmp_path):
                 expect(page.locator(".tab-bar button")).to_have_count(2, timeout=15000)
                 expect(page.locator(".brand-wordmark")).to_have_text("NEXORA")
                 expect(page.locator(".tab-bar button.active")).to_have_text("Criar Mãe")
-                expect(page.locator(".ui-action-manual")).to_be_visible()
-                expect(page.locator(".ui-action-start")).to_be_visible()
+                expect(page.get_by_role("button", name="Abrir Conta")).to_be_visible()
+                expect(page.locator(".ui-action-start:visible")).to_have_count(1)
                 assert page.locator(".ctk-tabs").evaluate(
                     "(el) => getComputedStyle(el).display"
                 ) == "grid"
@@ -77,29 +77,32 @@ def test_nexora_visual_and_existing_controls(tmp_path):
                 first_field = page.locator("input.ctk-entry").first
                 first_field.fill("https://example.test")
                 expect(first_field).to_have_value("https://example.test")
-                expect(page.locator(".ui-action-utility").first).to_be_visible()
-                # Original instance selector modal still opens; no automation.
-                page.get_by_role("button", name="Selecionar instâncias").click()
-                expect(page.locator(".ctk-modal")).to_be_visible(timeout=10000)
-                assert page.locator(".ctk-modal").evaluate(
-                    "(el) => getComputedStyle(el).position"
-                ) == "fixed"
-                page.get_by_role("button", name="Cancelar").click()
-                expect(page.locator(".ctk-modal")).to_have_count(0)
+                # Advanced controls remain in Python but must not appear.
+                for hidden_label in (
+                    "Iniciar (COM automação)", "Iniciar (SEM automação)",
+                    "Selecionar instâncias", "Salvar posição das telas",
+                    "Reabrir guias", "Verificar Numero", "Proxy Ligado",
+                    "Speed", "Iniciar jogo", "Usar CPF Aleatorio",
+                    "Manter perfis (__profiles)", "Reutilizar dados",
+                ):
+                    assert page.get_by_text(hidden_label, exact=True).count() == 0
+                expect(page.locator(".ctk-option:visible")).to_have_count(1)
+                expect(page.locator(".ctk-textbox:visible")).to_have_count(1)
+                assert page.locator("input.ctk-entry:visible").count() >= 3
                 # Alternate tab navigation retains its original event wiring.
                 page.locator(".tab-bar button").nth(1).click()
                 expect(page.locator(".tab-bar button.active")).to_have_text("Criar Filha")
-                expect(page.locator(".ui-action-manual")).to_be_visible()
-                expect(page.locator(".ui-action-start")).to_be_visible()
+                expect(page.get_by_role("button", name="Abrir Conta")).to_be_visible()
+                expect(page.locator(".ui-action-start:visible")).to_have_count(1)
                 page.locator(".tab-bar button").nth(0).click()
                 expect(page.locator(".tab-bar button.active")).to_have_text("Criar Mãe")
                 # Compact layout keeps the existing controls usable at 960 px.
                 page.set_viewport_size({"width": 960, "height": 850})
-                expect(page.locator(".ui-action-manual")).to_be_visible()
+                expect(page.get_by_role("button", name="Abrir Conta")).to_be_visible()
                 assert page.locator(".tab-content").bounding_box()["width"] > 550
                 page.set_viewport_size({"width": 760, "height": 900})
                 expect(page.locator(".tab-bar button").first).to_be_visible()
-                expect(page.locator(".ui-action-manual")).to_be_visible()
+                expect(page.get_by_role("button", name="Abrir Conta")).to_be_visible()
                 panels = page.locator(screen + " > .ctk-frame:nth-child(2) > .ctk-frame")
                 assert panels.count() == 2
                 settings_compact = panels.nth(0).bounding_box()
