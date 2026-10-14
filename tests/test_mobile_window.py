@@ -71,6 +71,17 @@ def test_headful_mobile_viewport_and_window_layout():
                 assert plan.outer_height <= 768
                 page.evaluate("scrollTo(0, document.body.scrollHeight)")
                 assert page.evaluate("scrollY") > 0
+                # The window fit is applied *before* real sites navigate.
+                # A later page change must not reset the selected mobile viewport.
+                page.goto("data:text/html," + quote(html), wait_until="domcontentloaded")
+                after_navigation = page.evaluate("""() => ({
+                    w: innerWidth, h: innerHeight, dpr: devicePixelRatio,
+                    scroll: document.documentElement.scrollWidth,
+                })""")
+                assert after_navigation["w"] == viewport["width"]
+                assert after_navigation["h"] == viewport["height"]
+                assert abs(after_navigation["dpr"] - dpr) < .01
+                assert after_navigation["scroll"] <= viewport["width"]
                 bounds = cdp.send("Browser.getWindowForTarget")["bounds"]
                 assert bounds["width"] <= 1024
                 assert bounds["height"] <= 768 + 120  # compositor/platform decorations
