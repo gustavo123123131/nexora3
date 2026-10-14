@@ -26,3 +26,6 @@ Settings/convite.json
 
 # Logs, locks e PIDs do supervisor Codespaces (apenas ambiente local)
 .runtime/
+
+# Screenshots geradas pelos testes visuais (somente CI)
+ui-screenshots/
