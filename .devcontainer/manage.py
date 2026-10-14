@@ -179,8 +179,28 @@ def supervise():
                     )
                 CHILD_PID.write_text(str(child.pid), encoding="utf-8")
                 log_event(f"Servidor iniciado: PID {child.pid}, porta {PORT}, reload ativo.")
+                unhealthy_since = time.monotonic()
                 while child.poll() is None and not SHUTDOWN:
-                    time.sleep(0.25)
+                    if health():
+                        unhealthy_since = None
+                    elif unhealthy_since is None:
+                        unhealthy_since = time.monotonic()
+                    elif time.monotonic() - unhealthy_since >= 20:
+                        # A Uvicorn reload parent can survive with a dead worker.
+                        # Restart only after an extended unhealthy interval;
+                        # normal development reloads are much shorter.
+                        log_event("Health check indisponível por 20s; reiniciando grupo Uvicorn.")
+                        terminate_process_group(child.pid)
+                        try:
+                            child.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            try:
+                                os.killpg(os.getpgid(child.pid), signal.SIGKILL)
+                            except ProcessLookupError:
+                                pass
+                            child.wait()
+                        break
+                    time.sleep(1)
                 if SHUTDOWN:
                     terminate_process_group(child.pid)
                     try:
