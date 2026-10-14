@@ -421,7 +421,13 @@ a:focus-visible, .ctk-checkbox:focus-within, .ctk-switch:focus-within {
   .tab-bar button { font-size: 12px; padding: 9px; }
   .tab-content > .ctk-frame > .ctk-frame > .ctk-frame:first-child { grid-template-columns: 1fr; }
   .tab-content > .ctk-frame > .ctk-frame > .ctk-frame:first-child > .ctk-frame:last-child { grid-column: 1; }
-  .tab-content > .ctk-frame > .ctk-frame > .ctk-frame:nth-child(2) { grid-template-columns: 1fr !important; }
+  .tab-content > .ctk-frame > .ctk-frame > .ctk-frame:nth-child(2) { grid-template-columns: minmax(0,1fr) !important; }
+  /* CTk's inline gridColumn positions would otherwise create a second
+     implicit column even with an explicit single-column grid. */
+  .tab-content > .ctk-frame > .ctk-frame > .ctk-frame:nth-child(2) > .ctk-frame {
+    grid-column: 1 / -1 !important;
+    grid-row: auto !important;
+  }
 }
 @media (max-width: 800px) {
   body { min-width: 0; }
