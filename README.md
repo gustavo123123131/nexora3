@@ -2,6 +2,69 @@
 
 Este repositório contém os módulos originais em Python com uma camada web que reproduz os controles CustomTkinter no navegador. A interface e a lógica permanecem nos módulos originais; a camada `webui/` apresenta os controles pela API local FastAPI.
 
+## Abrir ou recuperar o Codespaces (um comando)
+
+Depois de abrir o [seu Codespaces](https://github.com/codespaces), no
+**terminal do próprio Codespaces**, execute **apenas**:
+
+```bash
+bash .devcontainer/start.sh
+```
+
+Esse comando inicia o display auxiliar e o supervisor do FastAPI em ordem,
+verifica o painel **8765**, não duplica processos já ativos e mostra a porta
+a abrir. Ele também é usado pelo `postStartCommand` do devcontainer, quando
+o GitHub inicia/reabre o ambiente. A configuração `forwardPorts` solicita
+o encaminhamento automático das portas **8765** (painel) e **6080**
+(Chromium remoto opcional). Se a porta não aparecer, abra a aba
+**PORTS → Add Port → 8765**. Mantenha a visibilidade em **Private**.
+O link é o endereço HTTPS da coluna **Forwarded Address**, normalmente
+`https://NOME-DO-CODESPACE-8765.app.github.dev`; não é o localhost do Windows.
+
+Para diagnóstico ou manutenção, no mesmo terminal:
+
+```bash
+python .devcontainer/manage.py status
+tail -n 60 .runtime/lixocpa/server.log
+tail -n 60 .runtime/lixocpa/supervisor.log
+python .devcontainer/manage.py restart
+python .devcontainer/manage.py stop
+```
+
+O comando principal `bash .devcontainer/start.sh` deve ser usado para
+**iniciar ou recuperar** a aplicação; `restart` e `stop` são apenas para
+manutenção intencional. O supervisor permite até **três falhas rápidas**
+(< 60 segundos por tentativa), registra os motivos e interrompe as
+tentativas se houver um erro persistente de configuração. Ele não encerra
+processos alheios que estejam usando a porta. Caso já exista um servidor
+iniciado manualmente, o comando não cria uma segunda cópia, mas só
+os processos lançados pelo supervisor têm recuperação automática.
+
+O reload automático do Uvicorn permanece habilitado para mudanças de
+Python, HTML, CSS e JavaScript. O navegador detecta quedas do backend e
+tenta reconectar enquanto a página está aberta; ao recuperar a conexão,
+recarrega a interface. **Atualizar a página não inicia o servidor.**
+A rota `/api/health` verifica apenas o servidor, sem rodar as automações.
+
+### Limites do GitHub Codespaces
+
+O Codespaces **não é hospedagem 24 horas por dia**. O GitHub documenta
+desligamento por inatividade (30 minutos por padrão, configurável de
+5 a 240 minutos) e limite máximo de 12 horas contínuas. Consulte
+[as configurações de timeout](https://docs.github.com/en/codespaces/setting-your-user-preferences/setting-your-timeout-period-for-github-codespaces)
+e [o ciclo de vida do Codespaces](https://docs.github.com/en/codespaces/about-codespaces/understanding-the-codespace-lifecycle).
+Quando o Codespace está **parado**, nenhum supervisor interno funciona:
+reabra o Codespace pelo GitHub e execute o comando único acima. Também
+pode existir custo/cota de computação e armazenamento.
+
+Para disponibilidade contínua, seria necessário hospedar o **painel**
+em um serviço persistente (VM ou contêiner com reinicialização pelo
+serviço de hospedagem, TLS, autenticação, monitoramento e armazenamento
+durável privado). O **agente Windows/Chromium**, que abre os perfis no seu
+computador, permanece local e precisa estar ligado e pareado;
+uma hospedagem online não consegue abrir janelas num PC desligado.
+Não exponha a porta 8767 nem perfis, cookies ou credenciais no GitHub.
+
 ## Modos de dispositivo e Área Pix
 
 As abas **Criar Mãe** e **Criar Filha** permanecem; a aba **Área Pix** e os
