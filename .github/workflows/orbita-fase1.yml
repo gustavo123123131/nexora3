@@ -1,0 +1,45 @@
+name: Órbita Workspace — Fase 1
+on:
+  push:
+    branches: [fase1-orbita-workspace]
+    paths:
+      - 'standalone/orbita-workspace/**'
+      - '.github/workflows/orbita-fase1.yml'
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: standalone/orbita-workspace
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Instalar dependências
+        run: npm install --no-audit --no-fund
+      - name: Testar banco, URLs e relações
+        run: npm test
+      - name: Validar TypeScript e compilar Electron/React
+        run: npm run build
+      - name: Conferir arquivos executáveis
+        run: |
+          test -s dist-electron/main.js
+          test -s dist-electron/preload.js
+          test -s dist/index.html
+          test -s dist/assets/$(find dist/assets -maxdepth 1 -type f -name '*.js' -printf '%f\n' | head -n 1)
+      - name: Gerar pacote do código-fonte
+        run: |
+          cd ..
+          zip -qr orbita-workspace-fase1.zip orbita-workspace \
+            -x '*/node_modules/*' '*/dist/*' '*/dist-electron/*' '*/release/*'
+      - name: Disponibilizar projeto independente
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbita-workspace-fase1
+          path: standalone/orbita-workspace-fase1.zip
+          retention-days: 14
+          if-no-files-found: error
