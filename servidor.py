@@ -274,6 +274,11 @@ async def _registration_browser(action: str, body: dict):
         raise HTTPException(status_code=422, detail='Conta inválida.')
     service = _accounts()
     try:
+        account = service.repo.account(key)
+        if action != 'open' and not service.repo.site(account['siteId'])['authorized']:
+            raise AccountError('O cadastro guiado exige autorização explícita do site.')
+        if service.browser is None:
+            raise HTTPException(status_code=503, detail='Navegador local não inicializado.')
         future = service.browser.execute(action, key, body)
         return await asyncio.wait_for(asyncio.wrap_future(future), timeout=35)
     except AccountError as exc:
