@@ -11,6 +11,101 @@ let disconnectedAfterSuccess = false;
 let lastStateString = '';
 let lastServerVersion = null;
 let csrfToken = null;
+// On a GitHub Codespaces link, the UI runs remotely but browser actions
+// go to the user's Windows-only companion, never to the cloud Playwright.
+const runningInCodespaces = location.hostname.endsWith('.app.github.dev');
+const localAgentBase = 'http://127.0.0.1:8767';
+let agentKey = runningInCodespaces ? (sessionStorage.getItem('lixocpa-agent-key') || '') : '';
+let agentConnected = false;
+let pairingScreen = null;
+
+async function fetchAgentState(key) {
+  return fetch(localAgentBase + '/api/state', {
+    method: 'GET', mode: 'cors', credentials: 'omit', cache: 'no-store',
+    headers: {'X-LixoCPA-Agent-Key': key},
+  });
+}
+
+function showAgentPairing(message = '') {
+  if (!runningInCodespaces) return;
+  if (pairingScreen && pairingScreen.isConnected) {
+    pairingScreen.querySelector('.agent-error').textContent = message;
+    return;
+  }
+  nodes.clear();
+  selectedTabs.clear();
+  lastStateString = '';
+  currentState = null;
+  pairingScreen = document.createElement('div');
+  pairingScreen.className = 'agent-setup';
+  const title = document.createElement('h2');
+  title.textContent = 'Conectar Chromium do Windows';
+  const description = document.createElement('p');
+  description.textContent =
+    'Este painel está no GitHub. Para abrir janelas na sua área de trabalho, '
+    + 'execute o agente no Windows e cole abaixo o código exibido no terminal dele.';
+  const box = document.createElement('div');
+  box.className = 'agent-connect-form';
+  const field = document.createElement('input');
+  field.placeholder = 'Código de pareamento do agente Windows';
+  field.type = 'password';
+  field.autocomplete = 'off';
+  const submit = document.createElement('button');
+  submit.textContent = 'Conectar ao meu Windows';
+  const error = document.createElement('p');
+  error.className = 'agent-error';
+  error.textContent = message;
+  const fallback = document.createElement('p');
+  fallback.textContent =
+    'Se o navegador bloquear o acesso local, abra o painel diretamente em:';
+  const link = document.createElement('a');
+  link.href = localAgentBase;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  link.textContent = 'http://127.0.0.1:8767';
+  const hint = document.createElement('p');
+  hint.textContent =
+    'O site remoto nunca recebe seu código; a conexão é feita pelo próprio navegador '
+    + 'com o agente que escuta somente em 127.0.0.1.';
+  hint.className = 'agent-note';
+  box.append(field, submit);
+  pairingScreen.append(title, description, box, error, fallback, link, hint);
+  app.replaceChildren(pairingScreen);
+
+  const connect = async () => {
+    const key = field.value.trim();
+    if (!key) { error.textContent = 'Digite o código mostrado no agente Windows.'; return; }
+    submit.disabled = true;
+    error.textContent = 'Conectando ao agente local...';
+    try {
+      const response = await fetchAgentState(key);
+      if (!response.ok) throw Error('Código inválido ou agente indisponível (HTTP ' + response.status + ').');
+      const data = await response.json();
+      if (!data.tree || !data.csrf_token) throw Error('Resposta inválida do agente.');
+      agentKey = key;
+      sessionStorage.setItem('lixocpa-agent-key', key);
+      agentConnected = true;
+      pairingScreen = null;
+      csrfToken = data.csrf_token;
+      lastServerVersion = data.server_version;
+      currentState = data;
+      app.replaceChildren();
+      updateTree(data.tree);
+      lastStateString = JSON.stringify(data.tree);
+      notify('Agente Windows conectado. O Chromium abrirá no seu computador.');
+    } catch (exc) {
+      error.textContent =
+        'Não foi possível conectar: ' + exc.message
+        + ' Verifique se o agente está aberto e se a porta 8767 está livre. '
+        + 'Se o navegador bloquear a conexão, use o link local acima.';
+    } finally { submit.disabled = false; }
+  };
+  submit.addEventListener('click', connect);
+  field.addEventListener('keydown', event => {
+    if (event.key === 'Enter') connect();
+  });
+}
+
 
 function notify(message) {
   const slot = document.getElementById('notifications');
@@ -21,9 +116,13 @@ function notify(message) {
   setTimeout(() => el.remove(), 5000);
 }
 async function post(path, body) {
-  const res = await fetch(path, {
-    method: 'POST', headers: {'Content-Type': 'application/json', 'X-LixoCPA-CSRF': csrfToken || ''},
-    credentials: 'same-origin', body: JSON.stringify(body),
+  if (runningInCodespaces && !agentConnected) throw Error('Agente Windows não conectado.');
+  const headers = {'Content-Type': 'application/json', 'X-LixoCPA-CSRF': csrfToken || ''};
+  if (runningInCodespaces) headers['X-LixoCPA-Agent-Key'] = agentKey;
+  const res = await fetch((runningInCodespaces ? localAgentBase : '') + path, {
+    method: 'POST', headers,
+    mode: 'cors', credentials: runningInCodespaces ? 'omit' : 'same-origin',
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     // Include FastAPI's safe error description instead of an opaque 403.
@@ -287,7 +386,20 @@ async function handleDialogs(dialogs) {
 }
 async function poll() {
   try {
-    const response = await fetch('/api/state', {cache:'no-store'});
+    if (runningInCodespaces && !agentKey) {
+      showAgentPairing();
+      return;
+    }
+    const response = runningInCodespaces
+      ? await fetchAgentState(agentKey)
+      : await fetch('/api/state', {cache:'no-store'});
+    if (runningInCodespaces && response.status === 403) {
+      agentKey = '';
+      sessionStorage.removeItem('lixocpa-agent-key');
+      agentConnected = false;
+      showAgentPairing('O agente foi reiniciado ou o código expirou. Insira o código atual.');
+      return;
+    }
     if (!response.ok) throw Error(String(response.status));
     const data = await response.json();
     if (disconnectedAfterSuccess || (lastServerVersion && lastServerVersion !== data.server_version)) {
@@ -296,6 +408,7 @@ async function poll() {
     }
     lastServerVersion = data.server_version;
     hadSuccessfulConnection = true;
+    if (runningInCodespaces) agentConnected = true;
     const serialized = JSON.stringify(data.tree);
     csrfToken = data.csrf_token;
     currentState = data;
@@ -305,8 +418,18 @@ async function poll() {
     }
     await handleDialogs(data.dialogs);
   } catch (e) {
-    if (hadSuccessfulConnection) disconnectedAfterSuccess = true;
-    else if (!currentState) app.textContent = 'Aguardando o servidor local…';
+    if (runningInCodespaces) {
+      agentConnected = false;
+      // A remote site cannot guarantee local-network browser permission.
+      if (!pairingScreen) {
+        agentKey = '';
+        sessionStorage.removeItem('lixocpa-agent-key');
+        showAgentPairing('Conexão com o Windows interrompida. Confira o agente e conecte novamente.');
+      }
+    } else {
+      if (hadSuccessfulConnection) disconnectedAfterSuccess = true;
+      else if (!currentState) app.textContent = 'Aguardando o servidor local…';
+    }
   } finally {
     setTimeout(poll, 550);
   }
