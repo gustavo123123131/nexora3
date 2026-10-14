@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import signal
 import time
+from urllib.request import urlopen
 
 import pytest
 
@@ -46,6 +47,10 @@ def test_codespaces_service_start_stop_recovery():
                 break
             time.sleep(0.25)
         assert recovered, manager.EVENTS.read_text()[-2000:]
+        # Confirm the actual browser entry page is back, not just health.
+        with urlopen("http://127.0.0.1:8765/", timeout=3) as response:
+            assert response.status == 200
+            assert b"application" in response.read()
         assert manager.supervisor_pid() == supervisor
     finally:
         manager.stop()
