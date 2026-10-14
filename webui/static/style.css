@@ -48,3 +48,7 @@ button:disabled, input:disabled, select:disabled { opacity: .47; cursor: not-all
 .agent-error { color: #fca5a5; min-height: 24px; }
 .agent-setup a { color: #9aceff; }
 .agent-setup .agent-note { color: #b5b5b5; font-size: 12px; }
+
+/* Discrete warning only when the backend is offline; no UI redesign. */
+#connection-warning { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 90; background: #78350f; color: #fff; padding: 10px 16px; border: 1px solid #f59e0b; border-radius: 8px; font-size: 13px; max-width: 90%; text-align: center; box-shadow: 0 6px 20px #0006; }
+#connection-warning[hidden] { display: none; }
