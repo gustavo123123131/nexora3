@@ -23,3 +23,6 @@ Settings/convite.json
 
 # Estado local
 .DS_Store
+
+# Logs, locks e PIDs do supervisor Codespaces (apenas ambiente local)
+.runtime/
