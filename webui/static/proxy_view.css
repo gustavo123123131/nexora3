@@ -1,0 +1,89 @@
+/*
+ * NEXORA / PROXY WORKSPACE.
+ * Pure presentation for a future integration; no external resources.
+ */
+.proxy-client-view { width: 100%; min-height: 100%; }
+.proxy-workspace { max-width: 1450px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+.proxy-page-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; padding: 5px 4px 9px; }
+.workspace-eyebrow { display: flex; align-items: center; gap: 9px; margin-bottom: 14px; color: #8ea1c6; font-size: 10px; font-weight: 800; letter-spacing: .17em; }
+.eyebrow-line { display: block; width: 18px; height: 2px; background: #8896ff; border-radius: 2px; }
+.proxy-page-heading h1 { margin: 0 0 9px; color: #f5f6fd; font-size: clamp(25px, 2.65vw, 32px); font-weight: 760; letter-spacing: -.045em; line-height: 1.17; }
+.proxy-page-heading p { margin: 0; font-size: 13px; color: #9daac1; line-height: 1.7; }
+.proxy-state-tag { display: inline-flex; align-items: center; gap: 10px; flex: 0 0 auto; padding: 9px 12px; border: 1px solid #404b70; border-radius: 7px; background: #222940; color: #aab8ee; font-size: 10px; letter-spacing: .1em; font-weight: 800; }
+.proxy-state-tag .state-dot { width: 7px; height: 7px; border: 2px solid #8a9aff; border-radius: 50%; }
+.proxy-notice { display: flex; gap: 13px; align-items: flex-start; padding: 15px 17px; background: #1a2338; border: 1px solid #344664; border-left: 3px solid #718dff; border-radius: 10px; }
+.proxy-notice-icon { flex: 0 0 21px; height: 21px; display: grid; place-items: center; background: #4357a6; color: #f5f7ff; border-radius: 50%; font-size: 11px; font-weight: 800; font-style: normal; }
+.proxy-notice strong { display: block; font-size: 12px; color: #d6e0ff; margin-bottom: 4px; letter-spacing: .005em; }
+.proxy-notice p { font-size: 12px; line-height: 1.65; margin: 0; color: #aebcda; }
+.proxy-layout { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(345px, .9fr); gap: 17px; align-items: start; }
+.proxy-panel { background: #182231; border: 1px solid #303d54; border-radius: 14px; min-width: 0; overflow: hidden; box-shadow: 0 9px 30px #050b1729; }
+.proxy-panel-heading { display: flex; gap: 12px; align-items: center; padding: 22px 23px 20px; border-bottom: 1px solid #2e3b50; min-width: 0; }
+.proxy-panel-heading > div:nth-child(2) { min-width: 0; }
+.proxy-panel-icon { flex: 0 0 36px; height: 36px; display: grid; place-items: center; font-size: 11px; font-weight: 850; color: #aec0ff; background: #283657; border: 1px solid #3b4f80; border-radius: 10px; font-variant-numeric: tabular-nums; }
+.proxy-panel-heading h2 { margin: 0 0 4px; font-size: 15px; color: #f1f4fb; font-weight: 760; letter-spacing: -.015em; }
+.proxy-panel-heading p { margin: 0; font-size: 11px; color: #94a5be; line-height: 1.6; }
+.proxy-count { margin-left: auto; flex: 0 0 auto; align-self: center; background: #222e41; border: 1px solid #3a4860; padding: 6px 9px; color: #a5b4d0; border-radius: 7px; font-size: 10px; font-weight: 700; }
+.proxy-form { padding: 22px 23px 0; display: flex; flex-direction: column; gap: 20px; }
+.proxy-field { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.proxy-field > label { color: #e1e7f3; font-size: 11px; font-weight: 750; }
+.proxy-field-note { color: #8193ae; font-size: 10px; font-weight: 550; margin-left: 5px; }
+.proxy-field > small { font-size: 10px; color: #93a4bb; line-height: 1.6; }
+.proxy-fields-two { display: grid; grid-template-columns: minmax(0,1.2fr) minmax(0,.8fr); gap: 13px; }
+.proxy-field input, .proxy-field select {
+  width: 100%; height: 42px; min-width: 0; background: #101a29; color: #e6edfc;
+  border: 1px solid #3a4a62; border-radius: 8px; padding: 0 13px; outline: none;
+  font-size: 12px; font-weight: 560; transition: border-color .16s, box-shadow .16s, background-color .16s;
+}
+.proxy-field input::placeholder { color: #6d7e98; font-weight: 450; }
+.proxy-field input:hover, .proxy-field select:hover { border-color: #596c8a; }
+.proxy-field input:focus-visible, .proxy-field select:focus-visible { border-color: #8498ff; outline: none; box-shadow: 0 0 0 3px #7d8dff24; }
+.proxy-field select { cursor: pointer; appearance: none; }
+.proxy-field select option { background: #172335; }
+.proxy-select-wrap { position: relative; }
+.proxy-select-wrap::after { content: ""; position: absolute; pointer-events: none; right: 16px; top: 15px; height: 8px; width: 8px; transform: rotate(45deg); border-right: 1.8px solid #a5b4d4; border-bottom: 1.8px solid #a5b4d4; }
+.proxy-password-box { position: relative; }
+.proxy-password-box input { padding-right: 45px; }
+.proxy-password-toggle { position: absolute; right: 4px; top: 4px; width: 34px; height: 34px; display: grid; place-items: center; border: 0; border-radius: 6px; background: transparent; color: #8c9eb8; padding: 0; }
+.proxy-password-toggle:hover { background: #26344a; color: #d7e2ff; }
+.proxy-form-footer { display: flex; justify-content: space-between; align-items: center; gap: 14px; margin: 5px -23px 0; padding: 16px 23px; background: #141e2c; border-top: 1px solid #2c3a50; }
+.proxy-form-footer > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.proxy-form-footer strong { color: #ced8eb; font-size: 11px; font-weight: 720; }
+.proxy-form-footer span { color: #91a1ba; font-size: 10px; line-height: 1.45; }
+.proxy-save-button { border: 1px solid #566590; border-radius: 8px; padding: 11px 14px; color: #9daacc; background: #324266; font-weight: 750; font-size: 11px; white-space: nowrap; flex: 0 0 auto; }
+.proxy-save-button span { font-size: 13px; margin-left: 5px; color: inherit; }
+.proxy-save-button:disabled { cursor: not-allowed; opacity: .58; }
+.proxy-directory { min-height: 470px; }
+.proxy-table-wrap { overflow-x: auto; }
+.proxy-table { width: 100%; border-collapse: collapse; text-align: left; }
+.proxy-table th { padding: 14px 12px; color: #8094b2; font-size: 9px; font-weight: 800; letter-spacing: .095em; text-transform: uppercase; border-bottom: 1px solid #2d3b51; white-space: nowrap; }
+.proxy-table th:first-child { padding-left: 22px; }
+.proxy-table th:last-child { padding-right: 22px; }
+.proxy-empty-cell { padding: 39px 24px 49px; text-align: center; }
+.proxy-empty-icon { height: 62px; width: 62px; margin: 0 auto 17px; border-radius: 17px; background: #22324b; border: 1px dashed #465b82; color: #8499db; display: grid; place-items: center; }
+.proxy-empty-cell strong { color: #e5eafa; font-size: 13px; display: block; margin-bottom: 8px; }
+.proxy-empty-cell p { color: #8fa1ba; line-height: 1.7; font-size: 11px; margin: 0 auto 17px; max-width: 260px; }
+.proxy-inactive-actions { display: flex; justify-content: center; gap: 8px; }
+.proxy-inactive-actions button { border-radius: 6px; background: #243047; border: 1px solid #37465f; padding: 8px 14px; font-size: 11px; color: #91a2bf; font-weight: 700; }
+.proxy-directory-footer { margin-top: 8px; padding: 14px 22px; display: flex; align-items: center; gap: 8px; background: #141f2e; border-top: 1px solid #2e3a4f; color: #a4b1c7; font-size: 10px; }
+.proxy-inactive-dot { width: 7px; height: 7px; background: #677992; border-radius: 50%; }
+.proxy-directory-note { margin-left: auto; color: #7185a3; text-align: right; }
+@media (max-width: 1280px) {
+  .proxy-layout { grid-template-columns: 1fr; }
+  .proxy-directory { min-height: auto; }
+  .proxy-empty-cell { padding-block: 28px 36px; }
+}
+@media (max-width: 800px) {
+  .proxy-workspace { gap: 14px; }
+  .proxy-page-heading { align-items: flex-start; flex-direction: column; gap: 15px; }
+  .proxy-panel-heading { padding: 17px 15px; gap: 9px; }
+  .proxy-form { padding: 17px 15px 0; gap: 15px; }
+  .proxy-form-footer { margin: 4px -15px 0; padding: 13px 15px; }
+  .proxy-table { min-width: 480px; }
+}
+@media (max-width: 520px) {
+  .proxy-fields-two { grid-template-columns: 1fr; }
+  .proxy-form-footer { align-items: stretch; flex-direction: column; }
+  .proxy-save-button { width: 100%; }
+  .proxy-directory-footer { flex-wrap: wrap; }
+  .proxy-directory-note { margin: 0; }
+}
