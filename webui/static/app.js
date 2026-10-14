@@ -10,6 +10,7 @@ let hadSuccessfulConnection = false;
 let disconnectedAfterSuccess = false;
 let lastStateString = '';
 let lastServerVersion = null;
+let csrfToken = null;
 
 function notify(message) {
   const slot = document.getElementById('notifications');
@@ -21,7 +22,7 @@ function notify(message) {
 }
 async function post(path, body) {
   const res = await fetch(path, {
-    method: 'POST', headers: {'Content-Type': 'application/json'},
+    method: 'POST', headers: {'Content-Type': 'application/json', 'X-LixoCPA-CSRF': csrfToken || ''},
     credentials: 'same-origin', body: JSON.stringify(body),
   });
   if (!res.ok) {
@@ -296,6 +297,7 @@ async function poll() {
     lastServerVersion = data.server_version;
     hadSuccessfulConnection = true;
     const serialized = JSON.stringify(data.tree);
+    csrfToken = data.csrf_token;
     currentState = data;
     if (serialized !== lastStateString) {
       lastStateString = serialized;
