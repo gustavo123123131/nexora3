@@ -2,6 +2,30 @@
 
 Este repositório contém os módulos originais em Python com uma camada web que reproduz os controles CustomTkinter no navegador. A interface e a lógica permanecem nos módulos originais; a camada `webui/` apresenta os controles pela API local FastAPI.
 
+## Interface essencial de abertura de contas
+
+As abas **Criar Mãe** e **Criar Filha** mostram somente campos de links,
+modo de dispositivo, quantidade por link, delay, **Abrir Conta**, controle
+de parada da execução e logs. O botão **Abrir Conta** usa exatamente a
+rotina já existente de abertura manual de perfis, sem automação de cadastro.
+
+As opções avançadas (proxy por aba, automação, velocidade, jogos,
+verificação de número, posicionamento das janelas, seleção de instâncias,
+reutilização de dados e opções de perfis) estão **ocultas**, e os módulos
+internos permanecem preservados. Isso evita a exclusão de dados antigos e
+mantém compatibilidade com as configurações previamente salvas.
+
+O gateway local de proxy existente (`Settings/local_proxy_gateway.py`)
+permanece independente das duas abas. **Não foi criada uma área de proxy**:
+uma interface compartilhada poderá ser acrescentada posteriormente, sem
+misturar controles de proxy aos formulários de contas. Configurações antigas
+de proxy ainda podem afetar a abertura, pois seus valores foram preservados
+para não mudar a conectividade dos perfis existentes.
+
+Os testes verificam os comandos **Abrir Conta** das duas abas usando um
+worker simulado, sem cadastros ou sites externos, e validam a interface real
+no Chromium.
+
 ## Identidade visual Nexora
 
 O painel web (localhost e GitHub Codespaces) usa a identidade **NEXORA —
