@@ -11,6 +11,7 @@ import tkinter.messagebox as tkmb
 import tkinter.simpledialog as tksd
 import customtkinter as ctk
 from Settings.device_modes import MODE_LABELS, mode_label, resolve_mode, profile_directory
+from Settings.mobile_window import mobile_window_args, fit_mobile_content
 from Settings.speed_controller import SpeedController
 from Settings.window_pos_controller import WindowPosController
 from Settings.mirror_easy import MirrorEasy
@@ -1085,6 +1086,14 @@ def run_instance(
             "--force-device-scale-factor=0.5",
         ]
 
+        # Presentation only: legacy 0.5 Chrome scale makes mobile content
+        # appear half-width inside a normal Windows window. Keep the
+        # Android/iPhone CSS viewport, DPR, profile and touch unchanged.
+        if cfg.mode in ("android", "iphone"):
+            args = [a for a in args if not a.startswith("--force-device-scale-factor=")]
+            if not headless or ext_paths:
+                args.extend(mobile_window_args(cfg.viewport, idx=idx))
+
         if isinstance(saved_bounds, dict) and saved_bounds:
             try:
                 x = int(saved_bounds.get("left", 0))
@@ -1146,6 +1155,20 @@ def run_instance(
                     context.set_extra_http_headers(cfg.extra_headers)
 
                 page = context.pages[0] if context.pages else context.new_page()
+
+                # Match the native window to the emulated phone independently
+                # from the site's CSS viewport. No DOM/CSS edits or zoom.
+                mobile_presentation_session = None
+                if cfg.mode in ("android", "iphone") and not effective_headless:
+                    try:
+                        presentation, mobile_presentation_session = fit_mobile_content(
+                            context, page, cfg.viewport, cfg.device_scale_factor, idx=idx
+                        )
+                        log(f"[#{idx}] Janela mobile: {presentation.width}x{presentation.height} "
+                            f"(viewport {presentation.css_width}x{presentation.css_height}, "
+                            f"escala visual {presentation.scale:.2f}x).")
+                    except Exception as exc:
+                        log(f"[#{idx}] Aviso: ajuste da janela mobile indisponível: {exc}")
 
                 mirror.register(idx)
                 mirror.install_receiver(page)
