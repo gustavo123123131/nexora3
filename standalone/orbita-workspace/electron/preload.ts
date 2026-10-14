@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { DesktopApi } from '../shared/contracts';
 
-const api: DesktopApi = Object.freeze({
+const api = Object.freeze<DesktopApi>({
   listAccounts: () => ipcRenderer.invoke('accounts:list'),
   createAccount: (data) => ipcRenderer.invoke('accounts:create', data),
   updateAccount: (data) => ipcRenderer.invoke('accounts:update', data),
