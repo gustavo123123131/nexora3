@@ -44,7 +44,7 @@ def test_nexora_visual_and_existing_controls(tmp_path):
             try:
                 page = browser.new_page(viewport={"width": 1440, "height": 900})
                 page.goto(URL, wait_until="domcontentloaded")
-                expect(page.locator(".tab-bar button")).to_have_count(2, timeout=15000)
+                expect(page.locator(".tab-bar button")).to_have_count(3, timeout=15000)
                 expect(page.locator(".brand-wordmark")).to_have_text("NEXORA")
                 expect(page.locator(".tab-bar button.active")).to_have_text("Criar Mãe")
                 expect(page.get_by_role("button", name="Abrir Conta")).to_be_visible()
@@ -54,7 +54,7 @@ def test_nexora_visual_and_existing_controls(tmp_path):
                 ) == "grid"
                 assert page.locator(".workspace-bar").evaluate(
                     "(el) => getComputedStyle(el).height"
-                ) == "70px"
+                ) == "68px"
                 assert page.locator(".tab-bar").bounding_box()["width"] >= 175
                 # The header, configuration grid and logs must stack vertically,
                 # rather than appearing as two equal columns on wide screens.
@@ -72,7 +72,7 @@ def test_nexora_visual_and_existing_controls(tmp_path):
                 # Check CSS signature to reject an incomplete/stale deployment.
                 assert page.locator("body").evaluate(
                     "(el) => getComputedStyle(el).backgroundColor"
-                ) == "rgb(16, 23, 28)"
+                ) == "rgb(13, 18, 29)"
                 # Editable control continues syncing through original /api/event.
                 first_field = page.locator("input.ctk-entry").first
                 first_field.fill("https://example.test")
@@ -117,6 +117,51 @@ def test_nexora_visual_and_existing_controls(tmp_path):
                 page.screenshot(path=str(screenshot_dir / "nexora-mae.png"), full_page=True)
                 page.locator(".tab-bar button").nth(1).click()
                 page.screenshot(path=str(screenshot_dir / "nexora-filha.png"), full_page=True)
+
+                # Client-only Proxy tab must not affect Python widgets, credentials,
+                # browser profiles or backend APIs.
+                proxy_posts = []
+                page.on("request", lambda request: proxy_posts.append(request.url)
+                        if request.method == "POST" and "/api/" in request.url else None)
+                page.get_by_role("button", name="Proxy").click()
+                expect(page.locator(".tab-bar button.active")).to_have_text("Proxy")
+                expect(page.get_by_role("heading", name="Gerenciamento de proxy")).to_be_visible()
+                expect(page.get_by_text("Nenhum proxy configurado")).to_be_visible()
+                expect(page.get_by_text("INTEGRAÇÃO PENDENTE")).to_be_visible()
+                expect(page.locator(".proxy-table tbody tr")).to_have_count(1)
+                expect(page.get_by_role("button", name="Salvar proxy")).to_be_disabled()
+                expect(page.get_by_role("button", name="Editar")).to_be_disabled()
+                expect(page.get_by_role("button", name="Remover")).to_be_disabled()
+                protocol = page.locator("#proxy-protocol")
+                assert protocol.locator("option").all_text_contents() == ["HTTP", "HTTPS", "SOCKS5"]
+                page.locator("#proxy-name").fill("Exemplo local (não salvo)")
+                page.locator("#proxy-host").fill("proxy.example.test")
+                page.locator("#proxy-port").fill("8080")
+                page.locator("#proxy-user").fill("usuario")
+                password = page.locator("#proxy-password")
+                password.fill("segredo-nao-enviado")
+                expect(password).to_have_attribute("type", "password")
+                page.get_by_role("button", name="Mostrar senha").click()
+                expect(password).to_have_attribute("type", "text")
+                page.get_by_role("button", name="Ocultar senha").click()
+                expect(password).to_have_attribute("type", "password")
+                page.wait_for_timeout(1600)  # The existing Python tree polls.
+                expect(page.get_by_role("heading", name="Gerenciamento de proxy")).to_be_visible()
+                assert proxy_posts == []
+                page.screenshot(path=str(screenshot_dir / "nexora-proxy.png"), full_page=True)
+                for width in (960, 760, 420):
+                    page.set_viewport_size({"width": width, "height": 900})
+                    expect(page.get_by_role("heading", name="Gerenciamento de proxy")).to_be_visible()
+                    expect(page.locator("#proxy-host")).to_be_visible()
+                    overflow = page.evaluate("document.documentElement.scrollWidth - innerWidth")
+                    assert overflow <= 2, f"Proxy horizontal overflow at {width}px: {overflow}"
+                page.screenshot(path=str(screenshot_dir / "nexora-proxy-mobile.png"), full_page=True)
+                page.set_viewport_size({"width": 1440, "height": 900})
+                page.get_by_role("button", name="Criar Mãe").click()
+                expect(page.get_by_role("button", name="Abrir Conta")).to_be_visible()
+                page.get_by_role("button", name="Criar Filha").click()
+                expect(page.get_by_role("button", name="Abrir Conta")).to_be_visible()
+
             finally:
                 browser.close()
     finally:
