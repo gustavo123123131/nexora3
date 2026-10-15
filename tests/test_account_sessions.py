@@ -71,10 +71,16 @@ def test_legacy_card_requires_explicit_device_and_remembers_it(isolated_profiles
 
 
 def test_open_card_api_uses_exact_id_not_global_selection(isolated_profiles, monkeypatch):
+    from Settings.Criar_Mae.settings.browser import ModeConfig
+    from dataclasses import asdict
     from nexora_accounts.session_launcher import ACCOUNT_LAUNCHER
     a = isolated_profiles.create("mae", device_mode="android")
     b = isolated_profiles.create("filha", device_mode="iphone")
     isolated_profiles.select(a["id"])
+    isolated_profiles.set_runtime_config(b["id"], asdict(ModeConfig(
+        "iphone", "Mozilla/5.0 iPhone Safari", {"width": 390, "height": 844},
+        3.0, True, True, "Apple", "Apple GPU", {},
+    )))
     observed = []
     monkeypatch.setattr(
         ACCOUNT_LAUNCHER, "launch",
@@ -101,6 +107,12 @@ def test_saved_card_launcher_reuses_only_its_own_data(isolated_profiles, monkeyp
         "mae", device_mode="iphone", start_url="https://b.example",
     )
     isolated_profiles.select(a["id"])
+    from Settings.Criar_Mae.settings.browser import ModeConfig
+    from dataclasses import asdict
+    isolated_profiles.set_runtime_config(b["id"], asdict(ModeConfig(
+        "iphone", "Mozilla/5.0 iPhone Safari", {"width": 390, "height": 844},
+        3.0, True, True, "Apple", "Apple GPU", {},
+    )))
 
     seen = []
     finished = threading.Event()
@@ -170,3 +182,48 @@ def test_cannot_share_a_live_browser_profile_directory():
     # Closing releases the account for a later re-open.
     with claim_account("mae", 2):
         pass
+
+
+def test_runtime_snapshot_is_immutable_and_survives_restart(isolated_profiles):
+    from dataclasses import asdict
+    from Settings.Criar_Mae.settings.browser import ModeConfig
+    profile = isolated_profiles.create("mae", device_mode="android")
+    original = asdict(ModeConfig(
+        "android",
+        "Mozilla/5.0 (Linux; Android 13; SM-A035M Build/TP1A.220624.014) AppleWebKit/537.36",
+        {"width": 412, "height": 915}, 2.75, True, True,
+        "Qualcomm", "Adreno", {},
+    ))
+    saved = isolated_profiles.set_runtime_config(profile["id"], original)
+    assert "SM-A035M" in saved["deviceLabel"]
+    assert saved["runtimeConfig"] == original
+    assert LocalProfileStore().get(profile["id"])["runtimeConfig"] == original
+    from nexora_accounts.local_profiles import LocalProfileError
+    from copy import deepcopy
+    wrong = deepcopy(original)
+    wrong["user_agent"] = "some other device"
+    with pytest.raises(LocalProfileError):
+        isolated_profiles.set_runtime_config(profile["id"], wrong)
+    assert isolated_profiles.get(profile["id"])["runtimeConfig"] == original
+
+
+def test_status_is_pending_until_site_confirms(isolated_profiles):
+    store = isolated_profiles
+    p = store.create("filha", device_mode="android")
+    assert p["status"] == "pending"
+    store.update_status(p["id"], "error", "Falha ao enviar.")
+    assert store.get(p["id"])["status"] == "error"
+    # Only an explicit confirmed-success event may call 'created'.
+    store.update_status(p["id"], "created", "Cadastro confirmado pelo site.")
+    assert store.get(p["id"])["status"] == "created"
+    # Later navigation errors do not incorrectly revoke a confirmed account.
+    store.update_status(p["id"], "error", "Proxy indisponível.")
+    assert store.get(p["id"])["status"] == "created"
+
+
+def test_legacy_profile_without_original_snapshot_is_rejected(isolated_profiles):
+    store = isolated_profiles
+    old = store.create("mae", device_mode="android")
+    from nexora_accounts.session_launcher import AccountLauncher
+    with pytest.raises(ValueError, match="perfil técnico original"):
+        AccountLauncher().launch(None, old["id"])
