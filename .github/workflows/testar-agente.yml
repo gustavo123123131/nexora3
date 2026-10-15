@@ -1,7 +1,7 @@
 name: Testar painel e agente Windows
 on:
   push:
-    branches: [main, integracao-cadastro-contas, remover-supabase-json-local, fix-abrir-conta-registro-verificado, contas-perfis-locais-automaticos]
+    branches: [main, integracao-cadastro-contas, remover-supabase-json-local, fix-abrir-conta-registro-verificado, contas-perfis-locais-automaticos, ajuste-cpf-senha-curta]
   workflow_dispatch:
 jobs:
   smoke-tests:
