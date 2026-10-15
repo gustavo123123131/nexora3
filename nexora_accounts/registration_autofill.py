@@ -190,25 +190,57 @@ def autofill_existing_registration(page, instance_plan, repository=None, progres
             real_name = _visible(page, FIELDS["realName"])
             report("real-name-field-found" if real_name is not None
                    else "real-name-field-missing")
-            # Do not load a global Windows owner name into every unrelated
-            # profile. On remote sites, generated profileData.fullName is
-            # synthetic; the person using the browser supplies their own
-            # identity separately. Authorized per-profile data is handled by
-            # the confirmed-owner path below.
+            # Preview the name of THIS profile, not a global Windows variable.
+            # This is only form prefill: no automatic third-party signup or
+            # claim that a synthetic test profile is a verified identity.
+            profile_name = data.get("fullName")
+            name_filled = False
+            if real_name is not None and isinstance(profile_name, str):
+                profile_name = profile_name.strip()
+                if 3 <= len(profile_name) <= 120 and " " in profile_name:
+                    if not _same_site(target, page.url):
+                        report("origin-changed")
+                        return {
+                            "status": "blocked", "fieldCount": filled,
+                            "message": "Domínio alterado antes de preencher o nome.",
+                        }
+                    try:
+                        real_name.fill(profile_name, timeout=6000)
+                        # React/Vue forms may rerender after input events. Read
+                        # the current element again before claiming success.
+                        page.wait_for_timeout(120)
+                        current_name = _visible(page, FIELDS["realName"])
+                        if current_name is None or current_name.input_value(timeout=3000) != profile_name:
+                            report("real-name-fill-error")
+                            return {
+                                "status": "error", "fieldCount": filled,
+                                "message": "O site alterou ou truncou o nome após preenchimento.",
+                            }
+                        filled += 1
+                        name_filled = True
+                        report("real-name-filled")
+                        repo.set_stage(key, "local", "profile-name-prefilled")
+                    except Exception:
+                        report("real-name-fill-error")
+                        return {
+                            "status": "error", "fieldCount": filled,
+                            "message": "Não foi possível confirmar o nome completo no campo.",
+                        }
             submit_button = _visible(page, ("#insideRegisterSubmitClick",))
             report("submit-button-found" if submit_button is not None
                    else "submit-button-missing")
-            if real_name is not None:
+            if real_name is not None and not name_filled:
                 report("name-entry-pending")
             report("submit-not-sent")
             return {
-                "status": "credentials-filled",
+                "status": "profile-name-filled" if name_filled else "credentials-filled",
                 "fieldCount": filled,
                 "message": (
-                    "Username e senhas preenchidos. O campo Nome não é "
-                    "preenchido com nomes globais do Windows nem com dados "
-                    "fictícios de perfis. Revise o nome do titular no navegador "
-                    "antes de qualquer registro externo."
+                    "Username, senhas e nome do perfil inseridos e conferidos. "
+                    "O cadastro externo não foi enviado."
+                    if name_filled else
+                    "Username e senhas inseridos; nome do perfil indisponível "
+                    "ou campo de nome não localizado. Cadastro externo não enviado."
                 ),
             }
         return {
