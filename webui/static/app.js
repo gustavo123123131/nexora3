@@ -7,9 +7,6 @@ const pendingInput = new Map();
 const shownDialogs = new Set();
 // Proxy workspace uses local-agent endpoints and does not change existing GUI callbacks.
 const PROXY_PREVIEW_ID = '__nexora_proxy_visual__';
-const ACCOUNTS_VIEW_ID = '__nexora_accounts_local__';
-let accountsViewNode = null;
-let accountsViewInstance = null;
 let proxyPreviewNode = null;
 let proxyPreviewInstance = null;
 function proxyPreview() {
@@ -22,17 +19,6 @@ function proxyPreview() {
   }
   proxyPreviewInstance.onShow();
   return proxyPreviewNode;
-}
-function accountsView() {
-  if (!accountsViewInstance) {
-    accountsViewInstance = window.NexoraAccountsView.create({
-      get: getRegistration,
-      post: post,
-    });
-    accountsViewNode = accountsViewInstance.node;
-  }
-  accountsViewInstance.onShow();
-  return accountsViewNode;
 }
 let currentState = null;
 let hadSuccessfulConnection = false;
@@ -389,7 +375,7 @@ function updateOptions(el, obj) {
     const appearance = {
       'Iniciar (COM automação)': 'ui-action-start',
       'Iniciar (SEM automação)': 'ui-action-manual',
-      'Abrir Conta': 'ui-action-start',
+      'Abrir Navegadores': 'ui-action-start',
       'Reabrir guias': 'ui-action-reopen',
       'PARAR': 'ui-action-stop',
     };
@@ -424,7 +410,7 @@ function renderNode(obj) {
     if (obj.type === 'tabs') {
       const tabs = obj.children || [];
       let active = selectedTabs.get(obj.id);
-      if (active !== PROXY_PREVIEW_ID && active !== ACCOUNTS_VIEW_ID && !tabs.some(tab => tab.id === active)) active = tabs[0]?.id;
+      if (active !== PROXY_PREVIEW_ID && !tabs.some(tab => tab.id === active)) active = tabs[0]?.id;
       selectedTabs.set(obj.id, active);
       const bar = el.querySelector('.tab-bar');
       const oldButtons = new Map([...bar.children].map(button => [button.dataset.tabid, button]));
@@ -459,27 +445,13 @@ function renderNode(obj) {
       proxyButton.textContent = 'Proxy';
       proxyButton.classList.toggle('active', active === PROXY_PREVIEW_ID);
       proxyButton.setAttribute('aria-current', active === PROXY_PREVIEW_ID ? 'page' : 'false');
-      let accountsButton = oldButtons.get(ACCOUNTS_VIEW_ID);
-      if (!accountsButton) {
-        accountsButton = document.createElement('button');
-        accountsButton.type = 'button';
-        accountsButton.dataset.tabid = ACCOUNTS_VIEW_ID;
-        accountsButton.addEventListener('click', () => {
-          selectedTabs.set(obj.id, ACCOUNTS_VIEW_ID);
-          if (currentState) updateTree(currentState.tree);
-        });
-      }
-      accountsButton.textContent = 'Contas';
-      accountsButton.classList.toggle('active', active === ACCOUNTS_VIEW_ID);
-      accountsButton.setAttribute('aria-current', active === ACCOUNTS_VIEW_ID ? 'page' : 'false');
-      patchChildren(bar, [...buttons, proxyButton, accountsButton]);
+      patchChildren(bar, [...buttons, proxyButton]);
       const activeTab = tabs.find(tab => tab.id === active);
-      el.dataset.activeView = active === PROXY_PREVIEW_ID ? 'Proxy'
-        : active === ACCOUNTS_VIEW_ID ? 'Contas' : (activeTab?.options?._tab_label || '');
+      el.dataset.activeView = active === PROXY_PREVIEW_ID
+        ? 'Proxy' : (activeTab?.options?._tab_label || '');
       const content = el.querySelector('.tab-content');
       patchChildren(content, active === PROXY_PREVIEW_ID
-        ? [proxyPreview()] : active === ACCOUNTS_VIEW_ID
-        ? [accountsView()] : (activeTab ? [renderNode(activeTab)] : []));
+        ? [proxyPreview()] : (activeTab ? [renderNode(activeTab)] : []));
     } else {
       renderContainerLayout(el, obj);
       const children = obj.children || [];
