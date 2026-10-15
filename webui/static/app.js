@@ -479,7 +479,8 @@ function renderNode(obj) {
         active === PROXY_PREVIEW_ID ? 'Proxy' : (activeTab?.options?._tab_label || '');
       const content = el.querySelector('.tab-content');
       patchChildren(content, active === PROXY_PREVIEW_ID
-        ? [proxyPreview()] : (activeTab ? [renderNode(activeTab)] : []));
+        ? [proxyPreview()] : active === ACCOUNTS_VIEW_ID
+        ? [accountsView()] : (activeTab ? [renderNode(activeTab)] : []));
     } else {
       renderContainerLayout(el, obj);
       const children = obj.children || [];
