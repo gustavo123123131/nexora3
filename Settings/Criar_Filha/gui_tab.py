@@ -2397,26 +2397,42 @@ class FilhaTab(ctk.CTkFrame):
             proxy = None if managed_proxies else self._validate_proxy()
             if not managed_proxies and self.proxy_var.get().strip() and proxy is None:
                 return
-            # Blank browsers also need a proxy; never launch them directly by mistake.
+            if managed_proxies and not saved_proxies:
+                self._set_status("Adicione uma proxy para abrir navegadores.")
+                self._log("[Proxy] Nenhuma proxy salva; abertura bloqueada para evitar conexão direta.")
+                return
+            # A selected existing account retains its original proxy.
+            from nexora_accounts.local_profiles import LocalProfileStore
+            selected_profile = LocalProfileStore().selected()
+            selected_id = selected_profile["id"] if selected_profile else None
             launch_plans = _build_instance_plans(normalized_urls or ["about:blank"], count, use_same_identity)
             if saved_proxies and launch_plans:
-                assignments = proxy_store.assign(len(launch_plans))
+                assignments = proxy_store.assign(len(launch_plans), profile_id=selected_id)
                 checked = set()
+                probe_target = urlparse(normalized_urls[0]).hostname if normalized_urls else None
                 for entry in assignments:
                     if entry["id"] in checked:
                         continue
                     checked.add(entry["id"])
-                    result = proxy_store.test(entry["id"])
+                    result = proxy_store.test_authenticated(
+                        entry["id"], target=probe_target or "example.com",
+                    )
                     if not result["reachable"]:
-                        self._set_status("Proxy indisponível. Navegadores não iniciados.")
-                        self._log(f"[Proxy] Falha na conexão TCP com {entry['host']}:{entry['port']}; início cancelado.")
+                        self._set_status("Falha de autenticação/conexão da proxy.")
+                        self._log(
+                            f"[Proxy] {entry['host']}:{entry['port']}: "
+                            f"{result.get('status', 'falha')} — {result.get('message', 'Teste não concluído')}. "
+                            "Navegadores não iniciados."
+                        )
                         return
+                    self._log(f"[Proxy] {entry['host']}:{entry['port']}: HTTPS e CONNECT verificados.")
                 for plan, entry in zip(launch_plans, assignments):
                     plan["proxy_config"] = ProxyConfig(
                         server=f"{entry['protocol']}://{entry['host']}:{entry['port']}",
                         username=entry["username"] or None,
                         password=entry["password"] or None,
                     )
+                    plan["proxy_id"] = entry["id"]
                     plan["proxy_label"] = f"{entry['protocol'].upper()} {entry['host']}:{entry['port']}"
                     self._log(f"[Proxy] Janela #{plan['idx']}: {plan['proxy_label']}.")
                 if len(launch_plans) > len(checked):
@@ -2431,6 +2447,14 @@ class FilhaTab(ctk.CTkFrame):
         profile = self.create_local_profile()
         if not profile:
             return
+        if launch_plans and launch_plans[0].get("proxy_id"):
+            try:
+                proxy_store.bind_profile(profile["id"], launch_plans[0]["proxy_id"])
+                self._log(f"[Proxy] {profile['label']}: associação persistente salva.")
+            except ProxyError as exc:
+                self._set_status("Falha ao vincular a proxy à conta.")
+                self._log("[Proxy] Associação do perfil falhou; navegador não iniciado.")
+                return
         if launch_plans:
             launch_plans[0]["registration_profile"] = profile
             if len(launch_plans) > 1:
