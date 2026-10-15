@@ -205,36 +205,24 @@ def _handle_connect(client: socket.socket, target: str, headers: bytes, idx: int
 
     upstream = _resolve_upstream_for_idx(idx)
 
-    if upstream:
-        upstream_server = str(upstream.get("server") or "").strip()
-        scheme, rest = upstream_server.split("://", 1) if "://" in upstream_server else ("http", upstream_server)
-        proxy_host, proxy_port_str = rest.rsplit(":", 1)
-        proxy_port = int(proxy_port_str)
-
-        upstream_sock = _open_socket(proxy_host, proxy_port)
-
-        req = [
-            f"CONNECT {host}:{port} HTTP/1.1\r\n".encode("utf-8"),
-            f"Host: {host}:{port}\r\n".encode("utf-8"),
-        ]
-
-        if upstream.get("username"):
-            req.append(_proxy_auth_header(str(upstream["username"]), str(upstream.get("password") or "")))
-
-        req.append(b"\r\n")
-        upstream_sock.sendall(b"".join(req))
-
-        upstream_resp = _recv_headers(upstream_sock)
-        if b" 200 " not in upstream_resp.split(b"\r\n", 1)[0]:
-            client.sendall(upstream_resp or b"HTTP/1.1 502 Bad Gateway\r\n\r\n")
-            upstream_sock.close()
-            return
-
-        client.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
-        _pipe_bidirectional(client, upstream_sock)
+    # The local gateway is a proxy endpoint, never an implicit direct
+    # connection. An explicitly DIRECT browser uses proxy=None and does not
+    # invoke this gateway at all.
+    if not upstream:
+        client.sendall(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
         return
-
-    remote = _open_socket(host, port)
+    # Delegate authentication, HTTP/HTTPS/SOCKS protocol selection and the
+    # exact upstream CONNECT reply to the shared per-session tunnel code.
+    from Settings.Criar_Mae.settings.browser import ProxyConfig
+    from Settings.session_proxy_gateway import _open_tunnel
+    remote = _open_tunnel(
+        ProxyConfig(
+            server=str(upstream["server"]),
+            username=upstream.get("username"),
+            password=upstream.get("password"),
+        ),
+        host, port,
+    )
     client.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
     _pipe_bidirectional(client, remote)
 
@@ -247,54 +235,55 @@ def _handle_plain_http(client: socket.socket, header_block: bytes, body: bytes, 
 
     upstream = _resolve_upstream_for_idx(idx)
 
-    if upstream:
-        upstream_server = str(upstream.get("server") or "").strip()
-        scheme, rest = upstream_server.split("://", 1) if "://" in upstream_server else ("http", upstream_server)
-        proxy_host, proxy_port_str = rest.rsplit(":", 1)
-        proxy_port = int(proxy_port_str)
-
-        out = _remove_proxy_auth_headers(header_block)
-
-        if upstream.get("username"):
-            out = out.replace(
-                b"\r\n\r\n",
-                b"\r\n" + _proxy_auth_header(str(upstream["username"]), str(upstream.get("password") or "")) + b"\r\n",
-                1,
-            )
-
-        upstream_sock = _open_socket(proxy_host, proxy_port)
-        upstream_sock.sendall(out + body)
-        _pipe_bidirectional(client, upstream_sock)
+    if not upstream:
+        client.sendall(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
         return
 
-    parsed = urlsplit(target)
-    host = parsed.hostname
-    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    from Settings.Criar_Mae.settings.browser import ProxyConfig
+    from Settings.session_proxy_gateway import _open_tunnel
+    import ssl
+    info = urlsplit(target)
+    if info.scheme != "http" or not info.hostname:
+        client.sendall(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+        return
 
-    if not host:
-        host_header = _extract_host_from_headers(header_block)
-        if not host_header:
-            client.sendall(b"HTTP/1.1 400 Bad Request\r\n\r\n")
-            return
-        if ":" in host_header:
-            host, port_str = host_header.rsplit(":", 1)
-            port = int(port_str)
-        else:
-            host = host_header
-            port = 80
-
-    path = parsed.path or "/"
-    if parsed.query:
-        path += "?" + parsed.query
-
+    server = str(upstream.get("server") or "")
+    proxy_url = urlsplit(server)
+    if proxy_url.scheme not in ("http", "https", "socks5") or not proxy_url.hostname or not proxy_url.port:
+        raise ValueError("Upstream inválida")
     clean = _remove_proxy_auth_headers(header_block)
-    lines = clean.split(b"\r\n")
-    lines[0] = f"{method} {path} {version}".encode("utf-8")
-    out = b"\r\n".join(lines)
-
-    remote = _open_socket(host, port)
-    remote.sendall(out + body)
+    if proxy_url.scheme in ("http", "https"):
+        remote = _open_socket(proxy_url.hostname, proxy_url.port)
+        if proxy_url.scheme == "https":
+            remote = ssl.create_default_context().wrap_socket(
+                remote, server_hostname=proxy_url.hostname
+            )
+        if upstream.get("username"):
+            clean = clean.replace(
+                b"\r\n\r\n",
+                b"\r\n" + _proxy_auth_header(
+                    str(upstream["username"]), str(upstream.get("password") or "")
+                ) + b"\r\n", 1,
+            )
+    else:
+        remote = _open_tunnel(
+            ProxyConfig(
+                server=server,
+                username=upstream.get("username"),
+                password=upstream.get("password"),
+            ),
+            info.hostname, info.port or 80,
+        )
+        # After SOCKS CONNECT, speak origin-form HTTP to the destination.
+        lines = clean.split(b"\r\n")
+        origin_path = info.path or "/"
+        if info.query:
+            origin_path += "?" + info.query
+        lines[0] = f"{method} {origin_path} {version}".encode("ascii")
+        clean = b"\r\n".join(lines)
+    remote.sendall(clean + body)
     _pipe_bidirectional(client, remote)
+
 
 def _send_proxy_auth_required(client: socket.socket):
     try:
