@@ -160,10 +160,13 @@ def test_nexora_visual_and_existing_controls(tmp_path):
                 # Separate functional accounts tab must not alter original Mãe/Filha.
                 page.get_by_role("button", name="Contas", exact=True).click()
                 expect(page.get_by_role("heading", name="Contas e cadastro")).to_be_visible()
-                expect(page.get_by_role("heading", name="01 · Configurar site")).to_be_visible()
-                expect(page.get_by_role("heading", name="02 · Adicionar conta")).to_be_visible()
-                expect(page.get_by_role("heading", name="03 · Suas contas")).to_be_visible()
-                expect(page.locator(".accounts-list")).to_be_visible()
+                expect(page.get_by_role("heading", name="Banco Supabase · Nexora")).to_be_visible()
+                expect(page.get_by_role("button", name="Entrar no Supabase")).to_be_visible()
+                expect(page.get_by_role("button", name="Criar acesso")).to_be_visible()
+                # No cloud credentials in CI: account forms must be locked.
+                expect(page.get_by_role("heading", name="01 · Configurar site")).to_be_hidden()
+                expect(page.get_by_role("heading", name="02 · Adicionar conta")).to_be_hidden()
+                expect(page.get_by_role("heading", name="03 · Suas contas")).to_be_hidden()
                 page.screenshot(path=str(screenshot_dir / "nexora-contas.png"), full_page=True)
                 page.get_by_role("button", name="Criar Mãe").click()
                 expect(page.get_by_role("button", name="Abrir Conta")).to_be_visible()
