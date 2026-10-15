@@ -1322,16 +1322,12 @@ def run_instance(
                                     prefill_result = autofill_existing_registration(page, instance_plan)
                                     log(f"[#{idx}] Cadastro: {prefill_result['message']}")
                                     from nexora_accounts.registration_submit import (
-                                        RegistrationWatcher, request_demo_submit,
-                                        request_confirmed_auto_submit,
+                                        RegistrationWatcher, request_autosubmit_after_fill,
                                     )
                                     registration_watcher = RegistrationWatcher(page, instance_plan, log=log)
-                                    if prefill_result["status"] == "filled":
-                                        profile_id = instance_plan["profile_record_id"]
-                                        if request_demo_submit(profile_id):
-                                            log(f"[#{idx}] Cadastro DEMO: clique em Registro solicitado.")
-                                        elif request_confirmed_auto_submit(profile_id):
-                                            log(f"[#{idx}] Cadastro autorizado: clique em Registro solicitado.")
+                                    request_autosubmit_after_fill(
+                                        page, instance_plan, prefill_result, log,
+                                    )
                                 except Exception:
                                     log(f"[#{idx}] Cadastro: preenchimento indisponível; verifique o formulário.")
                             log(f"[#{idx}] ✋ MODO MANUAL pronto em {url}.")
