@@ -195,7 +195,7 @@ def _pipe_bidirectional(a: socket.socket, b: socket.socket):
                 pass
 
 
-def _handle_connect(client: socket.socket, target: str, headers: bytes, idx: int):
+def _handle_connect(client: socket.socket, target: str, headers: bytes, idx: int, body: bytes = b""):
     if ":" not in target:
         client.sendall(b"HTTP/1.1 400 Bad Request\r\n\r\n")
         return
@@ -224,6 +224,8 @@ def _handle_connect(client: socket.socket, target: str, headers: bytes, idx: int
         host, port,
     )
     client.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+    if body:
+        remote.sendall(body)
     _pipe_bidirectional(client, remote)
 
 
@@ -312,7 +314,7 @@ def _client_worker(client: socket.socket, address):
         method, target, _ = _parse_request_line(header_block)
 
         if method.upper() == "CONNECT":
-            _handle_connect(client, target, header_block, idx)
+            _handle_connect(client, target, header_block, idx, body)
         else:
             _handle_plain_http(client, header_block, body, idx)
     except Exception:
