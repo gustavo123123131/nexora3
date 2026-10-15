@@ -178,7 +178,24 @@ class AccountsRepository:
                 legacy = self.path.with_name("accounts.sqlite")
                 state = self._import_legacy(legacy) if self.path.suffix == ".json" and legacy.is_file() else self._empty()
                 self._write(state)
-            self._read()
+            # Upgrade only weak passwords of unsubmitted local TEST profiles.
+            # Never rewrite confirmed profiles or legitimate user credentials.
+            state = self._read()
+            upgraded = 0
+            from nexora_accounts.profile_data import make_password
+            for account in state["accounts"]:
+                demo_data = account.get("profileData")
+                if (account.get("status") == "local"
+                        and account.get("stage") in ("profile-created", "test-data-blocked", "form-not-found")
+                        and isinstance(demo_data, dict)
+                        and demo_data.get("isTestData") is True
+                        and isinstance(demo_data.get("password"), str)
+                        and len(demo_data["password"]) < 12):
+                    demo_data["password"] = make_password()
+                    account["updatedAt"] = _now()
+                    upgraded += 1
+            if upgraded:
+                self._write(state)
 
     @staticmethod
     def _empty():
