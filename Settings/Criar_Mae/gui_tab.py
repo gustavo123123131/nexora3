@@ -26,6 +26,7 @@ from Settings.Criar_Mae.settings.browser import (
     get_app_spoof_script,
     parse_proxy_string,
     build_proxy_dict,
+    build_upstream_proxy_dict,
     ProxyConfig,
 )
 from Settings.Criar_Mae.settings.withdrawal import verify_phone_now
@@ -1064,7 +1065,13 @@ def run_instance(
 
         cfg = make_config(mode, idx)
         log(f"[#{idx}] Dispositivo selecionado: {cfg.mode} (navegador Chromium).")
-        proxy_dict = build_proxy_dict(proxy, idx=idx) if proxy else None
+        # Keep the existing local HTTP gateway (including per-instance idx).
+        # HTTPS/SOCKS5 upstreams use Playwright's native proxy configuration.
+        proxy_dict = (
+            build_upstream_proxy_dict(proxy, idx=idx)
+            if proxy and proxy.server.split(":", 1)[0] in ("https", "socks5")
+            else build_proxy_dict(proxy, idx=idx) if proxy else None
+        )
 
         if registration_id:
             log(f"[#{idx} ID={registration_id[:8]}] Abrindo perfil (ciclo {attempt}/{MAX_BROWSER_RESTARTS}).")
@@ -2383,6 +2390,18 @@ class MaeTab(ctk.CTkFrame):
         self.deposit_amount_entry.configure(state=("normal" if enabled else "normal"))
 
     def _validate_proxy(self) -> Optional[ProxyConfig]:
+        # A selected proxy in the Proxy workspace overrides the legacy
+        # text field for NEW browsers. Existing sessions are not altered.
+        try:
+            from nexora_accounts.proxy_store import active_proxy_config
+            selected = active_proxy_config()
+            if selected is not None:
+                return selected
+        except Exception:
+            self._set_status("Não foi possível ler os proxies salvos.")
+            self._log("[UI] Falha ao consultar o gerenciador de proxies.")
+            raise
+
         raw = self.proxy_var.get().strip()
         if not raw:
             return None
