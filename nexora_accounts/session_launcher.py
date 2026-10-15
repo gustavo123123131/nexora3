@@ -54,6 +54,11 @@ class AccountLauncher:
     def launch(self, gui, profile_id: int):
         """Reserve a profile and start one independent browser worker."""
         profile = LocalProfileStore().get(profile_id)
+        from nexora_accounts.browser_sessions import is_account_open
+        if is_account_open(profile["origin"], profile_id):
+            raise AccountBusyError(
+                f"{profile['label']} já está aberta. Feche a janela antes de abrir outra."
+            )
         module, tab = self._controller(gui, profile["origin"])
         # Legacy account cards were created before device and URL were saved.
         # Never guess which original URL/device they used.
@@ -121,6 +126,9 @@ class AccountLauncher:
                     # If the local proxy workspace has never been configured,
                     # retain the original legacy proxy behavior on this tab.
                     session_proxy = tab._validate_proxy()
+                    if str(tab.proxy_var.get() or "").strip() and session_proxy is None:
+                        log(f"[Contas] {profile['label']}: configuração de proxy inválida; abertura cancelada.")
+                        return
 
                 plan = {
                     "idx": instance_idx,
