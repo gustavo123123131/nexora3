@@ -10,7 +10,7 @@ Ao clicar **Abrir Conta**, o agente Windows:
 - respeita a quantidade por link já selecionada e cria uma pasta Chromium
   individual, sem reutilizar pastas existentes;
 - grava um registro por perfil em `%LOCALAPPDATA%\\Nexora\\accounts.json`;
-- gera nome de **teste**, username único com prefixo neutro, senha de **9 caracteres**
+- gera nome de **teste**, username único de **6 a 9 caracteres alfanuméricos**, senha de **9 caracteres**
   (letras maiúsculas/minúsculas, números e símbolos), e-mail **não verificável**
   em `example.test`, telefone de teste e CPF com formato/dígitos verificadores
   válidos **não verificado nem associado a pessoa real**;
