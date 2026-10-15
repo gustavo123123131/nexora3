@@ -92,7 +92,7 @@ def test_error_message_tells_which_requirement_failed():
     try:
         _real_values(user_input, generated)
     except ValueError as exc:
-        assert "Senha curta" in str(exc)
+        assert "Senha inválida" in str(exc)
         assert "Username ou senha" not in str(exc)
     else:
         assert False, "Weak password must fail clearly"
