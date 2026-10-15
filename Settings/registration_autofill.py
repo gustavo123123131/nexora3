@@ -55,16 +55,48 @@ def fill_registration_form(page, profile: dict, log, stop_event, *,
         if stop_event.is_set():
             log(f"{prefix} [Registro] Interrompido antes de Registrar.")
             return False
-        stage = "Registrar"
+        stage = "Encontrar botão Registrar"
+        log(f"{prefix} [Registro] Todos os campos conferidos. Procurando botão Registrar.")
         button = page.locator(SUBMIT)
+        initial_count = button.count()
+        log(f"{prefix} [Registro] Seletor {SUBMIT}: {initial_count} elemento(s) no DOM.")
+        stage = "Aguardar botão Registrar visível"
         button.wait_for(state="visible", timeout=timeout_ms)
+        matches = button.count()
+        if matches != 1:
+            log(f"{prefix} [Registro] Clique não realizado: encontrados {matches} botões; esperado exatamente 1.")
+            return False
+        enabled = button.is_enabled()
+        log(f"{prefix} [Registro] Botão visível; habilitado={'sim' if enabled else 'não'}.")
+        if not enabled:
+            log(f"{prefix} [Registro] Aguardando o site habilitar o botão antes do clique.")
         time.sleep(delay_seconds)
         if stop_event.is_set():
             log(f"{prefix} [Registro] Interrompido antes do clique.")
             return False
+
+        stage = "Clicar em Registrar"
+        log(f"{prefix} [Registro] Iniciando clique no botão Registrar (timeout {timeout_ms} ms).")
         button.click(timeout=timeout_ms)
         log(f"{prefix} [Registro] Clique em Registrar enviado; resultado do site não confirmado.")
         return True
     except Exception as exc:
-        log(f"{prefix} [Registro] Falha na etapa {stage}: {type(exc).__name__}.")
+        detail = str(exc).lower()
+        if "intercepts pointer events" in detail:
+            reason = "Outro elemento está interceptando o clique no botão."
+        elif "not enabled" in detail or "disabled" in detail:
+            reason = "O site manteve o botão desabilitado."
+        elif "strict mode violation" in detail:
+            reason = "O seletor encontrou mais de um botão."
+        elif "not visible" in detail or "hidden" in detail:
+            reason = "O botão está oculto."
+        elif "detached" in detail:
+            reason = "O site substituiu o botão enquanto o clique era preparado."
+        elif "target page, context or browser has been closed" in detail:
+            reason = "A página ou o navegador foi fechado."
+        elif "timeout" in detail:
+            reason = "O tempo de espera acabou; o botão pode não estar clicável."
+        else:
+            reason = "O navegador não concluiu esta etapa."
+        log(f"{prefix} [Registro] Falha na etapa {stage}: {type(exc).__name__}. {reason}")
         return False
