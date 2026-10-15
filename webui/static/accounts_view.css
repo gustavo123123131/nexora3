@@ -84,3 +84,15 @@
   border-color: #9eafff;
   background: #334773;
 }
+
+.accounts-proxy-association {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 12px;
+}
+.accounts-proxy-association label { font-size: 11px; font-weight: 700; color: #adc2df; }
+.accounts-proxy-association select {
+  width: 100%; min-height: 35px; border: 1px solid #435574;
+  border-radius: 7px; background: #192639; color: #e7effb;
+  padding: 6px 10px; font-size: 12px;
+}
