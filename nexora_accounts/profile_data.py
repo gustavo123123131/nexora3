@@ -18,12 +18,16 @@ def valid_cpf_digits(base: str) -> str:
 
 
 def make_password() -> str:
-    """Generate a 16-character secret matching the local 12+ validation rule."""
+    """Generate a nine-character test-profile password, per requested 7-9 range.
+
+    Prefer nine rather than seven for additional entropy. Each secret has mixed
+    upper/lowercase letters, numbers and symbols, with OS-backed randomness.
+    """
     chars = (
-        [secrets.choice("abcdefghijklmnopqrstuvwxyz") for _ in range(10)]
-        + [secrets.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ") for _ in range(2)]
+        [secrets.choice("abcdefghijklmnopqrstuvwxyz") for _ in range(5)]
+        + [secrets.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ")]
         + [secrets.choice("0123456789") for _ in range(2)]
-        + [secrets.choice("#!@?") for _ in range(2)]
+        + [secrets.choice("#!@?")]
     )
     secrets.SystemRandom().shuffle(chars)
     return "".join(chars)
