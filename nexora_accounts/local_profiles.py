@@ -180,6 +180,99 @@ class LocalProfileStore:
             raise LocalProfileError("Conta não encontrada.")
         return profile
 
+    def set_runtime_config(self, profile_id: int, runtime: dict) -> dict:
+        """Store the exact device configuration *once*; never regenerate on reopen."""
+        if type(profile_id) is not int or not isinstance(runtime, dict):
+            raise LocalProfileError("Dados da sessão inválidos.")
+        from Settings.device_modes import resolve_mode
+        required = (
+            "mode", "user_agent", "viewport", "device_scale_factor",
+            "is_mobile", "has_touch", "webgl_vendor", "webgl_renderer",
+            "extra_headers",
+        )
+        if any(key not in runtime for key in required):
+            raise LocalProfileError("Configuração de dispositivo incompleta.")
+        try:
+            mode = resolve_mode(runtime["mode"])
+            vp = runtime["viewport"]
+            if mode == "mixed" or not isinstance(vp, dict):
+                raise ValueError("invalid device")
+            width, height = int(vp["width"]), int(vp["height"])
+            scale = float(runtime["device_scale_factor"])
+            if width < 200 or height < 200 or scale <= 0 or scale > 10:
+                raise ValueError("invalid viewport")
+            if any(not isinstance(runtime[k], str) or not runtime[k].strip()
+                   for k in ("user_agent", "webgl_vendor", "webgl_renderer")):
+                raise ValueError("invalid identity")
+            if type(runtime["is_mobile"]) is not bool or type(runtime["has_touch"]) is not bool:
+                raise ValueError("invalid mobile flags")
+            if not isinstance(runtime["extra_headers"], dict):
+                raise ValueError("invalid headers")
+            snapshot = {
+                "mode": mode,
+                "user_agent": runtime["user_agent"],
+                "viewport": {"width": width, "height": height},
+                "device_scale_factor": scale,
+                "is_mobile": runtime["is_mobile"],
+                "has_touch": runtime["has_touch"],
+                "webgl_vendor": runtime["webgl_vendor"],
+                "webgl_renderer": runtime["webgl_renderer"],
+                "extra_headers": runtime["extra_headers"].copy(),
+            }
+        except (TypeError, ValueError, KeyError) as exc:
+            raise LocalProfileError("Configuração original de dispositivo inválida.") from exc
+        with _LOCK:
+            state = self._read()
+            item = next((p for p in state["profiles"] if p["id"] == profile_id), None)
+            if item is None:
+                raise LocalProfileError("Conta não encontrada.")
+            existing = item.get("runtimeConfig")
+            if existing is not None:
+                if existing != snapshot:
+                    raise LocalProfileError("O dispositivo da conta já está fixado e não pode ser substituído.")
+                return item.copy()
+            if item.get("deviceMode") != mode:
+                raise LocalProfileError("Dispositivo da sessão não corresponde à conta.")
+            item["runtimeConfig"] = snapshot
+            item["deviceLabel"] = self._device_label(snapshot)
+            item["updatedAt"] = datetime.now(timezone.utc).isoformat()
+            self._write(state)
+            return item.copy()
+
+    @staticmethod
+    def _device_label(runtime: dict) -> str:
+        import re
+        mode = runtime.get("mode")
+        agent = runtime.get("user_agent", "")
+        if mode == "android":
+            m = re.search(r"Android[^;)]*;\\s*([^;)]+)", agent, flags=re.I)
+            model = m.group(1).strip() if m else ""
+            model = model.replace("Build/", " ").strip()
+            return model[:55] if model and model.lower() not in ("wv", "mobile") else "Android"
+        if mode == "iphone":
+            return "iPhone"
+        return "Computador"
+
+    def update_status(self, profile_id: int, status: str, message: str = "") -> dict:
+        """Never infer success from form filling, click or an HTTP 200 alone."""
+        if status not in ("pending", "created", "error"):
+            raise LocalProfileError("Status inválido.")
+        if type(profile_id) is not int:
+            raise LocalProfileError("ID da conta inválido.")
+        with _LOCK:
+            state = self._read()
+            item = next((p for p in state["profiles"] if p["id"] == profile_id), None)
+            if item is None:
+                raise LocalProfileError("Conta não encontrada.")
+            if item.get("status") == "created" and status != "created":
+                # A later browser/network failure cannot revoke registration.
+                return item.copy()
+            item["status"] = status
+            item["statusMessage"] = str(message or "")[:220]
+            item["updatedAt"] = datetime.now(timezone.utc).isoformat()
+            self._write(state)
+            return item.copy()
+
     def configure_legacy_launch(self, profile_id: int, device_mode: str, start_url: str = "") -> dict:
         """Capture missing launch settings once for cards created before this fix."""
         from Settings.device_modes import resolve_mode
@@ -264,6 +357,8 @@ class LocalProfileStore:
                 "password": password,
                 "confirmPassword": password,
                 "createdAt": datetime.now(timezone.utc).isoformat(),
+                "status": "pending",
+                "statusMessage": "Aguardando confirmação do cadastro pelo site.",
             }
             if device_mode is not None:
                 record["deviceMode"] = device_mode
