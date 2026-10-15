@@ -464,11 +464,29 @@ class AccountsRepository:
                 raise AccountError("Não existem índices livres suficientes para criar os perfis.")
             plans = []
             created_folders = []
+            # Short usernames have fewer possible combinations; explicitly
+            # prevent collisions with all previously saved accounts and with
+            # profiles created within this batch.
+            taken_usernames = set()
+            for existing in state["accounts"]:
+                identity = existing.get("profileData")
+                values = [existing.get("loginIdentifier")]
+                if isinstance(identity, dict):
+                    values.append(identity.get("username"))
+                taken_usernames.update(
+                    value.casefold() for value in values if isinstance(value, str)
+                )
             launch_id = str(uuid.uuid4())
             try:
                 for position, (idx, folder) in enumerate(zip(indices, folders)):
                     url = targets[position // count_per_url]
-                    data = make_profile_data()
+                    for _ in range(50):
+                        data = make_profile_data()
+                        if data["username"].casefold() not in taken_usernames:
+                            break
+                    else:
+                        raise AccountError("Não foi possível gerar um username único. Tente novamente.")
+                    taken_usernames.add(data["username"].casefold())
                     now = _now()
                     folder.mkdir(parents=True, exist_ok=False)
                     created_folders.append(folder)
