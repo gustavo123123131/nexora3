@@ -118,8 +118,8 @@ def test_nexora_visual_and_existing_controls(tmp_path):
                 page.locator(".tab-bar button").nth(1).click()
                 page.screenshot(path=str(screenshot_dir / "nexora-filha.png"), full_page=True)
 
-                # Client-only Proxy tab must not affect Python widgets, credentials,
-                # browser profiles or backend APIs.
+                # Proxy tab now has local-agent CRUD; only explicit actions
+                # can mutate proxy configuration, never merely viewing the tab.
                 proxy_posts = []
                 page.on("request", lambda request: proxy_posts.append(request.url)
                         if request.method == "POST" and "/api/" in request.url else None)
@@ -127,11 +127,12 @@ def test_nexora_visual_and_existing_controls(tmp_path):
                 expect(page.locator(".tab-bar button.active")).to_have_text("Proxy")
                 expect(page.get_by_role("heading", name="Gerenciamento de proxy")).to_be_visible()
                 expect(page.get_by_text("Nenhum proxy configurado")).to_be_visible()
-                expect(page.get_by_text("INTEGRAÇÃO PENDENTE")).to_be_visible()
+                expect(page.get_by_text("GERENCIADOR LOCAL")).to_be_visible()
                 expect(page.locator(".proxy-table tbody tr")).to_have_count(1)
-                expect(page.get_by_role("button", name="Salvar proxy")).to_be_disabled()
-                expect(page.get_by_role("button", name="Editar")).to_be_disabled()
-                expect(page.get_by_role("button", name="Remover")).to_be_disabled()
+                expect(page.get_by_role("button", name="Salvar proxy")).to_be_enabled()
+                expect(page.locator("#proxy-clear-active")).to_be_disabled()
+                assert page.get_by_role("button", name="Editar").count() == 0
+                assert page.get_by_role("button", name="Remover").count() == 0
                 protocol = page.locator("#proxy-protocol")
                 assert protocol.locator("option").all_text_contents() == ["HTTP", "HTTPS", "SOCKS5"]
                 page.locator("#proxy-name").fill("Exemplo local (não salvo)")
