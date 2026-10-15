@@ -3,7 +3,9 @@ import uuid
 
 import pytest
 
-from nexora_accounts.registration_submit import RegistrationWatcher, request_submit
+from nexora_accounts.registration_submit import (
+    RegistrationWatcher, request_submit, request_confirmed_auto_submit
+)
 
 
 class Repo:
@@ -112,6 +114,47 @@ def test_request_needs_confirmation_and_blocks_test_identities():
     with pytest.raises(Exception):
         request_submit(account["id"], True, repo)
     assert not repo.events
+
+
+def test_abrir_conta_queues_one_click_for_confirmed_owner():
+    account = valid_account()
+    account["profileData"].update({
+        "fullName": "Pessoa Autorizada",
+        "email": "pessoa@dominio-valido.dev",
+        "phone": "",
+    })
+    repo = Repo(account)
+    key = account["id"]
+    page = Page(account["targetUrl"])
+    watcher = RegistrationWatcher(
+        page, {"profile_record_id": key, "idx": 1},
+        repository=repo, success_selector="#registration-success"
+    )
+    assert request_confirmed_auto_submit(key, repo) is True
+    assert request_confirmed_auto_submit(key, repo) is True  # idempotent queued request
+    watcher.tick()
+    watcher.tick()
+    assert page.button.clicks == 1
+    assert repo.account_record["stage"] == "awaiting-provider"
+
+
+def test_abrir_conta_never_queues_generated_identities_remotely():
+    for override in (
+        {"isTestData": True},
+        {"ownerConfirmed": False},
+        {"email": "fake@example.test"},
+        {"fullName": "Silva"},
+    ):
+        account = valid_account()
+        account["profileData"].update({
+            "fullName": "Pessoa Autorizada",
+            "email": "pessoa@dominio-valido.dev",
+            "phone": "",
+        })
+        account["profileData"].update(override)
+        repo = Repo(account)
+        assert request_confirmed_auto_submit(account["id"], repo) is False
+        assert repo.events == []
 
 
 def test_click_sent_once_and_http_200_not_mistaken_for_success():
