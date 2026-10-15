@@ -65,14 +65,18 @@ def test_real_profile_autofills_but_never_submits():
     assert repo.stages == [("id", "pending", "review")]
 
 
-def test_test_identity_cannot_autofill_remote_form():
+def test_generated_credentials_prefilled_without_sending_an_identity():
     fields = elements()
     repo = Repo(profile(isTestData=True), "https://example.org/register")
     result = autofill_existing_registration(
         Page("https://example.org/register", fields), {"profile_record_id": "id"}, repo)
-    assert result["status"] == "blocked"
-    assert not fields["input[data-input-name='account']"].fills
-    assert repo.stages == [("id", "local", "test-data-blocked")]
+    assert result["status"] == "credentials-filled"
+    assert result["fieldCount"] == 3
+    assert fields["input[data-input-name='account']"].fills == ["joana_titular"]
+    assert fields["input[data-input-name='userpass']"].fills == ["Senha!Teste12345"]
+    assert fields["input[data-input-name='confirmPassword']"].fills == ["Senha!Teste12345"]
+    assert fields["input[data-input-name='realName']"].fills == []
+    assert repo.stages == [("id", "local", "credentials-prefilled")]
 
 
 def test_test_data_can_prefill_local_demo():
