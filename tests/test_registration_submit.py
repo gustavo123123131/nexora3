@@ -15,7 +15,7 @@ class Repo:
         assert key == self.account_record["id"]
         return dict(self.account_record)
 
-    def set_stage(self, key, status, stage, http_status=None):
+    def set_stage(self, key, status, stage, http_status=None, error_code=None, duration_ms=None):
         assert key == self.account_record["id"]
         self.account_record.update(status=status, stage=stage)
         self.events.append({"status": status, "stage": stage, "http": http_status})
