@@ -1017,7 +1017,10 @@ def run_instance(
             return
 
         current_mode = (instance_plan or {}).get("device_mode", mode)
-        cfg = make_config(current_mode, idx)
+        cfg = make_config(
+            current_mode,
+            None if (instance_plan or {}).get("account_profile") else idx,
+        )
         log(f"[#{idx}] Dispositivo selecionado: {cfg.mode} (navegador Chromium).")
         # Saved workspace proxies use a fixed endpoint per Chromium context.
         # Legacy ad-hoc HTTP proxies keep their existing local gateway.
@@ -2499,6 +2502,10 @@ class MaeTab(ctk.CTkFrame):
                 return
             plan["account_profile"] = new_profile
             plan["device_mode"] = device
+            # A runtime index must never be reused by another account, even
+            # when earlier Chromium windows are still open in this tab.
+            # Keep original idx for device allocation before changing it.
+            plan["idx"] = 100000 + new_profile["id"]
             plan["registration_profile"] = new_profile
             if plan.get("proxy_id"):
                 try:
