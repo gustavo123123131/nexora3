@@ -33,6 +33,10 @@ class Locator:
     def is_visible(self):
         return self.present
 
+    def wait_for(self, state="visible", timeout=None):
+        if state != "visible" or not self.present:
+            raise TimeoutError("Botão de Registro ausente")
+
     def click(self, timeout=None):
         self.clicks += 1
 
