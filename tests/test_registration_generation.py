@@ -64,6 +64,10 @@ def test_new_profiles_have_usable_generated_usernames_and_passwords():
     assert len({x["username"] for x in profiles}) == len(profiles)
     assert len({x["password"] for x in profiles}) == len(profiles)
     for item in profiles:
+        assert 6 <= len(item["username"]) <= 9
+        assert item["username"].isascii() and item["username"].isalnum()
+        assert item["username"].islower()
+        assert item["username"][0].isalpha()
         assert not item["username"].startswith("teste")
         assert len(item["password"]) == 9
         assert item["email"] == item["username"] + "@example.test"
