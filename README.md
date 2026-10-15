@@ -98,32 +98,55 @@ Os testes verificam os comandos **Abrir Conta** das duas abas usando um
 worker simulado, sem cadastros ou sites externos, e validam a interface real
 no Chromium.
 
-## Workspace Proxy — interface visual (sem integração)
+## Workspace Proxy — gerenciamento funcional (baseado nos IPC observados da ProxyBet)
 
-A navegação web agora possui **três áreas**: **Criar Mãe**, **Criar Filha**
-e **Proxy**. A terceira área é renderizada apenas pelo JavaScript do
-navegador (arquivos `webui/static/proxy_view.js` e
-`webui/static/proxy_view.css`). **Não foi criada nenhuma rota nova ou
-configuração de proxy no backend.** O gateway local e os perfis existentes
-continuam intactos.
+A aba **Proxy** implementa as funções correspondentes aos canais observados no
+preload da ProxyBet: `proxies:list`, `proxies:save` e `proxy:test`. É uma
+implementação nova no backend Python/FastAPI do Nexora; não copia o motor
+Electron protegido nem presume conhecer contratos privados da ProxyBet.
 
-A tela Proxy contém nome, host, porta, protocolo (HTTP/HTTPS/SOCKS5),
-usuário opcional, senha opcional com mostrar/ocultar, área de listagem
-vazia, indicador **Integração pendente** e ações de salvar, editar e remover
-**desabilitadas**. Todos os campos são demonstrativos: **não salvam nem
-transmitem os dados**, não consultam APIs e não conectam/testam proxies.
-Se a página for recarregada, o conteúdo digitado nessa tela desaparece.
-A ligação entre os campos e uma futura API deverá ser implementada
-explicitamente na próxima etapa, com validação e tratamento seguro de
-credenciais.
+Na interface, o usuário pode:
 
-A nova aparência grafite com acentos azul-violeta está concentrada em
-`webui/static/workspace_theme.css`. Ela é aplicada tanto às telas de
-contas quanto à navegação e à tela de pareamento, sem mudar os comandos
-`Abrir Conta`, `Parar`, normalização HTTPS ou funcionamento localhost.
-O teste `tests/test_visual_ui.py` confere as três telas em Chromium e
-verifica que interagir com a visualização Proxy não dispara requisições
-POST às APIs.
+- Salvar vários proxies HTTP, HTTPS ou SOCKS5 com nome, host, porta,
+  usuário e senha opcional;
+- Listar, editar, remover e escolher o proxy padrão (**Usar**);
+- **Desativar** o proxy selecionado: a escolha é explícita e não volta
+  silenciosamente ao campo legado oculto nas abas Mãe/Filha;
+- **Testar TCP**: confirma apenas que a porta aceita conexão, **não**
+  confirma credenciais, saída externa, IP público ou anonimato;
+- Reabrir Mãe ou Filha para utilizar o proxy padrão selecionado.
+
+O armazenamento é **local** no agente Windows:
+`%LOCALAPPDATA%\Nexora\proxies.json`. O backend nunca retorna a senha
+pelas rotas de listagem; os dados de proxy ficam no agente, não no Codespaces.
+A senha está presente no arquivo local em formato legível, portanto **não
+publique nem compartilhe esse JSON**; proteja sua conta Windows e os backups.
+
+Rotas disponíveis: `GET /api/proxies`,
+`POST /api/proxies/save`, `POST /api/proxies/delete`,
+`POST /api/proxies/activate` e `POST /api/proxies/test`.
+A autenticação de pareamento e CSRF do agente se aplicam a essas rotas,
+assim como às outras ações do projeto.
+
+**Conexão no navegador:** proxies HTTP mantêm o gateway local que identifica
+instâncias; HTTPS e SOCKS5 usam a configuração nativa do Chromium.
+O gateway HTTP consulta a seleção atual quando abre novas conexões,
+portanto evite alternar o padrão com navegadores ainda rodando: novas
+requisições podem usar outra rota. O recomendado é fechar os perfis e
+reabri-los depois de selecionar ou desativar um proxy.
+
+**Validação:** testes automatizados de CRUD, CSRF, isolamento de senha na API,
+seleção no gateway e operação da tela em Chromium; nenhuma conta externa
+foi cadastrada. A interoperabilidade com provedores de proxy reais depende
+do protocolo e da configuração/credenciais fornecidos.
+
+### Funções da ProxyBet não copiadas
+
+Os dados extraídos comprovam a exposição IPC das três ações acima, mas
+não fornecem implementação pública/verificada do núcleo Electron. Sincronização
+com o serviço remoto `proxybet:get-proxies` e comportamento de rotação
+próprio da ProxyBet não foram copiados nem anunciados como disponíveis.
+
 
 ## Identidade visual Nexora
 
