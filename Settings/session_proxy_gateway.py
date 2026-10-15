@@ -261,7 +261,7 @@ def verify_browser_exit_ip(page, gateway, *, timeout_ms=10000):
         except Exception as exc:
             # Extract only a known Chromium error code or exception class:
             # page.goto exceptions include full URLs, which must not be logged.
-            match = re.search(r"\\b(ERR_[A-Z0-9_]+)\\b", str(exc))
+            match = re.search(r"\b(ERR_[A-Z0-9_]+)\b", str(exc))
             failures.append(match.group(1) if match else type(exc).__name__)
             # Try another known endpoint, but never continue to the user's
             # destination without proof that Chromium used this gateway.
