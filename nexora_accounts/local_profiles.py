@@ -85,7 +85,7 @@ def _username(full_name: str, existing: set[str]) -> str:
     last = (pieces[-1] if pieces else "perfil")[:2]
     stem = (first + last).ljust(6, "x")[:6]
     for _ in range(1000):
-        # Eight million-plus possible combinations for each name stem.
+        # About 1.68 million possible suffixes for each name stem.
         suffix = "".join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(4))
         name = stem + suffix
         if name not in existing:
