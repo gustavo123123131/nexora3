@@ -67,6 +67,36 @@ def _wait_for_registration(page, seconds=12):
     return None
 
 
+def _wait_for_username(page, seconds=8):
+    """Find the user-supplied account input, without requiring other fields.
+
+    This remains useful when the remote site's identity checks prevent the
+    rest of the registration form from appearing.
+    """
+    try:
+        page.wait_for_load_state("domcontentloaded", timeout=5000)
+    except Exception:
+        pass
+    deadline = time.monotonic() + seconds
+    opened = False
+    while time.monotonic() < deadline:
+        field = _visible(page, FIELDS["account"])
+        if field is not None:
+            return field
+        if not opened:
+            for selector in ("#registerClickModal", "#registerTabButton"):
+                opener = _visible(page, (selector,))
+                if opener:
+                    try:
+                        opener.click(timeout=3000)
+                        opened = True
+                        break
+                    except Exception:
+                        pass
+        time.sleep(0.2)
+    return None
+
+
 def autofill_existing_registration(page, instance_plan, repository=None):
     """Use only this browser's saved profile; NEVER submit the form."""
     plan = instance_plan if isinstance(instance_plan, dict) else {}
@@ -88,9 +118,43 @@ def autofill_existing_registration(page, instance_plan, repository=None):
         return {"status": "blocked", "message": "Página de teste redirecionou para site externo."}
     if not demo and (data.get("isTestData") is not False or
                      data.get("ownerConfirmed") is not True):
-        repo.set_stage(key, "local", "test-data-blocked")
-        return {"status": "blocked",
-                "message": "Dados fictícios não usados no cadastro real. Informe dados legítimos."}
+        # A generated LOGIN NAME is not a civil identity. It is safe to
+        # preview it in the visible username field, without forwarding
+        # fictional name/phone/CPF/email or submitting a real registration.
+        username = data.get("username")
+        if not isinstance(username, str) or not username.strip():
+            repo.set_stage(key, "local", "username-missing")
+            return {
+                "status": "not-found", "fieldCount": 0,
+                "message": "Este perfil ainda não tem username salvo.",
+            }
+        field = _wait_for_username(page)
+        if field is None:
+            repo.set_stage(key, "local", "username-field-not-found")
+            return {
+                "status": "not-found", "fieldCount": 0,
+                "missingFields": ["account"],
+                "message": "Campo não encontrado: input[data-input-name='account'].",
+            }
+        if not _same_site(target, page.url):
+            return {
+                "status": "blocked", "fieldCount": 0,
+                "message": "O site mudou de domínio; não preenchi dados.",
+            }
+        try:
+            field.fill(username.strip(), timeout=6000)
+        except Exception:
+            repo.set_stage(key, "local", "username-fill-error")
+            return {
+                "status": "error", "fieldCount": 0,
+                "message": "Falha ao preencher o input account (verifique se está habilitado).",
+            }
+        repo.set_stage(key, "local", "username-prefilled")
+        return {
+            "status": "username-filled", "fieldCount": 1,
+            "message": "Username do perfil preenchido em input[data-input-name='account']. "
+                       "Cadastro externo ainda não enviado.",
+        }
 
     fields = _wait_for_registration(page)
     if not fields:
