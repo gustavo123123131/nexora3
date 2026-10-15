@@ -71,11 +71,11 @@ def test_both_buttons_open_browsers_and_create_one_local_profile_each(monkeypatc
                 assert call["automation_callback"] is None
                 plans = call["instance_plans"]
                 assert len(plans) == 2
-                assert plans[0]["idx"] == 100000 + plans[0]["account_profile"]["id"]
+                assert plans[0]["idx"] == 1
                 assert plans[0]["url"] == "https://exemplo.com"
                 assert plans[0]["registration_profile"]["origin"] == label
                 assert plans[0]["registration_profile"]["password"] == plans[0]["registration_profile"]["confirmPassword"]
-                assert plans[1]["idx"] == 100000 + plans[1]["account_profile"]["id"]
+                assert plans[1]["idx"] == 2
                 assert plans[1]["url"] == "https://exemplo.com"
                 assert plans[0]["account_profile"]["id"] != plans[1]["account_profile"]["id"]
                 for planned in plans:
