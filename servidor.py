@@ -158,6 +158,30 @@ async def only_loopback(request: Request, call_next):
         _cors_agent_response(response, origin)
     return response
 
+def _active_browser_workers():
+    # Every open Chromium instance is joined by the owning Mãe/Filha worker.
+    # Only read existing widgets; never instantiate a browser to check idle.
+    if _GUI is None:
+        return 0
+    count = 0
+    pending = [_GUI]
+    while pending:
+        current = pending.pop()
+        worker = getattr(current, "worker_thread", None)
+        if worker is not None and worker.is_alive():
+            count += 1
+        pending.extend(getattr(current, "children", ()))
+    return count
+
+
+@app.get('/api/update/idle')
+async def update_idle():
+    # Used only by the local supervisor to avoid interrupting open browsers.
+    workers = _active_browser_workers()
+    return {"edition": NEXORA_EDITION, "idle": workers == 0,
+            "activeWorkers": workers}
+
+
 @app.get('/api/health')
 async def health():
     """Lightweight liveness check; does not initialize accounts or GUI."""
