@@ -339,13 +339,12 @@ async def open_local_profile(body: dict):
         # Identity comes exclusively from the card's ID, not a global
         # selectedProfileId or the current Mãe/Filha tab.
         profile = LocalProfileStore().get(body.get('id'))
-        if not profile.get("deviceMode"):
-            if not body.get("deviceMode"):
-                raise LocalProfileError("Escolha o dispositivo desta conta antiga.")
-            LocalProfileStore().configure_legacy_launch(
-                profile["id"], body["deviceMode"], body.get("startUrl") or "",
+        if not profile.get("runtimeConfig"):
+            raise LocalProfileError(
+                "Configuração original de dispositivo indisponível nesta conta. "
+                "Não é possível reabrir com dados de outro dispositivo."
             )
-        return ACCOUNT_LAUNCHER.launch(init_original_ui(), body.get('id'))
+        return ACCOUNT_LAUNCHER.launch(init_original_ui(), profile["id"])
     except AccountBusyError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except (LocalProfileError, ValueError) as exc:
