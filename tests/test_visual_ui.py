@@ -123,67 +123,40 @@ def test_nexora_visual_and_existing_controls(tmp_path):
                 page.locator(".tab-bar button").nth(1).click()
                 page.screenshot(path=str(screenshot_dir / "nexora-filha.png"), full_page=True)
 
-                # Proxy tab now has local-agent CRUD; only explicit actions
-                # can mutate proxy configuration, never merely viewing the tab.
+                # Modern minimal Proxy tab: one line, save, list and delete.
                 proxy_posts = []
                 page.on("request", lambda request: proxy_posts.append(request.url)
                         if request.method == "POST" and "/api/" in request.url else None)
                 page.get_by_role("button", name="Proxy").click()
                 expect(page.locator(".tab-bar button.active")).to_have_text("Proxy")
-                expect(page.get_by_role("heading", name="Gerenciamento de proxy")).to_be_visible()
-                expect(page.locator(".proxy-table tbody")).to_contain_text("Nenhum proxy")
-                expect(page.get_by_text("GERENCIADOR LOCAL")).to_be_visible()
-                expect(page.locator(".proxy-table tbody tr")).to_have_count(1)
-                expect(page.get_by_role("button", name="Salvar proxy")).to_be_enabled()
-                expect(page.locator("#proxy-clear-active")).to_be_disabled()
-                assert page.get_by_role("button", name="Editar").count() == 0
-                assert page.get_by_role("button", name="Remover").count() == 0
-                protocol = page.locator("#proxy-protocol")
-                assert protocol.locator("option").all_text_contents() == ["HTTP", "HTTPS", "SOCKS5"]
-                page.locator("#proxy-name").fill("Exemplo local (não salvo)")
-                page.locator("#proxy-host").fill("proxy.example.test")
-                page.locator("#proxy-port").fill("8080")
-                page.locator("#proxy-user").fill("usuario")
-                password = page.locator("#proxy-password")
-                password.fill("segredo-nao-enviado")
-                expect(password).to_have_attribute("type", "password")
-                page.get_by_role("button", name="Mostrar senha").click()
-                expect(password).to_have_attribute("type", "text")
-                page.get_by_role("button", name="Ocultar senha").click()
-                expect(password).to_have_attribute("type", "password")
-                page.wait_for_timeout(1600)  # The existing Python tree polls.
-                expect(page.get_by_role("heading", name="Gerenciamento de proxy")).to_be_visible()
+                expect(page.get_by_role("heading", name="Proxy", exact=True)).to_be_visible()
+                line = page.get_by_role("textbox", name="Linha completa da proxy")
+                expect(line).to_be_visible()
+                expect(page.get_by_role("button", name="Adicionar Proxy")).to_be_enabled()
+                expect(page.locator(".proxy-simple-empty")).to_be_visible()
                 assert proxy_posts == []
                 page.screenshot(path=str(screenshot_dir / "nexora-proxy.png"), full_page=True)
                 for width in (960, 760, 420):
                     page.set_viewport_size({"width": width, "height": 900})
-                    expect(page.get_by_role("heading", name="Gerenciamento de proxy")).to_be_visible()
-                    expect(page.locator("#proxy-host")).to_be_visible()
+                    expect(line).to_be_visible()
                     overflow = page.evaluate("document.documentElement.scrollWidth - innerWidth")
                     assert overflow <= 2, f"Proxy horizontal overflow at {width}px: {overflow}"
                 page.screenshot(path=str(screenshot_dir / "nexora-proxy-mobile.png"), full_page=True)
                 page.set_viewport_size({"width": 1440, "height": 900})
-                # Real UI -> CSRF API -> local persistent store. No internet
-                # traffic is needed: saving, selecting, and deleting only.
-                page.get_by_role("button", name="Salvar proxy").click()
-                expect(page.locator(".proxy-record-row")).to_have_count(1)
-                expect(page.locator(".proxy-record-row")).to_contain_text("proxy.example.test:8080")
-                expect(page.locator("#proxy-password")).to_have_value("")
-                page.get_by_role("button", name="Usar").click()
-                expect(page.locator("#proxy-active-label")).to_contain_text("Exemplo local")
-                page.get_by_role("button", name="Editar").click()
-                expect(page.locator("#proxy-name")).to_have_value("Exemplo local (não salvo)")
-                page.locator("#proxy-name").fill("Proxy principal editado")
-                page.get_by_role("button", name="Salvar alterações").click()
-                expect(page.locator(".proxy-record-row")).to_contain_text("Proxy principal editado")
-                page.get_by_role("button", name="Desativar").click()
-                expect(page.locator("#proxy-active-label")).to_contain_text("Nenhum proxy ativo")
-                page.once("dialog", lambda dialog: dialog.accept())
-                page.get_by_role("button", name="Remover").click()
-                expect(page.locator(".proxy-table tbody")).to_contain_text("Nenhum proxy")
-                # Account forms, identity previews and old endpoints are gone.
-                assert page.get_by_role("button", name="Contas", exact=True).count() == 0
-                assert page.locator(".accounts-card").count() == 0
+                line.fill("http://usuario:segredo-nao-exibir@proxy.example.test:8080")
+                page.get_by_role("button", name="Adicionar Proxy").click()
+                expect(page.locator(".proxy-simple-row")).to_have_count(1)
+                expect(page.locator(".proxy-simple-row")).to_contain_text("proxy.example.test:8080")
+                assert "segredo-nao-exibir" not in page.locator(".proxy-simple-row").inner_text()
+                page.get_by_role("button", name="Excluir").click()
+                expect(page.locator(".proxy-simple-empty")).to_be_visible()
+
+                # Contas tab is preserved and renders minimal cards.
+                page.get_by_role("button", name="Contas", exact=True).click()
+                expect(page.get_by_role("heading", name="Contas")).to_be_visible()
+                expect(page.locator(".accounts-local-grid")).to_be_visible()
+                assert page.get_by_role("button", name="Selecionar").count() == 0
+                assert page.get_by_role("button", name="Escolher dispositivo").count() == 0
                 for label in ("Mãe", "Filha"):
                     page.get_by_role("button", name=label, exact=True).click()
                     expect(page.get_by_role("button", name="Abrir Navegadores")).to_be_visible()
