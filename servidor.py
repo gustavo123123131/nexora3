@@ -289,6 +289,24 @@ async def proxy_test(body: dict):
     return _proxy_request(lambda: ProxyStore().test(body.get('id')))
 
 
+@app.get('/api/proxies/profile-bindings')
+async def proxy_profile_bindings():
+    from nexora_accounts.proxy_store import ProxyStore
+    return {'bindings': _proxy_request(lambda: ProxyStore().profile_bindings())}
+
+
+@app.post('/api/proxies/bind-profile')
+async def proxy_bind_profile(body: dict):
+    from nexora_accounts.proxy_store import ProxyStore
+    return _proxy_request(lambda: ProxyStore().bind_profile(body.get('profileId'), body.get('proxyId')))
+
+
+@app.post('/api/proxies/check')
+async def proxy_check(body: dict):
+    from nexora_accounts.proxy_store import ProxyStore
+    return _proxy_request(lambda: ProxyStore().test_authenticated(body.get('id')))
+
+
 @app.get('/api/local-profiles')
 async def list_local_profiles():
     from nexora_accounts.local_profiles import LocalProfileStore
