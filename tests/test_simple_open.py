@@ -177,6 +177,62 @@ def test_saved_proxy_pool_is_required_and_assigned_per_browser(monkeypatch, tmp_
             ctrl.proxy_var.set(original[2])
 
 
+
+def test_tls_probe_eof_defers_only_to_chromium_without_direct_fallback(monkeypatch, tmp_path):
+    """An authenticated CONNECT may be retested in the real browser."""
+    monkeypatch.setattr(proxy_store, "_default_path", lambda: tmp_path / "proxies.json")
+    monkeypatch.setattr(local_profiles, "_default_path",
+                        lambda: tmp_path / "Nexora" / "generated_profiles.json")
+    store = proxy_store.ProxyStore()
+    store.save_line("http://user:password@proxy.example.com:8000")
+    monkeypatch.setattr(
+        proxy_store.ProxyStore, "test_authenticated",
+        lambda self, identifier, **kw: {
+            "reachable": False, "status": "tls_handshake_failed",
+            "stage": "tls_destination", "connectVerified": True,
+            "browserVerificationRequired": True,
+        },
+    )
+
+    with TestClient(servidor.app):
+        gui = servidor.init_original_ui()
+        from Settings.Criar_Mae.gui_tab import MaeTab
+        module = importlib.import_module(MaeTab.__module__)
+        tab = next(node for node in children_widgets(gui) if isinstance(node, MaeTab))
+        monkeypatch.setattr(tab, "save_settings", lambda: None)
+        monkeypatch.setattr(module, "clear_invite_file", lambda log: None)
+        seen = []
+        completed = threading.Event()
+
+        def fake_run_all(**kwargs):
+            seen.append(kwargs)
+            completed.set()
+
+        monkeypatch.setattr(module, "run_all", fake_run_all)
+        old = (tab.urls_var.get(), tab.mode_var.get(), tab.count_var.get())
+        try:
+            tab.urls_var.set("https://example.org")
+            tab.mode_var.set("Computador")
+            tab.count_var.set("1")
+            tab.start_browsers()
+            assert completed.wait(5)
+            assert len(seen) == 1
+            plans = seen[0]["instance_plans"]
+            assert len(plans) == 1
+            assert plans[0]["proxy_config"].username == "user"
+            assert seen[0]["proxy"] is None
+        finally:
+            tab.urls_var.set(old[0])
+            tab.mode_var.set(old[1])
+            tab.count_var.set(old[2])
+
+
+def children_widgets(widget):
+    yield widget
+    for child in getattr(widget, "children", ()):
+        yield from children_widgets(child)
+
+
 def test_legacy_automation_entry_is_inert(monkeypatch, tmp_path):
     """Even a legacy Python caller cannot enable the old account automation."""
     monkeypatch.setattr(proxy_store, "_default_path", lambda: tmp_path / "proxies.json")
