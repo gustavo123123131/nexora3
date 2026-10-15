@@ -45,10 +45,50 @@ git pull --ff-only origin fix/remover-criacao-contas
 bash .devcontainer/start.sh
 ```
 
-Para o agente Windows, reinicie usando
-`iniciar-agente-desenvolvimento.cmd` após obter essa branch.
-Não use `iniciar-agente-windows.cmd` para atualizar uma branch de
-desenvolvimento: ele consulta `main`.
+### Windows — instalador único, atualizações automáticas
+
+**Apenas uma última instalação:** execute
+[`iniciar-agente-desenvolvimento.cmd`](iniciar-agente-desenvolvimento.cmd)
+desta branch para instalar o supervisor na pasta
+`%LOCALAPPDATA%\\LixoCPA-Agent`. Se já guardou esse CMD com o nome da
+branch `fix/remover-criacao-contas`, pode usar o mesmo arquivo — ele
+consulta o instalador atualizado no GitHub.
+
+A instalação cria o **iniciador permanente**:
+
+```text
+%LOCALAPPDATA%\LixoCPA-Agent\iniciar-agente-local.cmd
+```
+
+Esse é o único iniciador que você precisará usar posteriormente. Enquanto
+ele estiver aberto:
+
+- `atualizador_nexora.py` verifica o GitHub a cada **3 minutos**
+  exclusivamente na branch `fix/remover-criacao-contas`;
+- Se houver versão nova, prepara os arquivos, mas **não interrompe janelas
+  Chromium ativas**; espera que Mãe e Filha terminem;
+- Quando as janelas estiverem fechadas, o supervisor troca o código, reinicia
+  o processo Python no mesmo terminal e **reutiliza o pareamento**.
+  O painel aguarda a reconexão e não deve exigir o código novamente
+  durante uma reinicialização normal;
+- Preserva `__profiles/`, cookies/sessões, `accounts.json`, configurações,
+  `proxies.json`, o ambiente Python `.venv/` e os logs;
+- Se o GitHub ficar indisponível ou um pacote for inválido, mantém a
+  versão anterior e tenta novamente em outra verificação.
+
+**Não precisa baixar nenhum novo CMD, fechar o terminal ou reinstalar a
+cada commit.** O Windows precisa permanecer ligado, com o supervisor em
+execução; se desligar o PC, abra o iniciador local uma vez após ligar.
+Uma instalação inicial desse supervisor é inevitável porque agentes
+baixados antes dele não conseguem se atualizar sozinhos.
+
+O console mostrará o status de atualização. Se existirem janelas ainda
+abertas, a atualização ficará pendente. O código é atualizado somente
+a partir do repositório GitHub vinculado; não publique essa branch se
+não quiser atualizar as máquinas ligadas a ela.
+
+**Não use `iniciar-agente-windows.cmd`** para iniciar esta branch: ele
+consulta `main` e não ativa o supervisor de desenvolvimento.
 
 Para executar localmente:
 
