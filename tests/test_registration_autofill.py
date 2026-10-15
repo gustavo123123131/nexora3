@@ -44,6 +44,7 @@ class FakeLocator:
 class FakePage:
     def __init__(self, broken=None):
         self.events = []
+        self.covered = False
         self.locators = {
             selector: FakeLocator(selector, self.events, broken == selector)
             for _, selector, _ in FIELDS
@@ -53,6 +54,14 @@ class FakePage:
     def locator(self, selector):
         assert selector in self.locators, f"Unexpected selector: {selector}"
         return self.locators[selector]
+
+    def evaluate(self, _script, selector):
+        assert selector == SUBMIT
+        return {
+            "missing": False, "inside": True, "covered": self.covered,
+            "marker": "div.modal-overlay" if self.covered else "button#insideRegisterSubmitClick",
+            "width": 250, "height": 50, "cssPointerEvents": "auto",
+        }
 
 
 def sample():
@@ -95,11 +104,13 @@ def test_logs_disabled_button_failure(monkeypatch):
 def test_logs_click_interception(monkeypatch):
     monkeypatch.setattr("Settings.registration_autofill.time.sleep", lambda seconds: None)
     page = FakePage()
+    page.covered = True
     page.locators[SUBMIT].click_error = "another element intercepts pointer events"
     messages = []
     assert not fill_registration_form(page, sample(), messages.append, threading.Event())
     assert any("Iniciando clique" in msg for msg in messages)
     assert any("interceptando o clique" in msg for msg in messages)
+    assert any("sobreposição no botão" in msg and "div.modal-overlay" in msg for msg in messages)
     assert ("click", SUBMIT) not in page.events
 
 
