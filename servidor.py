@@ -327,6 +327,48 @@ async def submit_existing_registration(body: dict):
     ))
 
 
+
+# ProxyBet-style proxy workspace: local CRUD, selection and TCP diagnostics.
+# The existing agent-key + CSRF middleware protects these endpoints.
+# Secrets are never returned by GET /api/proxies.
+def _proxy_request(callback):
+    from nexora_accounts.proxy_store import ProxyError
+    try:
+        return callback()
+    except ProxyError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get('/api/proxies')
+async def proxy_list():
+    from nexora_accounts.proxy_store import ProxyStore
+    return _proxy_request(lambda: ProxyStore().list())
+
+
+@app.post('/api/proxies/save')
+async def proxy_save(body: dict):
+    from nexora_accounts.proxy_store import ProxyStore
+    return {'proxy': _proxy_request(lambda: ProxyStore().save(body))}
+
+
+@app.post('/api/proxies/delete')
+async def proxy_delete(body: dict):
+    from nexora_accounts.proxy_store import ProxyStore
+    return _proxy_request(lambda: ProxyStore().delete(body.get('id')))
+
+
+@app.post('/api/proxies/activate')
+async def proxy_activate(body: dict):
+    from nexora_accounts.proxy_store import ProxyStore
+    return _proxy_request(lambda: ProxyStore().activate(body.get('id')))
+
+
+@app.post('/api/proxies/test')
+async def proxy_test(body: dict):
+    from nexora_accounts.proxy_store import ProxyStore
+    return _proxy_request(lambda: ProxyStore().test(body.get('id')))
+
+
 def main():
     parser = argparse.ArgumentParser(description='Lixo CPA no navegador (apenas máquina local)')
     parser.add_argument('--port', type=int, default=8765)
