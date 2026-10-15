@@ -112,6 +112,7 @@ def test_saved_card_launcher_reuses_only_its_own_data(isolated_profiles, monkeyp
     class FakeTab:
         def __init__(self):
             self.headless_var = SimpleNamespace(get=lambda: False)
+            self.proxy_var = SimpleNamespace(get=lambda: "")
             self.winpos_controller = object()
             self.speed_controller = object()
             self.verify_phone_controller = object()
