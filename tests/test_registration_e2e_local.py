@@ -144,65 +144,67 @@ def test_chromium_real_page_and_local_http_submit_and_status(tmp_path):
                 browser.close()
 
 
-def test_accounts_ui_displays_only_profiles_and_remains_visible_after_refresh(tmp_path):
-    """Execute the actual accounts JS inside a real browser, with a local mock GET."""
+def test_accounts_ui_displays_only_three_fields_from_created_profiles(tmp_path):
+    """Real repository Abrir Conta data -> actual DOM cards in Chromium."""
     from pathlib import Path
+
+    repo = AccountsRepository(tmp_path / "accounts.json")
+    repo.create_launch_profiles(
+        "mae", "desktop", [], 1, tmp_path / "profiles"
+    )
+    repo.create_launch_profiles(
+        "filha", "android", [], 1, tmp_path / "profiles_filha"
+    )
+    accounts = repo.accounts(profiles_only=True)
+    assert len(accounts) == 2
     source = Path("webui/static/accounts_view.js").read_text(encoding="utf-8")
-    data = [{
-        "id": "profile-1", "displayName": "Conta Mãe #1",
-        "profileScope": "mae", "profileIndex": 1, "profileMode": "desktop",
-        "status": "local", "stage": "form-not-found",
-        "createdAt": "2026-10-15T00:00:00Z",
-        "profileData": {"username": "marinacosta123", "isTestData": True},
-        "registrationLog": [{
-            "at": "2026-10-15T00:01:00Z",
-            "stage": "form-not-found", "durationMs": 11000
-        }]
-    }]
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         try:
-            for _ in range(2):  # simulate browser refresh and re-render
-                page = browser.new_page()
-                page.set_content("<!doctype html><html><body><div id='app'></div></body></html>")
-                page.add_script_tag(content=source)
-                page.evaluate(
-                    """(accounts) => {
-                      window.__testAccounts = accounts;
-                      window.__directory = window.NexoraAccountsView.create({
-                        get: async () => ({accounts:window.__testAccounts}),
-                        post: async () => { throw Error("No POST expected"); }
-                      });
-                      document.querySelector("#app").append(window.__directory.node);
-                      window.__directory.onShow();
-                    }""", data
+            page = browser.new_page()
+            page.set_content("<!doctype html><html><body><div id='app'></div></body></html>")
+            page.add_script_tag(content=source)
+            page.evaluate("""(accounts) => {
+              window.__testAccounts = accounts;
+              window.__directory = window.NexoraAccountsView.create({
+                get: async () => ({accounts:window.__testAccounts}),
+              });
+              document.querySelector("#app").append(window.__directory.node);
+              window.__directory.onShow();
+            }""", accounts)
+            page.locator(".accounts-card").first.wait_for(timeout=5000)
+            assert page.locator(".accounts-card").count() == 2
+            for record in accounts:
+                card = page.locator(".accounts-card").filter(
+                    has=page.locator("h3", has_text=record["displayName"])
                 )
-                page.locator(".accounts-card").first.wait_for(timeout=5000)
-                assert page.locator(".accounts-card").count() == 1
-                assert page.get_by_text("form-not-found").count() == 0  # user friendly name
-                assert page.get_by_text("Formulário não encontrado").count() >= 1
-                assert page.locator(".accounts-registration-log").first.is_visible()
-                page.get_by_role("button", name="Ver detalhes").click()
-                assert page.locator(".accounts-details").is_visible()
-                # An API state change must be visible without the old page
-                # onShow callback or a manual "Atualizar" click.
-                page.evaluate("""() => {
-                  const record = window.__testAccounts[0];
-                  record.stage = 'submit-button-found';
-                  record.registrationLog.push({
-                    at:'2026-10-15T00:01:02Z',
-                    stage:'submit-button-found', durationMs:12
-                  });
-                }""")
-                page.get_by_text("Botão Registro encontrado").first.wait_for(timeout=6000)
-                assert page.locator(".accounts-details").is_visible()
-                assert page.locator(".accounts-real-form").count() == 0
-                assert page.get_by_text("Configurar site").count() == 0
-                assert page.get_by_text("Adicionar conta").count() == 0
-                page.close()
+                assert card.count() == 1
+                assert card.get_by_text(record["profileData"]["fullName"], exact=True).count() == 1
+                assert card.get_by_text(record["profileData"]["username"], exact=True).count() == 1
+                assert card.get_by_text(record["profileData"]["email"], exact=True).count() == 1
+                assert card.locator(".accounts-summary-item").count() == 3
+                assert card.locator(".accounts-summary-item span").all_text_contents() == [
+                    "Nome da conta", "Username", "E-mail"
+                ]
+                # Credentials and other identity fields must not be in the DOM.
+                assert record["profileData"]["password"] not in card.inner_text()
+                assert record["profileData"]["cpf"] not in card.inner_text()
+            assert page.get_by_role("button", name="Ver detalhes").count() == 0
+            assert page.locator(".accounts-details").count() == 0
+            assert page.locator(".accounts-registration-log").count() == 0
+            assert page.get_by_text("Cadastro", exact=True).count() == 0
+            assert page.get_by_text("Configurar site").count() == 0
+            assert page.get_by_text("Adicionar conta").count() == 0
+            # The original read-only automatic refresh must still work.
+            new_email = "atualizado@example.test"
+            page.evaluate("""(email) => {
+              window.__testAccounts[0].profileData.email=email;
+            }""", new_email)
+            page.get_by_text(new_email, exact=True).wait_for(timeout=6000)
+            assert page.locator(".accounts-card").count() == 2
+            page.close()
         finally:
             browser.close()
-
 
 
 def test_real_site_layout_preview_fills_only_nonidentity_credentials(tmp_path):
