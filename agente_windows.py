@@ -46,7 +46,8 @@ def main():
     except (ValueError, AttributeError) as exc:
         parser.error(str(exc))
 
-    key = secrets.token_urlsafe(24)
+    # Supervisor keeps the pairing code stable across automatic child restarts.
+    key = os.environ.get("LIXOCPA_AGENT_KEY") or secrets.token_urlsafe(24)
     os.environ["LIXOCPA_AGENT_ORIGIN"] = origin
     os.environ["LIXOCPA_AGENT_KEY"] = key
 
