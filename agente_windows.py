@@ -37,7 +37,8 @@ def main():
     parser.add_argument("--porta", type=int, default=8767)
     args = parser.parse_args()
 
-    print("Lixo CPA - agente local do Chromium no Windows")
+    print("NEXORA - VERSAO SEM CADASTRO - somente abertura de navegadores")
+    print("Nao gera contas e nao preenche formularios.")
     print("A pagina web continuará no Codespaces, mas o Playwright rodará aqui.")
     raw = args.painel or input("Cole o link HTTPS da porta 8765 do Codespaces: ")
     try:
