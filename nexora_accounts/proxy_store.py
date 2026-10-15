@@ -67,14 +67,16 @@ def parse_proxy_line(raw):
         scheme = "socks5"
     if scheme not in _SCHEMES:
         raise ProxyError("Tipo de proxy não suportado. Use HTTP, HTTPS ou SOCKS5.")
-    if not body or "/" in body or "?" in body or "#" in body:
-        raise ProxyError("Formato inválido. Use host:porta:usuario:senha ou protocolo://usuario:senha@host:porta.")
+    if not body:
+        raise ProxyError("Formato inválido. Informe host:porta[:usuario:senha].")
     if "@" not in body and body.count(":") >= 3 and not body.startswith("["):
         host, port, username, password = body.split(":", 3)
         fields = (host, port, username, password)
     else:
         try:
             url = urlsplit(scheme + "://" + body)
+            if url.path or url.query or url.fragment:
+                raise ProxyError("Informe apenas servidor, porta e credenciais; sem caminho na URL.")
             fields = (url.hostname or "", url.port or "", unquote(url.username or ""), unquote(url.password or ""))
         except ValueError as exc:
             raise ProxyError("Endereço ou porta da proxy inválido.") from exc
@@ -91,7 +93,7 @@ def parse_proxy_line(raw):
     username = _text(username, "Usuário", 128)
     password = _text(password, "Senha", 256)
     return {
-        "name": host + ":" + str(port),
+        "name": host[:65] + ":" + str(port),
         "host": host, "port": port,
         "protocol": scheme, "username": username, "password": password,
     }
