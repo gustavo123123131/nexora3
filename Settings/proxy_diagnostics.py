@@ -127,8 +127,10 @@ def compare_certificates(proxy, gateway, requested_host, log, prefix):
     reports verification code only; SAN is unavailable without trusting an
     invalid certificate and will NOT be fabricated.
     """
-    if not requested_host:
-        log(f"{prefix} [TLS] Nome de destino não disponível para comparar.")
+    if not isinstance(requested_host, str) or not re.fullmatch(
+        r"[a-z0-9.-]{1,253}", requested_host
+    ):
+        log(f"{prefix} [TLS] Hostname inválido ou indisponível; diagnóstico cancelado.")
         return {}
     outcome = {}
     for label, resolver in (
