@@ -114,8 +114,8 @@ def test_saved_proxy_pool_is_required_and_assigned_per_browser(monkeypatch, tmp_
     store = proxy_store.ProxyStore()
     first = store.save_line("http://userA:pwA@one.test:8881")
     second = store.save_line("socks5://userB:pwB@two.test:8882")
-    monkeypatch.setattr(proxy_store.ProxyStore, "test",
-                        lambda self, identifier: {"reachable": True})
+    monkeypatch.setattr(proxy_store.ProxyStore, "test_authenticated",
+                        lambda self, identifier, **kwargs: {"reachable": True, "status": "ok"})
     with TestClient(servidor.app) as client:
         initial = client.get("/api/state").json()
         csrf = {"X-LixoCPA-CSRF": initial["csrf_token"]}
@@ -152,10 +152,15 @@ def test_saved_proxy_pool_is_required_and_assigned_per_browser(monkeypatch, tmp_
             ]
             assert [p["proxy_config"].username for p in plans] == ["userA", "userB"]
             assert calls[0]["proxy"] is None
+            profile_id = plans[0]["registration_profile"]["id"]
+            assert store.profile_bindings()[str(profile_id)] == first["id"]
 
             # No direct opening or new account when a required proxy fails.
-            monkeypatch.setattr(proxy_store.ProxyStore, "test",
-                                lambda self, identifier: {"reachable": False})
+            monkeypatch.setattr(proxy_store.ProxyStore, "test_authenticated",
+                                lambda self, identifier, **kwargs: {
+                                    "reachable": False, "status": "auth_rejected",
+                                    "message": "Autenticação recusada"
+                                })
             ctrl.start_browsers()
             assert len(calls) == 1
         finally:
