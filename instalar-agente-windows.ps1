@@ -89,6 +89,15 @@ try {
         if (Test-Path -LiteralPath (Join-Path $Source "nexora_accounts\registration_autofill.py")) {
             throw "ZIP incorreto: ainda contem cadastro antigo."
         }
+        foreach ($Needed in @(
+            "Settings\registration_autofill.py",
+            "webui\static\accounts_view.js",
+            "webui\static\accounts_view.css"
+        )) {
+            if (-not (Test-Path -LiteralPath (Join-Path $Source $Needed))) {
+                throw "ZIP incompleto: arquivo ativo do Nexora3 ausente."
+            }
+        }
     }
 
     New-Item -ItemType Directory -Path $AgentDir -Force | Out-Null
@@ -109,8 +118,6 @@ try {
             "Settings\Criar_Filha\settings\actions.py",
             "Settings\Criar_Filha\settings\identity.py",
             "Settings\Criar_Filha\settings\nomes.txt",
-            "webui\static\accounts_view.js",
-            "webui\static\accounts_view.css",
             "proxybet_registration_bridge",
             "docs\REGISTRATION_PREFILL.md",
             "docs\DIAGNOSTICO_CONTAS.md"
