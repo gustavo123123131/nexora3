@@ -6,7 +6,57 @@ import json
 from nexora_accounts.profile_data import make_password, make_profile_data
 from nexora_accounts.registration_submit import _real_values, request_demo_submit
 from nexora_accounts.service import AccountsRepository
-from tests.test_registration_submit import Repo, Page, Clock, RegistrationWatcher
+from nexora_accounts.registration_submit import RegistrationWatcher
+
+
+class Repo:
+    def __init__(self, account):
+        self.account_record = dict(account)
+        self.events = []
+
+    def account(self, key):
+        assert key == self.account_record["id"]
+        return dict(self.account_record)
+
+    def set_stage(self, key, status, stage, http_status=None):
+        assert key == self.account_record["id"]
+        self.account_record.update(status=status, stage=stage)
+        self.events.append((status, stage))
+
+
+class Locator:
+    def __init__(self, visible=True):
+        self.first = self
+        self.visible = visible
+        self.clicks = 0
+
+    def is_visible(self):
+        return self.visible
+
+    def click(self, timeout=None):
+        self.clicks += 1
+
+
+class Page:
+    def __init__(self, url):
+        self.url = url
+        self.button = Locator()
+
+    def on(self, event, callback):
+        pass
+
+    def locator(self, selector):
+        if selector == "#insideRegisterSubmitClick":
+            return self.button
+        return Locator(False)
+
+    def is_closed(self):
+        return False
+
+
+class Clock:
+    def __call__(self):
+        return 100.0
 
 
 def test_new_profiles_have_usable_generated_usernames_and_passwords():
