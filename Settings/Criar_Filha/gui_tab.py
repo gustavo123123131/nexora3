@@ -2387,7 +2387,8 @@ class FilhaTab(ctk.CTkFrame):
             proxy = None if managed_proxies else self._validate_proxy()
             if not managed_proxies and self.proxy_var.get().strip() and proxy is None:
                 return
-            launch_plans = _build_instance_plans(normalized_urls, count, use_same_identity) if normalized_urls else None
+            # Blank browsers also need a proxy; never launch them directly by mistake.
+            launch_plans = _build_instance_plans(normalized_urls or ["about:blank"], count, use_same_identity)
             if saved_proxies and launch_plans:
                 assignments = proxy_store.assign(len(launch_plans))
                 checked = set()
