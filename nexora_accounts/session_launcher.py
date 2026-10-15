@@ -23,7 +23,7 @@ class AccountLauncher:
     def __init__(self):
         self._lock = threading.RLock()
         self._running = {}
-        self._instance_numbers = itertools.count(100001)
+        self._instance_numbers = itertools.count(2000001)
 
     def active_count(self):
         with self._lock:
