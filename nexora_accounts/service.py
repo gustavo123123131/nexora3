@@ -194,7 +194,9 @@ class AccountsRepository:
                         and isinstance(demo_data, dict)
                         and demo_data.get("isTestData") is True
                         and isinstance(demo_data.get("password"), str)
-                        and len(demo_data["password"]) < 12):
+                        and len(demo_data["password"]) < 7):
+                    # Do not silently rotate existing 9- or 16-character
+                    # profile passwords; their sessions may already be used.
                     demo_data["password"] = make_password()
                     account["updatedAt"] = _now()
                     upgraded += 1
