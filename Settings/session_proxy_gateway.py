@@ -274,9 +274,14 @@ def refresh_browser_exit_ip(page, gateway, *, timeout_ms=6000):
                      + secrets.token_hex(6), "timeoutMs": int(timeout_ms)},
         )
         ip_value = _validated_ip_from_text(raw)
-        if ip_value and gateway.connect_count(host) > before:
+        if ip_value:
+            if gateway.connect_count(host) <= before:
+                raise ProxyConnectionError("browser_proxy_bypassed")
             return ip_value
+    except ProxyConnectionError:
+        raise
     except Exception:
+        # CSP/CORS or a network failure is not evidence of direct routing.
         pass
     return ""
 
