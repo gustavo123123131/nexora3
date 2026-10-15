@@ -152,3 +152,20 @@ def test_saved_card_launcher_reuses_only_its_own_data(isolated_profiles, monkeyp
     assert plan["device_mode"] == "iphone"
     assert plan["url"] == "https://b.example"
     assert "registration_profile" not in plan
+
+
+def test_cannot_share_a_live_browser_profile_directory():
+    from nexora_accounts.browser_sessions import claim_account, AccountSessionBusy
+    with claim_account("mae", 2):
+        with pytest.raises(AccountSessionBusy):
+            with claim_account("mae", 2):
+                pass
+        # Different account IDs are independent.
+        with claim_account("mae", 3):
+            pass
+        # Different origins are independent.
+        with claim_account("filha", 2):
+            pass
+    # Closing releases the account for a later re-open.
+    with claim_account("mae", 2):
+        pass
