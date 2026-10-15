@@ -1,35 +1,26 @@
 # Lixo CPA — servidor localhost
 
-## Supabase conectado à área Contas (outubro de 2026)
+## Armazenamento local em JSON
 
-- Projeto Supabase já existente: `call-cpa` (ref `uulixxwsniibnpywxlov`).
-- Na aba **Contas**, entre com e-mail/senha do **Supabase Auth** ou crie acesso.
-  Se o projeto exigir confirmação, abra o e-mail e entre depois.
-- As tabelas `nexora_sites`, `nexora_batches`, `nexora_accounts`,
-  `nexora_registration_jobs` e `nexora_registration_events` usam RLS
-  por usuário autenticado e não armazenam CPF, senhas, cookies ou tokens.
-- **Quantidade (1 a 100)** cria um lote de registros e trabalhos pendentes no
-  banco. **Não executa 100 cadastros externos automaticamente.**
-  Para efetuar cadastro em site autorizado, use **Preparar cadastro** e depois
-  revise/confirme o formulário aberto no Chromium do Windows.
-- O frontend comunica-se com o Supabase REST/GoTrue usando somente a
-  **publishable key** pública. Nunca inclua `service_role` no navegador.
-  A sessão do Supabase fica em `sessionStorage` por origem/navegador.
-- O agente Windows recebe apenas metadados do site e perfil através da rota
-  local `POST /api/registration/cloud/sync`. Esse espelho operacional preserva
-  os perfis já existentes do multi-login e permite registrar o status observado
-  pelo Playwright no Supabase. Os registros SQLite anteriores continuam no PC;
-  **não são importados automaticamente**.
-- O status **completed** só é exibido após o seletor de sucesso configurado
-  ser encontrado pelo agente; um HTTP 200 isolado não o confirma.
-- Para atualizar: `git pull origin main` no Codespaces; depois, no Windows,
-  **encerre o agente antigo** e execute novamente `iniciar-agente-windows.cmd`
-  para baixar a versão nova. Abra o painel privado na porta 8765. A UI sem
-  agente conectado permite consultar o banco, mas as ações de perfil exigem
-  o agente Windows atualizado e pareado.
-- Todos os testes da integração com Supabase usam APIs simuladas e não
-  criam contas em plataformas reais.
+A aba **Contas** e o agente Windows usam exclusivamente o arquivo
+`%LOCALAPPDATA%\\Nexora\\accounts.json` para plataformas, contas mãe/filha,
+lotes, registros de trabalhos e histórico de status. Não há autenticação ou
+comunicação com serviços externos de banco de dados. O arquivo é salvo por
+substituição atômica para não ficar incompleto após falhas de gravação.
 
+Na primeira execução, se existir `accounts.sqlite` antigo e não existir
+`accounts.json`, o agente importa os registros e preserva o SQLite original.
+Senhas, CPF, cookies e tokens não entram no JSON. O JSON **não é criptografado**;
+proteja o acesso ao usuário do Windows e não o inclua em GitHub ou backups públicos.
+
+Em **Quantidade (1 a 100)**, cada conta ganha registro próprio; acima de 1,
+um lote com tarefas é criado localmente. A criação do registro **não envia**
+cadastros em sites externos. O formulário oficial continua exigindo revisão
+antes do envio e conclusão de verificações de segurança pelo próprio site.
+
+Para atualizar, execute `git pull origin main` no Codespaces e reinicie o
+agente Windows pelo instalador `iniciar-agente-windows.cmd`. Não precisa
+instalar ou configurar Supabase.
 
 ## Nova área Contas — cadastro guiado integrado ao Windows
 
@@ -50,7 +41,7 @@ abertos diretamente no Windows pelo agente local.
 - **Verificar:** mostra `pending` quando há CAPTCHA, SMS, e-mail ou resultado
   inconclusivo. O estado `completed` exige um seletor de sucesso específico
   configurado para o provedor; um simples HTTP 200 não confirma cadastro.
-- Os registros ficam em um arquivo SQLite **privado do agente Windows**,
+- Os registros ficam em um arquivo JSON **privado do agente Windows**,
   fora do GitHub e fora dos perfis. Não são gravadas senhas, cookies, tokens,
   CPF ou telefone no banco de contas. Dados de preenchimento são transitórios.
 
