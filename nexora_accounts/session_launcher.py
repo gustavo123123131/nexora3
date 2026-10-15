@@ -105,6 +105,19 @@ class AccountLauncher:
                 label = ""
                 bindings = store.profile_bindings()
                 assigned_id = bindings.get(str(profile_id))
+                connection_mode = profile.get("connectionMode")
+                if connection_mode not in ("managed", "direct"):
+                    log(
+                        f"[Contas] {profile['label']}: modo de conexão original "
+                        "indisponível ou legado; não será atribuído outro endereço automaticamente."
+                    )
+                    return
+                if connection_mode == "managed" and not assigned_id:
+                    log(f"[Contas] {profile['label']}: vínculo da proxy original ausente; abertura cancelada.")
+                    return
+                if connection_mode == "direct" and assigned_id:
+                    log(f"[Contas] {profile['label']}: vínculo inesperado de proxy; abertura cancelada.")
+                    return
                 if assigned_id:
                     # A reopened account must NEVER use round-robin fallback.
                     # Deleted/missing bound proxy means a hard failure.
@@ -131,14 +144,9 @@ class AccountLauncher:
                     )
                     session_proxy_id = selected["id"]
                     label = f"{selected['protocol'].upper()} {selected['host']}:{selected['port']}"
-                elif managed:
-                    log(
-                        f"[Contas] {profile['label']}: não há vínculo de proxy original; "
-                        "não será atribuída outra proxy automaticamente."
-                    )
-                    return
-                # When the account was created without managed proxies, do not
-                # silently inherit a newly entered proxy from Mãe/Filha.
+                # Direct accounts remain direct even if a proxy is added
+                # later. Managed accounts always require the original binding.
+                # Never inherit the current Mãe/Filha proxy input.
 
                 plan = {
                     "idx": instance_idx,
