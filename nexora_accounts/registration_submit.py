@@ -156,7 +156,12 @@ class RegistrationWatcher:
                         self._stage("pending", "form-not-found")
                         return
                     mapping = {
-                        "account": values["username"],
+                        "account": (
+                            values["email"] if (
+                                fields["account"].get_attribute("type") or ""
+                            ).lower() == "email" and values["email"]
+                            else values["username"]
+                        ),
                         "userpass": values["password"],
                         "confirmPassword": values["password"],
                         "realName": values["fullName"],
