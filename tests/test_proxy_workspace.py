@@ -86,8 +86,14 @@ def test_gateway_uses_selected_http_proxy_per_instance(isolated_store, monkeypat
         "password": "local-password",
     }
     assert local_proxy_gateway._gateway_proxy_enabled() is True
+    # Explicit Desativar must not fall back to a stale hidden legacy proxy.
+    monkeypatch.setattr(local_proxy_gateway, "_raw_upstream_proxy",
+                        lambda: "http://legacy.example.net:8080")
     isolated_store.activate(None)
+    assert isolated_store.is_managed() is True
     assert active_proxy_config() is None
+    assert local_proxy_gateway._gateway_proxy_enabled() is False
+    assert local_proxy_gateway._resolve_upstream_for_idx(7) is None
 
 
 def test_tcp_probe_is_explicitly_not_authentication(isolated_store):
