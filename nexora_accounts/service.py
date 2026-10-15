@@ -159,6 +159,9 @@ def _default_folder():
     return Path(base) / "Nexora" if base else Path.home() / ".local" / "share" / "nexora"
 
 
+_LOCAL_JSON_LOCK = threading.RLock()
+
+
 class AccountsRepository:
     """Only local JSON persistence. Profiles and sessions remain in __profiles.
 
@@ -169,7 +172,7 @@ class AccountsRepository:
     def __init__(self, db_path=None):
         self.path = Path(db_path) if db_path else _default_folder() / "accounts.json"
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        self._lock = threading.RLock()
+        self._lock = _LOCAL_JSON_LOCK
         with self._lock:
             if not self.path.exists():
                 legacy = self.path.with_name("accounts.sqlite")
@@ -375,6 +378,84 @@ class AccountsRepository:
             self._audit(state, "batch.create", batch_id)
             self._write(state)
             return {"batchId": batch_id, "quantity": quantity, "account": first}
+
+    def create_launch_profiles(self, scope, mode, urls, count_per_url, profiles_base):
+        """Create individual, isolated local profile folders AND records per click.
+
+        Each returned launch plan uses the allocated persistent profile index.
+        No site registration, API request, or real identity generation occurs.
+        """
+        from Settings.device_modes import profile_directory, resolve_mode
+        from nexora_accounts.profile_data import make_profile_data
+
+        if scope not in ("mae", "filha"):
+            raise AccountError("Tipo de perfil inválido.")
+        try:
+            mode = resolve_mode(mode)
+        except ValueError as exc:
+            raise AccountError(str(exc)) from exc
+        if isinstance(count_per_url, bool) or not isinstance(count_per_url, int) or not 1 <= count_per_url <= 50:
+            raise AccountError("Quantidade inválida (1 a 50 por link).")
+        if not isinstance(urls, list) or not all(isinstance(u, str) and len(u) <= 2048 for u in urls):
+            raise AccountError("Lista de links inválida.")
+        # A blank URL still creates one local browser profile without navigation.
+        targets = urls if urls else [""]
+        with self._lock:
+            state = self._read()
+            used = {
+                a.get("profileIndex") for a in state["accounts"]
+                if a.get("profileScope") == scope and a.get("profileMode") == mode
+            }
+            total = len(targets) * count_per_url
+            indices = []
+            folders = []
+            for idx in range(1, 1000):
+                folder = profile_directory(profiles_base, mode, idx)
+                if idx not in used and not folder.exists():
+                    indices.append(idx)
+                    folders.append(folder)
+                if len(indices) == total:
+                    break
+            if len(indices) != total:
+                raise AccountError("Não existem índices livres suficientes para criar os perfis.")
+            plans = []
+            created_folders = []
+            old_len = len(state["accounts"])
+            try:
+                for position, (idx, folder) in enumerate(zip(indices, folders)):
+                    url = targets[position // count_per_url]
+                    data = make_profile_data()
+                    now = _now()
+                    folder.mkdir(parents=True, exist_ok=False)
+                    created_folders.append(folder)
+                    account = {
+                        "id": str(uuid.uuid4()), "siteId": "", "targetUrl": url,
+                        "displayName": ("Conta Mãe" if scope == "mae" else "Conta Filha") + f" #{idx}",
+                        "loginIdentifier": data["username"], "parentId": None,
+                        "profileScope": scope, "profileMode": mode, "profileIndex": idx,
+                        "profileData": data, "status": "local", "stage": "profile-created",
+                        "createdAt": now, "updatedAt": now,
+                    }
+                    state["accounts"].append(account)
+                    self._audit(state, "profile.create", account["id"])
+                    plans.append({
+                        "idx": idx, "url": url, "site_key": "",
+                        "site_occurrence": position % count_per_url + 1,
+                        "shared_identity_key": "", "shared_identity_owner": False,
+                        "should_autochave": False,
+                        "profile_record_id": account["id"],
+                    })
+                self._write(state)
+            except Exception:
+                # Only remove directories that this transaction just created.
+                # Existing browser profiles and the previous JSON stay unchanged.
+                for folder in reversed(created_folders):
+                    try:
+                        folder.rmdir()
+                    except OSError:
+                        pass
+                raise
+            return plans
 
     def set_stage(self, key, status, stage):
         if status not in STATUS or not re.fullmatch(r"[a-z0-9_-]{1,60}", stage):
