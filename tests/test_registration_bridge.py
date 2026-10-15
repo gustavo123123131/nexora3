@@ -241,7 +241,12 @@ def test_new_profiles_have_unique_test_data_valid_cpf_and_persistent_folders(tmp
         assert d["isTestData"] is True and d["cpfVerified"] is False
         assert d["email"].endswith("@example.test")
         assert d["fullName"].startswith("Pessoa Teste ")
-        assert len(d["password"]) >= 20
+        pwd = d["password"]
+        assert len(pwd) == 9
+        assert any(c.islower() for c in pwd)
+        assert any(c.isupper() for c in pwd)
+        assert any(c.isdigit() for c in pwd)
+        assert any(c in "#!@?" for c in pwd)
     assert len(AccountsRepository(tmp_path / "accounts.json").accounts()) == 10
     assert any(a["profileScope"] == "filha" for a in accounts)
 
