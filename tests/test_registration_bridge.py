@@ -240,7 +240,8 @@ def test_new_profiles_have_unique_test_data_valid_cpf_and_persistent_folders(tmp
         assert valid_cpf_digits(cpf[:9]) == cpf
         assert d["isTestData"] is True and d["cpfVerified"] is False
         assert d["email"].endswith("@example.test")
-        assert d["fullName"].startswith("Pessoa Teste ")
+        assert len(d["fullName"].split()) == 2
+        assert all(part.isalpha() for part in d["fullName"].split())
         pwd = d["password"]
         assert len(pwd) == 16
         assert not d["username"].startswith("teste")
