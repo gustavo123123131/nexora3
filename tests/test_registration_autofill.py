@@ -107,3 +107,52 @@ def test_unverified_cpf_not_prefilled():
     autofill_existing_registration(
         Page("https://example.org/register", fields), {"profile_record_id": "id"}, repo)
     assert not fields["input[data-input-name='cpf']"].fills
+
+
+
+def test_external_form_uses_only_explicit_owner_name_not_synthetic_name(monkeypatch):
+    monkeypatch.setenv("NEXORA_REGISTRATION_OWNER_NAME", "Nome do Titular")
+    fields = elements()
+    log_stages = []
+    repo = Repo(profile(isTestData=True, fullName="Nome Gerado Diferente"),
+                "https://example.org/register")
+    result = autofill_existing_registration(
+        Page("https://example.org/register", fields),
+        {"profile_record_id": "id"}, repo,
+        progress=log_stages.append,
+    )
+    assert result["status"] == "owner-name-filled"
+    assert result["fieldCount"] == 4
+    assert fields["input[data-input-name='realName']"].fills == ["Nome do Titular"]
+    assert fields["input[data-input-name='userpass']"].fills == ["Senha!Teste12345"]
+    assert fields["input[data-input-name='confirmPassword']"].fills == ["Senha!Teste12345"]
+    assert all(field.clicks == 0 for field in fields.values())
+    assert repo.stages[-1] == ("id", "local", "owner-name-prefilled")
+    assert "real-name-filled" in log_stages
+    assert "submit-button-found" in log_stages
+    assert log_stages[-1] == "submit-not-sent"
+
+
+def test_external_form_without_explicit_owner_name_keeps_real_name_empty(monkeypatch):
+    monkeypatch.delenv("NEXORA_REGISTRATION_OWNER_NAME", raising=False)
+    fields = elements()
+    repo = Repo(profile(isTestData=True), "https://example.org/register")
+    result = autofill_existing_registration(
+        Page("https://example.org/register", fields),
+        {"profile_record_id": "id"}, repo,
+    )
+    assert result["status"] == "credentials-filled"
+    assert fields["input[data-input-name='realName']"].fills == []
+    assert repo.stages[-1] == ("id", "local", "credentials-prefilled")
+
+
+def test_invalid_owner_name_not_forwarded_to_external_page(monkeypatch):
+    monkeypatch.setenv("NEXORA_REGISTRATION_OWNER_NAME", "???\nTESTE")
+    fields = elements()
+    repo = Repo(profile(isTestData=True), "https://example.org/register")
+    result = autofill_existing_registration(
+        Page("https://example.org/register", fields),
+        {"profile_record_id": "id"}, repo,
+    )
+    assert result["status"] == "credentials-filled"
+    assert fields["input[data-input-name='realName']"].fills == []
