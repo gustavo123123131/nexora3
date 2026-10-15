@@ -245,9 +245,9 @@ class LocalProfileStore:
         mode = runtime.get("mode")
         agent = runtime.get("user_agent", "")
         if mode == "android":
-            m = re.search(r"Android[^;)]*;\\s*([^;)]+)", agent, flags=re.I)
+            m = re.search(r"Android[^;)]*;\s*([^;)]+)", agent, flags=re.I)
             model = m.group(1).strip() if m else ""
-            model = model.replace("Build/", " ").strip()
+            model = model.split(" Build/")[0].strip()
             return model[:55] if model and model.lower() not in ("wv", "mobile") else "Android"
         if mode == "iphone":
             return "iPhone"
@@ -312,6 +312,7 @@ class LocalProfileStore:
         self, origin: str, *,
         device_mode: str | None = None,
         start_url: str | None = None,
+        connection_mode: str | None = None,
     ) -> dict:
         if origin not in ("mae", "filha"):
             raise LocalProfileError("Origem do perfil inválida.")
@@ -328,6 +329,8 @@ class LocalProfileStore:
             not isinstance(start_url, str) or len(start_url) > 2048
         ):
             raise LocalProfileError("URL inicial inválida.")
+        if connection_mode is not None and connection_mode not in ("managed", "direct", "legacy"):
+            raise LocalProfileError("Tipo de conexão inválido.")
         with _LOCK:
             data = self._read()
             number = data["nextNumber"]
@@ -364,6 +367,8 @@ class LocalProfileStore:
                 record["deviceMode"] = device_mode
             if start_url is not None:
                 record["startUrl"] = start_url
+            if connection_mode is not None:
+                record["connectionMode"] = connection_mode
             data["profiles"].append(record)
             data["nextNumber"] = number + 1
             self._write(data)
