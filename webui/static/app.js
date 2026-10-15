@@ -5,15 +5,22 @@ const nodes = new Map();
 const selectedTabs = new Map();
 const pendingInput = new Map();
 const shownDialogs = new Set();
-// Proxy is a client-only visual workspace. It is never sent to the API and
-// does not modify any of the real Python tabs or their events.
+// Proxy workspace uses local-agent endpoints and does not change existing GUI callbacks.
 const PROXY_PREVIEW_ID = '__nexora_proxy_visual__';
 const ACCOUNTS_VIEW_ID = '__nexora_accounts_local__';
 let accountsViewNode = null;
 let accountsViewInstance = null;
 let proxyPreviewNode = null;
+let proxyPreviewInstance = null;
 function proxyPreview() {
-  if (!proxyPreviewNode) proxyPreviewNode = window.NexoraProxyView.create();
+  if (!proxyPreviewInstance) {
+    proxyPreviewInstance = window.NexoraProxyView.create({
+      get: getRegistration,
+      post: post,
+    });
+    proxyPreviewNode = proxyPreviewInstance.node;
+  }
+  proxyPreviewInstance.onShow();
   return proxyPreviewNode;
 }
 function accountsView() {
