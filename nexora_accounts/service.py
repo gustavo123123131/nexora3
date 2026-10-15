@@ -160,66 +160,84 @@ def _default_folder():
 
 
 class AccountsRepository:
+    """Only local JSON persistence. Profiles and sessions remain in __profiles.
+
+    On the first run, import the old accounts.sqlite into accounts.json without
+    modifying or deleting the SQLite source. Atomic replaces avoid partial JSON.
+    """
+
     def __init__(self, db_path=None):
-        self.path = Path(db_path) if db_path else _default_folder() / "accounts.sqlite"
+        self.path = Path(db_path) if db_path else _default_folder() / "accounts.json"
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         self._lock = threading.RLock()
-        with self._open() as db:
-            db.executescript("""
-              PRAGMA foreign_keys=ON;
-              CREATE TABLE IF NOT EXISTS sites(
-                id TEXT PRIMARY KEY, config TEXT NOT NULL, created_at TEXT NOT NULL
-              );
-              CREATE TABLE IF NOT EXISTS accounts(
-                id TEXT PRIMARY KEY, site_id TEXT NOT NULL REFERENCES sites(id),
-                display_name TEXT NOT NULL, login_identifier TEXT NOT NULL,
-                parent_id TEXT REFERENCES accounts(id) ON DELETE SET NULL,
-                profile_scope TEXT NOT NULL CHECK(profile_scope IN ('mae','filha')),
-                profile_mode TEXT NOT NULL CHECK(profile_mode IN ('desktop','android','iphone','mixed')),
-                profile_index INTEGER NOT NULL CHECK(profile_index BETWEEN 1 AND 999),
-                status TEXT NOT NULL CHECK(status IN ('local','pending','completed','failed')),
-                stage TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-              );
-              CREATE TABLE IF NOT EXISTS account_audit(
-                id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT NOT NULL,
-                entity TEXT NOT NULL, occurred_at TEXT NOT NULL
-              );
-            """)
-
-    def _open(self):
-        db = sqlite3.connect(str(self.path), timeout=15)
-        db.row_factory = sqlite3.Row
-        db.execute("PRAGMA foreign_keys=ON")
-        return db
-
-    def _audit(self, db, action, entity):
-        db.execute("INSERT INTO account_audit(action,entity,occurred_at) VALUES(?,?,?)",
-                   (action, entity, _now()))
-
-    def sites(self):
-        with self._lock, self._open() as db:
-            return [json.loads(r["config"]) for r in db.execute(
-                "SELECT config FROM sites ORDER BY created_at DESC")]
-
-    def site(self, key):
-        with self._lock, self._open() as db:
-            row = db.execute("SELECT config FROM sites WHERE id=?", (key,)).fetchone()
-        if row is None:
-            raise AccountError("Site não configurado.")
-        return json.loads(row["config"])
-
-    def add_site(self, data):
-        config = _site_config(data)
-        with self._lock, self._open() as db:
-            if db.execute("SELECT 1 FROM sites WHERE id=?", (config["id"],)).fetchone():
-                raise AccountError("Já existe um site com esse ID.")
-            db.execute("INSERT INTO sites(id,config,created_at) VALUES(?,?,?)",
-                       (config["id"], json.dumps(config), _now()))
-            self._audit(db, "site.create", config["id"])
-        return config
+        with self._lock:
+            if not self.path.exists():
+                legacy = self.path.with_name("accounts.sqlite")
+                state = self._import_legacy(legacy) if self.path.suffix == ".json" and legacy.is_file() else self._empty()
+                self._write(state)
+            self._read()
 
     @staticmethod
-    def _account(row):
+    def _empty():
+        return {"version": 1, "sites": [], "accounts": [],
+                "batches": [], "jobs": [], "audit": []}
+
+    def _read(self):
+        try:
+            if self.path.stat().st_size > 20_000_000:
+                raise AccountError("Arquivo JSON de contas muito grande.")
+            with self.path.open("r", encoding="utf-8") as stream:
+                data = json.load(stream)
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise AccountError("Não foi possível ler accounts.json. O arquivo não será sobrescrito.") from exc
+        if not isinstance(data, dict) or data.get("version") != 1 or any(
+            not isinstance(data.get(name), list)
+            for name in ("sites", "accounts", "batches", "jobs", "audit")
+        ):
+            raise AccountError("Formato inválido de accounts.json. O arquivo não será sobrescrito.")
+        return data
+
+    def _write(self, state):
+        """Save to a sibling temporary file, fsync, then atomically replace."""
+        from tempfile import NamedTemporaryFile
+        temporary = None
+        try:
+            with NamedTemporaryFile("w", encoding="utf-8", dir=self.path.parent,
+                                    prefix=".accounts-", suffix=".tmp", delete=False) as stream:
+                temporary = Path(stream.name)
+                if os.name != "nt":
+                    os.chmod(temporary, 0o600)
+                json.dump(state, stream, ensure_ascii=False, indent=2)
+                stream.write("\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, self.path)
+        finally:
+            if temporary and temporary.exists():
+                temporary.unlink()
+
+    def _import_legacy(self, legacy):
+        """Read-only migration; the original SQLite DB is kept as a backup."""
+        state = self._empty()
+        try:
+            with sqlite3.connect(legacy.as_uri() + "?mode=ro", uri=True) as db:
+                db.row_factory = sqlite3.Row
+                for row in db.execute("SELECT config FROM sites ORDER BY created_at"):
+                    state["sites"].append(json.loads(row["config"]))
+                for row in db.execute("SELECT * FROM accounts ORDER BY created_at"):
+                    state["accounts"].append(self._legacy_account(row))
+                for row in db.execute("SELECT action,entity,occurred_at FROM account_audit ORDER BY id"):
+                    state["audit"].append({
+                        "action": row["action"], "entity": row["entity"], "occurredAt": row["occurred_at"],
+                    })
+        except (OSError, sqlite3.Error, ValueError, KeyError) as exc:
+            raise AccountError("Falha na importação das contas antigas. SQLite preservado.") from exc
+        state["audit"].append({"action": "storage.migrated", "entity": "accounts.sqlite",
+                               "occurredAt": _now()})
+        return state
+
+    @staticmethod
+    def _legacy_account(row):
         return {
             "id": row["id"], "siteId": row["site_id"], "displayName": row["display_name"],
             "loginIdentifier": row["login_identifier"], "parentId": row["parent_id"],
@@ -228,132 +246,178 @@ class AccountsRepository:
             "stage": row["stage"], "createdAt": row["created_at"], "updatedAt": row["updated_at"],
         }
 
+    @staticmethod
+    def _audit(state, action, entity):
+        state["audit"].append({"action": action, "entity": entity, "occurredAt": _now()})
+
+    def sites(self):
+        with self._lock:
+            return list(reversed(self._read()["sites"]))
+
+    def site(self, key):
+        with self._lock:
+            result = next((site for site in self._read()["sites"] if site["id"] == key), None)
+            if result is None:
+                raise AccountError("Site não configurado.")
+            return dict(result)
+
+    def add_site(self, data):
+        config = _site_config(data)
+        with self._lock:
+            state = self._read()
+            if any(site["id"] == config["id"] for site in state["sites"]):
+                raise AccountError("Já existe um site com esse ID.")
+            state["sites"].append(config)
+            self._audit(state, "site.create", config["id"])
+            self._write(state)
+        return dict(config)
+
     def accounts(self, query="", status=""):
         if not isinstance(query, str) or len(query) > 128 or status not in ("", *STATUS):
             raise AccountError("Filtro inválido.")
-        with self._lock, self._open() as db:
-            rows = db.execute("SELECT * FROM accounts ORDER BY created_at DESC").fetchall()
-        return [self._account(r) for r in rows if
-                (not status or r["status"] == status) and
-                (not query or query.lower() in (r["display_name"] + " " + r["site_id"] +
-                                                 " " + r["login_identifier"]).lower())]
+        with self._lock:
+            records = sorted(self._read()["accounts"], key=lambda r: r["createdAt"], reverse=True)
+        return [dict(item) for item in records
+                if (not status or item["status"] == status)
+                and (not query or query.lower() in (
+                    item["displayName"] + " " + item["siteId"] + " " +
+                    item.get("loginIdentifier", "")).lower())]
 
     def account(self, key):
-        with self._lock, self._open() as db:
-            row = db.execute("SELECT * FROM accounts WHERE id=?", (key,)).fetchone()
-        if row is None:
-            raise AccountError("Conta não encontrada.")
-        return self._account(row)
+        with self._lock:
+            item = next((a for a in self._read()["accounts"] if a["id"] == key), None)
+            if item is None:
+                raise AccountError("Conta não encontrada.")
+            return dict(item)
 
-    def add_account(self, data):
+    @staticmethod
+    def _validate_account(state, data):
         if not isinstance(data, dict):
             raise AccountError("Dados inválidos.")
-        site = self.site(data.get("siteId"))
+        if not any(site["id"] == data.get("siteId") for site in state["sites"]):
+            raise AccountError("Site não configurado.")
         display = _text(data.get("displayName", ""), "Identificação", 120)
         ident = _text(data.get("loginIdentifier", ""), "Identificador de login", 128, False)
         scope = data.get("profileScope", "mae")
         mode = data.get("profileMode", "desktop")
         idx = data.get("profileIndex", 1)
         if scope not in ("mae", "filha") or mode not in ("desktop", "android", "iphone", "mixed") \
-                or isinstance(idx, bool) or not isinstance(idx, int) or not (1 <= idx <= 999):
+                or isinstance(idx, bool) or not isinstance(idx, int) or not 1 <= idx <= 999:
             raise AccountError("Perfil inválido.")
         parent = data.get("parentId") or None
-        if parent and (self.account(parent)["profileScope"] != "mae" or scope != "filha"):
+        if parent and (scope != "filha" or not any(
+            a["id"] == parent and a["profileScope"] == "mae" for a in state["accounts"]
+        )):
             raise AccountError("Conta filha deve apontar para uma conta mãe.")
-        key, now = str(uuid.uuid4()), _now()
-        with self._lock, self._open() as db:
-            db.execute("""INSERT INTO accounts(id,site_id,display_name,login_identifier,
-                parent_id,profile_scope,profile_mode,profile_index,status,stage,created_at,updated_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (key, site["id"], display, ident, parent, scope, mode, idx, "local", "saved", now, now))
-            self._audit(db, "account.create", key)
-        return self.account(key)
+        return display, ident, scope, mode, idx, parent
+
+    def add_account(self, data):
+        with self._lock:
+            state = self._read()
+            display, ident, scope, mode, idx, parent = self._validate_account(state, data)
+            if any(a["profileScope"] == scope and a["profileMode"] == mode
+                   and a["profileIndex"] == idx for a in state["accounts"]):
+                raise AccountError("Este perfil já está vinculado a uma conta.")
+            now = _now()
+            account = {
+                "id": str(uuid.uuid4()), "siteId": data["siteId"], "displayName": display,
+                "loginIdentifier": ident, "parentId": parent, "profileScope": scope,
+                "profileMode": mode, "profileIndex": idx, "status": "local",
+                "stage": "saved", "createdAt": now, "updatedAt": now,
+            }
+            state["accounts"].append(account)
+            self._audit(state, "account.create", account["id"])
+            self._write(state)
+            return dict(account)
+
+    def create_batch(self, data):
+        """Atomically create 2-100 individual account records and queued jobs."""
+        if not isinstance(data, dict):
+            raise AccountError("Dados inválidos.")
+        quantity = data.get("quantity")
+        if isinstance(quantity, bool) or not isinstance(quantity, int) or not 2 <= quantity <= 100:
+            raise AccountError("Quantidade deve estar entre 2 e 100.")
+        with self._lock:
+            state = self._read()
+            # Validate site/scope/mode/parent with a temporary legal profile.
+            sample = dict(data)
+            sample["profileIndex"] = 1
+            display, ident, scope, mode, _, parent = self._validate_account(state, sample)
+            occupied = {a["profileIndex"] for a in state["accounts"]
+                        if a["profileScope"] == scope and a["profileMode"] == mode}
+            free = [idx for idx in range(1, 1000) if idx not in occupied]
+            if len(free) < quantity:
+                raise AccountError("Não há perfis livres suficientes neste modo.")
+            now, batch_id = _now(), str(uuid.uuid4())
+            state["batches"].append({
+                "id": batch_id, "siteId": data["siteId"], "profileScope": scope,
+                "profileMode": mode, "requestedCount": quantity,
+                "status": "queued", "createdAt": now, "updatedAt": now,
+            })
+            first = None
+            for idx in free[:quantity]:
+                key = str(uuid.uuid4())
+                record = {
+                    "id": key, "siteId": data["siteId"],
+                    "displayName": f"{display} #{idx}",
+                    "loginIdentifier": ident, "parentId": parent,
+                    "profileScope": scope, "profileMode": mode, "profileIndex": idx,
+                    "status": "local", "stage": "saved",
+                    "batchId": batch_id, "createdAt": now, "updatedAt": now,
+                }
+                if first is None:
+                    first = dict(record)
+                state["accounts"].append(record)
+                state["jobs"].append({
+                    "id": str(uuid.uuid4()), "batchId": batch_id, "accountId": key,
+                    "state": "queued", "createdAt": now, "updatedAt": now,
+                })
+            self._audit(state, "batch.create", batch_id)
+            self._write(state)
+            return {"batchId": batch_id, "quantity": quantity, "account": first}
 
     def set_stage(self, key, status, stage):
         if status not in STATUS or not re.fullmatch(r"[a-z0-9_-]{1,60}", stage):
             raise AccountError("Status inválido.")
-        self.account(key)
-        with self._lock, self._open() as db:
-            db.execute("UPDATE accounts SET status=?,stage=?,updated_at=? WHERE id=?",
-                       (status, stage, _now(), key))
-            self._audit(db, "account.status", key)
-        return self.account(key)
+        with self._lock:
+            state = self._read()
+            account = next((a for a in state["accounts"] if a["id"] == key), None)
+            if account is None:
+                raise AccountError("Conta não encontrada.")
+            now = _now()
+            account.update({"status": status, "stage": stage, "updatedAt": now})
+            mapping = {"provider-confirmed": "completed", "review": "form_ready",
+                       "submitted": "submitting", "verification-required": "verification_required"}
+            for job in state["jobs"]:
+                if job["accountId"] == key:
+                    job.update({"state": mapping.get(stage, "failed" if status == "failed" else "queued"),
+                                "updatedAt": now})
+            for batch in state["batches"]:
+                jobs = [j["state"] for j in state["jobs"] if j["batchId"] == batch["id"]]
+                if jobs:
+                    finished = ("completed", "failed", "cancelled")
+                    batch["status"] = ("completed" if all(x == "completed" for x in jobs)
+                                       else "failed" if all(x in ("failed", "cancelled") for x in jobs)
+                                       else "partial" if all(x in finished for x in jobs)
+                                       else "running" if any(x != "queued" for x in jobs)
+                                       else "queued")
+                    batch["updatedAt"] = now
+            self._audit(state, "account.status", key)
+            self._write(state)
+            return dict(account)
 
     def delete(self, key):
-        self.account(key)
-        with self._lock, self._open() as db:
-            db.execute("DELETE FROM accounts WHERE id=?", (key,))
-            self._audit(db, "account.delete", key)
-
-
-    def sync_cloud_site(self, data):
-        """Mirror a Supabase-owned site's non-secret metadata for local Playwright."""
-        config = _site_config(data)
-        with self._lock, self._open() as db:
-            db.execute(
-                """INSERT INTO sites(id,config,created_at) VALUES(?,?,?)
-                   ON CONFLICT(id) DO UPDATE SET config=excluded.config""",
-                (config["id"], json.dumps(config), _now()),
-            )
-            self._audit(db, "site.cloud_sync", config["id"])
-        return config
-
-    def sync_cloud_account(self, data):
-        """Mirror a cloud account using the SAME UUID; never copy credentials."""
-        if not isinstance(data, dict):
-            raise AccountError("Conta remota inválida.")
-        try:
-            key = str(uuid.UUID(str(data.get("id", ""))))
-        except (ValueError, AttributeError, TypeError) as exc:
-            raise AccountError("Identificador de conta remoto inválido.") from exc
-        site = self.site(data.get("siteId", ""))
-        display = _text(data.get("displayName", ""), "Identificação", 120)
-        scope, mode, idx = data.get("profileScope"), data.get("profileMode"), data.get("profileIndex")
-        if scope not in ("mae", "filha") or mode not in ("desktop", "android", "iphone", "mixed") \
-                or isinstance(idx, bool) or not isinstance(idx, int) or not 1 <= idx <= 999:
-            raise AccountError("Perfil remoto inválido.")
-        parent = data.get("parentId") or None
-        if parent:
-            try:
-                parent = str(uuid.UUID(str(parent)))
-            except (ValueError, AttributeError, TypeError) as exc:
-                raise AccountError("Conta mãe remota inválida.") from exc
-            linked = self.account(parent)
-            if scope != "filha" or linked["profileScope"] != "mae":
-                raise AccountError("Vínculo de conta mãe inválido.")
-        now = _now()
-        with self._lock, self._open() as db:
-            db.execute(
-                """INSERT INTO accounts(id,site_id,display_name,login_identifier,parent_id,
-                        profile_scope,profile_mode,profile_index,status,stage,created_at,updated_at)
-                   VALUES(?,?,?,?,?,?,?,?,'local','saved',?,?)
-                   ON CONFLICT(id) DO UPDATE SET
-                        site_id=excluded.site_id,display_name=excluded.display_name,
-                        parent_id=excluded.parent_id,profile_scope=excluded.profile_scope,
-                        profile_mode=excluded.profile_mode,profile_index=excluded.profile_index,
-                        updated_at=excluded.updated_at""",
-                (key, site["id"], display, "", parent, scope, mode, idx, now, now),
-            )
-            self._audit(db, "account.cloud_sync", key)
-        return self.account(key)
-
-    def sync_cloud_records(self, payload):
-        """Synchronize only metadata from the authenticated browser session.
-
-        Request authentication / Origin / CSRF are enforced by servidor.py.
-        No passwords, cookies, CPF or third-party request bodies are accepted.
-        """
-        if not isinstance(payload, dict):
-            raise AccountError("Sincronização inválida.")
-        sites, accounts = payload.get("sites", []), payload.get("accounts", [])
-        if not isinstance(sites, list) or not isinstance(accounts, list) or \
-                len(sites) > 100 or len(accounts) > 100:
-            raise AccountError("Muitos registros para sincronizar.")
-        for item in sites:
-            self.sync_cloud_site(item)
-        for item in accounts:
-            self.sync_cloud_account(item)
-        return {"sites": len(sites), "accounts": len(accounts)}
+        with self._lock:
+            state = self._read()
+            if not any(a["id"] == key for a in state["accounts"]):
+                raise AccountError("Conta não encontrada.")
+            state["accounts"] = [a for a in state["accounts"] if a["id"] != key]
+            for account in state["accounts"]:
+                if account["parentId"] == key:
+                    account["parentId"] = None
+            state["jobs"] = [j for j in state["jobs"] if j["accountId"] != key]
+            self._audit(state, "account.delete", key)
+            self._write(state)
 
 
 class ExistingProfileBrowser:
