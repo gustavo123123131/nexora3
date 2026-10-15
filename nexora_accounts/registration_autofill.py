@@ -95,7 +95,15 @@ def autofill_existing_registration(page, instance_plan, repository=None):
     fields = _wait_for_registration(page)
     if not fields:
         repo.set_stage(key, "local", "form-not-found")
-        return {"status": "not-found", "message": "Formulário de registro não encontrado."}
+        required = ("account", "userpass", "confirmPassword")
+        missing = [name for name in required if _visible(page, FIELDS[name]) is None]
+        return {
+            "status": "not-found",
+            "missingFields": missing,
+            "message": ("Formulário não encontrado: faltam os campos "
+                        + ", ".join(missing) if missing
+                        else "Formulário de cadastro não ficou visível a tempo."),
+        }
     if not _same_site(target, page.url):
         return {"status": "blocked", "message": "A página mudou de domínio."}
 
