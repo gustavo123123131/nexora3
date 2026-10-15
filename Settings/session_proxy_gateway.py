@@ -187,6 +187,8 @@ class SessionProxyGateway:
                         host, port_raw = target.rsplit(":", 1)
                         upstream = _open_tunnel(owner.proxy, host, int(port_raw))
                         client.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                        if body:
+                            upstream.sendall(body)
                         _pipe_bidirectional(client, upstream)
                     else:
                         parsed = urlsplit(target)
