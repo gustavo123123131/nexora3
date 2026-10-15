@@ -69,7 +69,13 @@ def test_both_buttons_open_browsers_and_create_one_local_profile_each(monkeypatc
                 call = calls[0]
                 assert call["run_auto"] is False
                 assert call["automation_callback"] is None
-                assert call["instance_plans"] is None
+                plans = call["instance_plans"]
+                assert len(plans) == 2
+                assert plans[0]["idx"] == 1
+                assert plans[0]["url"] == "https://exemplo.com"
+                assert plans[0]["registration_profile"]["origin"] == label
+                assert plans[0]["registration_profile"]["password"] == plans[0]["registration_profile"]["confirmPassword"]
+                assert plans[1] == {"idx": 2, "url": "https://exemplo.com"}
                 assert call["keep_profiles"] is True
                 assert call["auto_goto"] is True
                 assert call["urls_string"] == "https://exemplo.com"
