@@ -1347,7 +1347,12 @@ def run_instance(
                                     from nexora_accounts.registration_autofill import autofill_existing_registration
                                     _registration_stage("form-scanning")
                                     prefill_result = autofill_existing_registration(page, instance_plan)
-                                    log(f"[#{idx} ID={registration_id[:8]}] Cadastro: {prefill_result['status']} ({prefill_result.get('fieldCount', 0)} campo(s)).")
+                                    log(
+                                        f"[#{idx} ID={registration_id[:8]}] Cadastro: "
+                                        f"{prefill_result['status']} "
+                                        f"({prefill_result.get('fieldCount', 0)} campo(s)). "
+                                        f"{prefill_result['message']}"
+                                    )
                                     # Even a test-data-blocked profile needs a watcher:
                                     # the user can supply legitimate values transiently in Contas.
                                     from nexora_accounts.registration_submit import RegistrationWatcher, request_demo_submit
