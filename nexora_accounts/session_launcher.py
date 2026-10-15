@@ -108,11 +108,22 @@ class AccountLauncher:
                     selected = allocated[0]
                     result = store.test_authenticated(selected["id"])
                     if not result.get("reachable"):
-                        log(
-                            f"[Contas] {profile['label']}: proxy não validada "
-                            f"({result.get('status', 'erro')}); navegador não iniciado."
+                        deferred_browser_check = (
+                            result.get("status") == "tls_handshake_failed"
+                            and result.get("stage") == "tls_destination"
+                            and result.get("connectVerified") is True
+                            and result.get("browserVerificationRequired") is True
                         )
-                        return
+                        if not deferred_browser_check:
+                            log(
+                                f"[Contas] {profile['label']}: proxy não validada "
+                                f"({result.get('status', 'erro')}); navegador não iniciado."
+                            )
+                            return
+                        log(
+                            f"[Contas] {profile['label']}: CONNECT aceito, TLS Python inconclusivo; "
+                            "o Chromium deverá verificar HTTPS e IP pela proxy antes de navegar."
+                        )
                     session_proxy = ProxyConfig(
                         server=f"{selected['protocol']}://{selected['host']}:{selected['port']}",
                         username=selected.get("username") or None,
