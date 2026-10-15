@@ -106,6 +106,64 @@ def test_both_buttons_open_browsers_and_create_one_local_profile_each(monkeypatc
                 controller.delay_var.set(originals["delay"])
 
 
+
+def test_saved_proxy_pool_is_required_and_assigned_per_browser(monkeypatch, tmp_path):
+    monkeypatch.setattr(proxy_store, "_default_path", lambda: tmp_path / "proxies.json")
+    monkeypatch.setattr(local_profiles, "_default_path",
+                        lambda: tmp_path / "generated_profiles.json")
+    store = proxy_store.ProxyStore()
+    first = store.save_line("http://userA:pwA@one.test:8881")
+    second = store.save_line("socks5://userB:pwB@two.test:8882")
+    monkeypatch.setattr(proxy_store.ProxyStore, "test",
+                        lambda self, identifier: {"reachable": True})
+    with TestClient(servidor.app) as client:
+        initial = client.get("/api/state").json()
+        csrf = {"X-LixoCPA-CSRF": initial["csrf_token"]}
+        tab = initial["tree"]["children"][0]["children"][0]
+        ctrl = servidor.ctk.get_widget(tab["children"][0]["id"])
+        module = importlib.import_module(ctrl.__class__.__module__)
+        monkeypatch.setattr(ctrl, "save_settings", lambda: None)
+        monkeypatch.setattr(module, "clear_invite_file", lambda _log: None)
+        completed = threading.Event()
+        calls = []
+
+        def pretend_launch(**kwargs):
+            calls.append(kwargs)
+            completed.set()
+
+        monkeypatch.setattr(module, "run_all", pretend_launch)
+        original = (ctrl.urls_var.get(), ctrl.count_var.get(), ctrl.proxy_var.get())
+        try:
+            ctrl.urls_var.set("example.com")
+            ctrl.count_var.set("2")
+            ctrl.proxy_var.set("not-a-real-legacy-proxy")
+            button = next(node for node in children(tab)
+                          if node["type"] == "button"
+                          and node["options"].get("text") == "Abrir Navegadores")
+            response = client.post("/api/event", headers=csrf,
+                                   json={"id": button["id"], "event": "click"})
+            assert response.status_code == 200
+            assert completed.wait(6)
+            ctrl.worker_thread.join(timeout=2)
+            assert len(calls) == 1
+            plans = calls[0]["instance_plans"]
+            assert [p["proxy_config"].server for p in plans] == [
+                "http://one.test:8881", "socks5://two.test:8882",
+            ]
+            assert [p["proxy_config"].username for p in plans] == ["userA", "userB"]
+            assert calls[0]["proxy"] is None
+
+            # No direct opening or new account when a required proxy fails.
+            monkeypatch.setattr(proxy_store.ProxyStore, "test",
+                                lambda self, identifier: {"reachable": False})
+            ctrl.start_browsers()
+            assert len(calls) == 1
+        finally:
+            ctrl.urls_var.set(original[0])
+            ctrl.count_var.set(original[1])
+            ctrl.proxy_var.set(original[2])
+
+
 def test_legacy_automation_entry_is_inert(monkeypatch, tmp_path):
     """Even a legacy Python caller cannot enable the old account automation."""
     monkeypatch.setattr(proxy_store, "_default_path", lambda: tmp_path / "proxies.json")
