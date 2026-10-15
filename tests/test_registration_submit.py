@@ -4,7 +4,8 @@ import uuid
 import pytest
 
 from nexora_accounts.registration_submit import (
-    RegistrationWatcher, request_submit, request_confirmed_auto_submit
+    RegistrationWatcher, request_submit, request_confirmed_auto_submit,
+    request_autosubmit_after_fill
 )
 
 
@@ -267,3 +268,74 @@ def test_rejects_invalid_transient_values():
     with pytest.raises(Exception):
         request_submit(repo.account_record["id"], True, repo, values)
     assert not repo.events
+
+
+def test_real_chromium_clicks_supplied_registro_button_without_external_network():
+    """Real Playwright DOM click, mocked HTTPS navigation, no provider requests."""
+    from playwright.sync_api import sync_playwright
+    account = valid_account()
+    account["profileData"].update({
+        "fullName": "Pessoa Autorizada",
+        "email": "pessoa@dominio-valido.dev",
+        "phone": "",
+    })
+    repo = Repo(account)
+    log = []
+    html = """<!DOCTYPE html><html><body>
+      <input data-input-name="account">
+      <input data-input-name="userpass" type="password">
+      <input data-input-name="confirmPassword" type="password">
+      <input data-input-name="realName">
+      <button type="button" id="insideRegisterSubmitClick">Registro</button>
+      <script>
+      window.nexoraClickCount = 0;
+      document.getElementById('insideRegisterSubmitClick').addEventListener(
+        'click', () => { window.nexoraClickCount++; });
+      </script>
+      </body></html>"""
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.route("https://example.org/**", lambda route: route.fulfill(
+                status=200, content_type="text/html", body=html))
+            page.goto(account["targetUrl"])
+            for field, value in (
+                ("account", "titular123"),
+                ("userpass", "SenhaSegura!123"),
+                ("confirmPassword", "SenhaSegura!123"),
+                ("realName", "Pessoa Autorizada"),
+            ):
+                page.locator(f"input[data-input-name='{field}']").fill(value)
+            watcher = RegistrationWatcher(
+                page, {"profile_record_id": account["id"], "idx": 1},
+                repository=repo, log=log.append, success_selector="")
+            assert request_autosubmit_after_fill(
+                page, {"profile_record_id": account["id"]},
+                {"status": "filled"}, log.append, repository=repo) is True
+            watcher.tick()
+            assert page.evaluate("window.nexoraClickCount") == 1
+            watcher.tick()
+            assert page.evaluate("window.nexoraClickCount") == 1
+            assert any("Campo realName: preenchido" in entry for entry in log)
+            assert any("CLIQUE: iniciando click()" in entry for entry in log)
+            assert any("CLIQUE EXECUTADO:" in entry for entry in log)
+            assert repo.account_record["status"] == "pending"
+            assert not any("SenhaSegura!123" in entry for entry in log)
+        finally:
+            browser.close()
+
+
+def test_diagnostics_explain_why_generated_external_profile_is_not_sent():
+    account = valid_account()
+    account["profileData"]["isTestData"] = True
+    repo = Repo(account)
+    page = Page(account["targetUrl"])
+    messages = []
+    assert request_autosubmit_after_fill(
+        page, {"profile_record_id": account["id"]},
+        {"status": "profile-name-filled"}, messages.append,
+        repository=repo) is False
+    assert any("CLIQUE NÃO SOLICITADO" in line for line in messages)
+    assert not any("CLIQUE EXECUTADO" in line for line in messages)
+    assert page.button.clicks == 0
