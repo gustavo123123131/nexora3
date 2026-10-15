@@ -192,3 +192,15 @@ def test_compare_certificate_rejects_untrusted_host_without_logging_secret():
     )
     assert result == {}
     assert lines and all("password" not in line for line in lines)
+
+
+@pytest.mark.parametrize("module_name", [
+    "Settings.Criar_Mae.settings.browser",
+    "Settings.Criar_Filha.settings.browser",
+])
+def test_legacy_parser_errors_do_not_echo_credentials(module_name):
+    import importlib
+    parser = importlib.import_module(module_name).parse_proxy_string
+    with pytest.raises(ValueError) as failure:
+        parser("proxy.example.test:NOT-A-PORT:username:secret-for-this-test")
+    assert "secret-for-this-test" not in str(failure.value)
