@@ -6,6 +6,7 @@ credential logging, CAPTCHA bypass, or automatic retry after uncertain results.
 """
 import os
 import re
+from datetime import datetime, timezone
 import threading
 import time
 from urllib.parse import urlparse
@@ -139,24 +140,48 @@ class RegistrationWatcher:
         self.started_at = None
         self.last_check = 0
         self.last_stage = "review"
+        self.last_stage_at = self.clock()
         self.finished = False
         self.page.on("response", self._on_response)
 
     def _on_response(self, response):
-        """Only numeric status and the known registration route; never read body."""
+        """Record status and an OPTIONAL numeric provider code, never a response body."""
         try:
             if (urlparse(response.url).path.rstrip("/") == "/hall/api/member/register"
                     and response.request.method.upper() == "POST"):
-                self.http_codes.append(int(response.status))
+                business_code = None
+                try:
+                    data = response.json()
+                    raw_code = data.get("code") if isinstance(data, dict) else None
+                    if isinstance(raw_code, (int, str)) and re.fullmatch(
+                            r"[0-9]{1,8}", str(raw_code)):
+                        business_code = int(raw_code)
+                except Exception:
+                    pass
+                self.http_codes.append((int(response.status), business_code))
         except Exception:
             pass
 
-    def _stage(self, status, stage, http_status=None):
-        if self.last_stage == stage:
+    def _stage(self, status, stage, http_status=None, error_code=None):
+        if self.last_stage == stage and http_status is None and error_code is None:
             return
+        now = self.clock()
+        duration_ms = max(0, min(int((now - self.last_stage_at) * 1000), 86_400_000))
+        self.last_stage_at = now
         self.last_stage = stage
-        self.repo.set_stage(self.key, status, stage, http_status=http_status)
-        self.log(f"[Cadastro] Perfil {self.plan.get('idx', '?')}: {stage}.")
+        self.repo.set_stage(
+            self.key, status, stage, http_status=http_status,
+            error_code=error_code, duration_ms=duration_ms,
+        )
+        at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        line = (
+            f"[{at}] [perfil #{self.plan.get('idx', '?')} "
+            f"id={self.key[:8]}] [{stage}] {duration_ms} ms"
+            + (f" HTTP={http_status}" if http_status else "")
+            + (f" erro={error_code}" if error_code else "")
+        )
+        print(line, flush=True)
+        self.log(line)
 
     def _valid_page(self):
         from nexora_accounts.registration_autofill import _same_site
@@ -176,7 +201,9 @@ class RegistrationWatcher:
         if self.finished:
             return
         if self.page.is_closed():
-            self._stage("pending", "browser-closed-unverified")
+            # Do not turn an untouched/blocked local profile into a submitted one.
+            if self.started_at is not None:
+                self._stage("pending", "browser-closed-unverified")
             self.finished = True
             return
 
@@ -220,29 +247,42 @@ class RegistrationWatcher:
                 button = next((btn for selector in _SUBMIT_SELECTORS
                                if (btn := self.page.locator(selector).first).is_visible()), None)
                 if button is None:
-                    self._stage("pending", "submit-button-missing")
+                    self._stage("pending", "submit-button-missing",
+                                error_code="selector-not-found")
                     return
                 # Never manipulate terms/CAPTCHA; real website validation remains in place.
                 self.started_at = self.clock()
                 self._stage("pending", "submitting")
                 button.click(timeout=8000)
                 self._stage("pending", "awaiting-provider")
-            except Exception:
-                # The click may have reached the server before an error/timeout.
-                self._stage("pending", "submit-result-unknown")
+            except Exception as exc:
+                # The click could already have reached the provider; never retry.
+                code = type(exc).__name__.lower().replace("_", "-")[:55]
+                self._stage("pending", "submit-result-unknown", error_code=code)
                 return
             finally:
                 if command.get("values") is not None:
                     command["values"].clear()
 
         if self.http_codes:
-            code = self.http_codes.pop(0)
+            http_code, provider_code = self.http_codes.pop(0)
             if self.started_at is None:
-                self.started_at = self.clock()  # User submitted in site itself.
-            if code >= 400:
-                self._stage("pending", "provider-http-error", http_status=code)
+                self.started_at = self.clock()  # User may submit via site itself.
+            if provider_code == 1126:
+                # Security verification observed in the original trace.
+                self._stage("pending", "verification-required",
+                            http_status=http_code, error_code="provider-1126")
+            elif http_code >= 400:
+                self._stage("pending", "provider-http-error", http_status=http_code,
+                            error_code=("provider-code-" + str(provider_code))
+                            if provider_code is not None else None)
+            elif provider_code not in (None, 0):
+                # Unknown business codes are never interpreted as success.
+                self._stage("pending", "provider-response-unverified",
+                            http_status=http_code,
+                            error_code="provider-code-" + str(provider_code))
             else:
-                self._stage("pending", "provider-response-unverified", http_status=code)
+                self._stage("pending", "provider-response-unverified", http_status=http_code)
 
         # Throttle DOM polling but keep processing network events immediately.
         now = self.clock()
