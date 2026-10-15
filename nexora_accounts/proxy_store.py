@@ -158,8 +158,18 @@ class ProxyStore:
             if identifier is not None and not any(p["id"] == identifier for p in state["items"]):
                 raise ProxyError("Proxy não encontrado.")
             state["activeId"] = identifier
+            state["managed"] = True
             self._write(state)
             return {"activeId": identifier}
+
+    def is_managed(self):
+        """True once the user has chosen Usar or Desativar in the Proxy tab.
+
+        Explicitly disabling the manager must not resurrect an old hidden
+        Mãe/Filha proxy_raw value on the next browser launch.
+        """
+        with _LOCK:
+            return self._read().get("managed", False) is True
 
     def active(self):
         with _LOCK:
