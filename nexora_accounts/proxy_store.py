@@ -192,12 +192,18 @@ class ProxyStore:
             return _public(saved)
 
     def save_line(self, line):
-        result = self.save(parse_proxy_line(line))
+        payload = parse_proxy_line(line)
         with _LOCK:
+            state = self._read()
+            key = ("protocol", "host", "port", "username", "password")
+            existing = next((p for p in state["items"] if all(p.get(k) == payload[k] for k in key)), None)
+            if existing:
+                return _public(existing)
+            result = self.save(payload)
             state = self._read()
             state["managed"] = True
             self._write(state)
-        return result
+            return result
 
     def assign(self, count, *, profile_id=None):
         """Allocate one endpoint per browser, retaining the selected profile binding.
@@ -258,14 +264,18 @@ class ProxyStore:
         if entry is None:
             raise ProxyError("Proxy não encontrada.")
         from Settings.Criar_Mae.settings.browser import ProxyConfig
-        from Settings.session_proxy_gateway import probe_proxy
-        return probe_proxy(
-            ProxyConfig(
-                server=f"{entry['protocol']}://{entry['host']}:{entry['port']}",
-                username=entry.get("username") or None,
-                password=entry.get("password") or None,
-            ), target=target, timeout=timeout,
+        from Settings.session_proxy_gateway import probe_proxy, probe_exit_ip
+        proxy = ProxyConfig(
+            server=f"{entry['protocol']}://{entry['host']}:{entry['port']}",
+            username=entry.get("username") or None,
+            password=entry.get("password") or None,
         )
+        result = probe_proxy(proxy, target=target, timeout=timeout)
+        if result["reachable"]:
+            exit_ip = probe_exit_ip(proxy)
+            if exit_ip:
+                result["exitIp"] = exit_ip
+        return result
 
     def delete(self, identifier):
         with _LOCK:
