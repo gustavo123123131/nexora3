@@ -1,6 +1,6 @@
 # Lixo CPA pelo navegador — adaptação mínima
 
-O `main.py` e todos os módulos originais dentro de `Settings` foram mantidos **sem alterações**. A pasta `webui` emula os componentes visuais mais usados de `customtkinter` e mostra as telas originais num navegador por uma API Python local. O servidor não envia a terceiros dados de contas ou credenciais por design; roda em `127.0.0.1`.
+O Nexora utiliza os módulos originais de navegador de `Settings`, sem o código antigo de criação e cadastro de contas. A pasta `webui` emula os componentes visuais mais usados de `customtkinter` e mostra as telas originais num navegador por uma API Python local. O painel não gera identidades nem preenche formulários de cadastro. O servidor local roda em `127.0.0.1`.
 
 ## Windows (ambiente original)
 
