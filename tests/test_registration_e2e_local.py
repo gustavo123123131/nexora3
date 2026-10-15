@@ -260,16 +260,20 @@ def test_real_site_layout_preview_fills_only_nonidentity_credentials(tmp_path):
 
 
 
-def test_configured_owner_name_autofills_in_real_chromium_without_sending(
+def test_old_global_surname_cannot_be_injected_into_another_profile_in_chromium(
         tmp_path, monkeypatch):
-    """Real browser, intercepted HTTPS document: field fill only, no signup POST."""
-    monkeypatch.setenv("NEXORA_REGISTRATION_OWNER_NAME", "Titular Autorizado")
+    """Real Chromium with intercepted HTTPS: no stale cross-profile name."""
+    monkeypatch.setenv("NEXORA_REGISTRATION_OWNER_NAME", "Silva")
     url = "https://registration.preview.example.org/register"
     repo = AccountsRepository(tmp_path / "accounts.json")
     plan = repo.create_launch_profiles(
         "filha", "desktop", [url], 1, tmp_path / "profiles"
     )[0]
     account_id = plan["profile_record_id"]
+    saved = json.loads(repo.path.read_text(encoding="utf-8"))
+    account = next(a for a in saved["accounts"] if a["id"] == account_id)
+    account["profileData"]["fullName"] = "Felipe Nogueira"
+    repo.path.write_text(json.dumps(saved, ensure_ascii=False), encoding="utf-8")
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         try:
@@ -289,21 +293,22 @@ def test_configured_owner_name_autofills_in_real_chromium_without_sending(
                     account_id, plan["idx"], stage, repository=repo
                 ),
             )
-            assert result["status"] == "owner-name-filled"
-            assert result["fieldCount"] == 4
-            assert page.locator("input[data-input-name='realName']").input_value() == "Titular Autorizado"
+            assert result["status"] == "credentials-filled"
+            assert result["fieldCount"] == 3
+            # Neither old global "Silva" nor test identity "Felipe Nogueira"
+            # is forwarded as a civil identity to the external form.
+            assert page.locator("input[data-input-name='realName']").input_value() == ""
+            assert page.locator("input[data-input-name='account']").input_value() == account["profileData"]["username"]
             assert page.locator("#insideRegisterSubmitClick").is_visible()
             assert post_count == []
-            assert "Titular Autorizado" not in repo.path.read_text(encoding="utf-8")
             assert repo.account(account_id)["stage"] == "submit-not-sent"
             assert any(
-                entry["stage"] == "real-name-filled"
+                entry["stage"] == "name-entry-pending"
                 for entry in repo.account(account_id)["registrationLog"]
             )
             context.close()
         finally:
             browser.close()
-
 
 
 def test_browser_manual_name_and_registro_click_are_logged_in_chromium(tmp_path):
