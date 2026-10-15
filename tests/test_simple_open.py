@@ -64,7 +64,8 @@ def test_abrir_conta_uses_existing_manual_browser_flow(monkeypatch):
                 assert finished.wait(timeout=6), f"{label} não acionou a abertura"
                 assert len(captured) == 1
                 call = captured[0]
-                assert call["run_auto"] is False
+                assert call["run_auto"] is True
+                assert call["automation_callback"] == module.run_registration_only
                 assert call["urls_string"] == "https://exemplo.com"
                 assert controller.urls_var.get() == "https://exemplo.com"
                 assert call["mode"] == "desktop"
