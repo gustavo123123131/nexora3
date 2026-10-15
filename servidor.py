@@ -283,6 +283,12 @@ async def proxy_test(body: dict):
     return _proxy_request(lambda: ProxyStore().test(body.get('id')))
 
 
+@app.get('/api/local-profiles')
+async def list_local_profiles():
+    from nexora_accounts.local_profiles import LocalProfileStore
+    return {'profiles': LocalProfileStore().list()}
+
+
 def main():
     parser = argparse.ArgumentParser(description='Lixo CPA no navegador (apenas máquina local)')
     parser.add_argument('--port', type=int, default=8765)
