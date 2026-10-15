@@ -172,6 +172,7 @@ def test_short_usernames_retry_duplicates_across_batches(tmp_path, monkeypatch):
     repo.create_launch_profiles("mae", "desktop", [], 2, root)
     repo.create_launch_profiles("filha", "desktop", [], 1, root)
     usernames = [entry["profileData"]["username"] for entry in repo.accounts()]
-    assert usernames == ["ma1234", "lu5678", "ra9021"]
+    # accounts() displays newest first; collision checks are order-independent.
+    assert set(usernames) == {"ma1234", "lu5678", "ra9021"}
     assert all(6 <= len(name) <= 9 for name in usernames)
     assert len(set(usernames)) == len(usernames)
