@@ -1,5 +1,31 @@
 # Lixo CPA — servidor localhost
 
+## Diagnóstico do botão Abrir Conta — registro verificado
+
+Nas abas **Criar Mãe/Filha**, `Abrir Conta` usa a automação de
+**cadastro somente**, sem executar PIX, saque ou depósito. O código histórico
+abria Chromium em modo manual (`run_auto=False`), portanto não enviava
+o formulário. O código histórico também mostrava um falso sucesso antes de
+confirmar o retorno do site.
+
+Para autorizar **um teste real de cadastro num site seu**, configure
+`NEXORA_REGISTRATION_SUCCESS_SELECTOR` **no processo do agente Windows**
+com um seletor CSS específico da plataforma que somente apareça depois de
+autenticação/registro confirmado (por exemplo, um identificador próprio da
+área logada, devidamente validado no site). Sem isso, o botão **não envia**
+o formulário: mostrará `CADASTRO NÃO EXECUTADO`, para evitar cadastros
+sem comprovação. Com esse seletor, o fluxo preenche e envia pelo navegador
+do Windows, aguarda o indicador, e registra um resultado apenas quando
+confirmado. Se o indicador não aparecer, mantém o caso como pendente e
+**não tenta um segundo POST automaticamente**.
+
+Não existe documentação comprovada do contrato interno
+`POST /hall/api/member/register`; a automação usa o próprio frontend do
+site. A mera recepção de HTTP 200, clique ou fechamento do modal **não
+comprova** cadastro. Ainda é necessário testar um domínio autorizado e
+validar o indicador com os logs de uma execução real. Evite usar a mesma
+regra de confirmação em sites com interfaces diferentes.
+
 ## Armazenamento local em JSON
 
 A aba **Contas** e o agente Windows usam exclusivamente o arquivo
