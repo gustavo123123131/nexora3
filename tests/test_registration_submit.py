@@ -409,3 +409,48 @@ def test_owned_https_site_full_prefill_then_one_registro_click(monkeypatch):
             assert not any("Senha@123" in line for line in log)
         finally:
             browser.close()
+
+
+def test_local_complete_profile_name_state_executes_registro_once():
+    """The formerly rejected profile-name-filled state must click on a demo only."""
+    from playwright.sync_api import sync_playwright
+
+    account = valid_account()
+    account["targetUrl"] = "http://127.0.0.1:19077/register"
+    account["profileData"]["isTestData"] = True
+    account["stage"] = "profile-name-prefilled"
+    repo = Repo(account)
+    logs = []
+    html = """<!DOCTYPE html><html><body>
+      <input data-input-name="account" value="teste123">
+      <input data-input-name="userpass" type="password" value="Senha123!">
+      <input data-input-name="confirmPassword" type="password" value="Senha123!">
+      <input data-input-name="realName" value="Pessoa de Teste">
+      <button type="button" id="insideRegisterSubmitClick">Registro</button>
+      <script>
+        window.registroClicks = 0;
+        document.getElementById("insideRegisterSubmitClick").addEventListener(
+          "click", () => { window.registroClicks++; });
+      </script>
+    </body></html>"""
+
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.route("http://127.0.0.1:19077/**", lambda route: route.fulfill(
+                status=200, content_type="text/html", body=html))
+            page.goto(account["targetUrl"])
+            plan = {"profile_record_id": account["id"], "idx": 1}
+            watcher = RegistrationWatcher(page, plan, repository=repo,
+                                          log=logs.append, success_selector="")
+            assert request_autosubmit_after_fill(
+                page, plan, {"status": "profile-name-filled", "fieldCount": 4},
+                logs.append, repository=repo) is True
+            watcher.tick()
+            assert page.evaluate("window.registroClicks") == 1
+            watcher.tick()
+            assert page.evaluate("window.registroClicks") == 1
+            assert any("CLIQUE EXECUTADO" in entry for entry in logs)
+        finally:
+            browser.close()
