@@ -158,3 +158,41 @@ O código desta branch recebeu os ajustes:
 **Ponto ainda não validado:** nenhum cadastro real concluído na plataforma
 externa foi confirmado. Não tratar botão disponível, nome fictício,
 HTTP 200 isolado ou abertura de Chromium como confirmação de conta.
+
+## Nome real do titular — opção local para preencher realName
+
+O log do usuário confirmou `real-name-field-found` (elemento encontrado),
+mas o nome sintético de `profileData.fullName` não deve ser usado em
+registros externos.
+
+O agente Windows agora suporta a variável de ambiente **local**
+`NEXORA_REGISTRATION_OWNER_NAME`. Quando definida com o nome legítimo
+do titular, ela preenche:
+
+```text
+input[data-input-name="realName"]
+```
+
+O valor **não é gravado em `accounts.json` nem nos logs**. Eventos
+persistidos são `real-name-filled`, `submit-button-found` e
+`submit-not-sent`, com ID e duração. O sistema nunca substitui o
+valor por um nome civil inventado se essa configuração estiver ausente.
+
+Para configurar no Windows em um PowerShell de sua confiança,
+**sem salvar o nome no repositório**, use:
+
+```powershell
+setx NEXORA_REGISTRATION_OWNER_NAME "NOME COMPLETO DO TITULAR"
+```
+
+Substitua pelo nome verdadeiro do titular e feche/reabra o terminal ou
+programa para atualizar o ambiente. Execute novamente
+`iniciar-agente-desenvolvimento.cmd`. Se não desejar persistir o nome no
+ambiente do Windows, configure somente no processo que inicia o agente.
+
+Mesmo com o nome preenchido, clicar em **Registro** em plataforma
+externa depende das verificações, consentimento e política do serviço;
+o sistema não envia cadastro usando CPF/e-mail/telefone sintéticos.
+A aba Contas e o terminal registram `submit-not-sent` em vez de
+declarar sucesso. Nos testes locais, o envio é automatizado usando
+o botão real `#insideRegisterSubmitClick` de um formulário simulado.
