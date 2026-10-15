@@ -53,6 +53,7 @@ SOURCE_SUFFIXES = {
     ".py", ".js", ".css", ".html", ".txt", ".md",
     ".ps1", ".cmd", ".bat", ".json", ".toml", ".ini",
     ".cfg", ".yaml", ".yml", ".svg", ".png", ".ico",
+    ".webp", ".woff", ".woff2", ".sh",
 }
 PRIVATE_PARTS = {
     ".venv", ".git", "logs", "__profiles", "__pycache__", "contas",
@@ -103,7 +104,8 @@ def _allowed(path: str) -> bool:
         return False
     if p.name.lower() in PRIVATE_FILENAMES:
         return False
-    return p.suffix.lower() in SOURCE_SUFFIXES
+    return (p.suffix.lower() in SOURCE_SUFFIXES or
+            p.name in ("LICENSE", "NOTICE"))
 
 
 def _load_json(path: Path, default):
@@ -207,6 +209,8 @@ def install_release(root: Path, files: dict[str, bytes], sha: str,
 
     targets = sorted(current | (previous - current) | old)
     backups: dict[str, bytes | None] = {}
+    state_backup = (root / STATE_NAME).read_bytes() if (root / STATE_NAME).exists() else None
+    manifest_backup = (root / MANIFEST_NAME).read_bytes() if (root / MANIFEST_NAME).exists() else None
     for rel in targets:
         target = _safe_path(root, rel)
         backups[rel] = target.read_bytes() if target.exists() else None
@@ -241,6 +245,14 @@ def install_release(root: Path, files: dict[str, bytes], sha: str,
                     restore.parent.mkdir(parents=True, exist_ok=True)
                     restore.write_bytes(original)
                     os.replace(restore, target)
+            for name, original in ((STATE_NAME, state_backup),
+                                   (MANIFEST_NAME, manifest_backup)):
+                target = root / name
+                if original is None:
+                    if target.exists():
+                        target.unlink()
+                else:
+                    target.write_bytes(original)
             raise
 
 
@@ -289,6 +301,7 @@ def run(root: Path, *, branch: str = BRANCH, panel: str | None = None,
     child: subprocess.Popen | None = None
     failures = 0
     last_check = 0.0
+    child_started = 0.0
     pending_sha = None
     pending_files = None
 
@@ -300,6 +313,8 @@ def run(root: Path, *, branch: str = BRANCH, panel: str | None = None,
         while True:
             if child is None or child.poll() is not None:
                 if child is not None:
+                    if time.monotonic() - child_started > 90:
+                        failures = 0
                     failures += 1
                     if failures >= 4:
                         raise RuntimeError(
@@ -310,6 +325,7 @@ def run(root: Path, *, branch: str = BRANCH, panel: str | None = None,
                     [sys.executable, "agente_windows.py", "--painel", panel],
                     cwd=root, env=env,
                 )
+                child_started = time.monotonic()
                 print("NEXORA: processo Windows iniciado.", flush=True)
 
             now = time.monotonic()
