@@ -265,6 +265,12 @@ async def proxy_save(body: dict):
     return {'proxy': _proxy_request(lambda: ProxyStore().save(body))}
 
 
+@app.post('/api/proxies/add-line')
+async def proxy_add_line(body: dict):
+    from nexora_accounts.proxy_store import ProxyStore
+    return {'proxy': _proxy_request(lambda: ProxyStore().save_line(body.get('line')))}
+
+
 @app.post('/api/proxies/delete')
 async def proxy_delete(body: dict):
     from nexora_accounts.proxy_store import ProxyStore
