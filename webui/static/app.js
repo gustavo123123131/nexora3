@@ -461,7 +461,19 @@ function renderNode(obj) {
       proxyButton.textContent = 'Proxy';
       proxyButton.classList.toggle('active', active === PROXY_PREVIEW_ID);
       proxyButton.setAttribute('aria-current', active === PROXY_PREVIEW_ID ? 'page' : 'false');
-      patchChildren(bar, [...buttons, proxyButton]);
+      let accountsButton = oldButtons.get(ACCOUNTS_VIEW_ID);
+      if (!accountsButton) {
+        accountsButton = document.createElement('button');
+        accountsButton.type = 'button';
+        accountsButton.dataset.tabid = ACCOUNTS_VIEW_ID;
+        accountsButton.addEventListener('click', () => {
+          selectedTabs.set(obj.id, ACCOUNTS_VIEW_ID);
+          if (currentState) updateTree(currentState.tree);
+        });
+      }
+      accountsButton.textContent = 'Contas';
+      accountsButton.classList.toggle('active', active === ACCOUNTS_VIEW_ID);
+      patchChildren(bar, [...buttons, proxyButton, accountsButton]);
       const activeTab = tabs.find(tab => tab.id === active);
       el.dataset.activeView = active === PROXY_PREVIEW_ID
         ? 'Proxy' : (activeTab?.options?._tab_label || '');
