@@ -215,15 +215,44 @@
         method:'PATCH',body:{state,stage,updated_at:new Date().toISOString(),
           ...(state==='completed' || state==='failed' ? {finished_at:new Date().toISOString()} : {})},
       });
-      const jobs=await rest('nexora_registration_jobs?select=id&account_id=eq.'+encodeURIComponent(account.id));
+      const jobs=await rest('nexora_registration_jobs?select=id,batch_id&account_id=eq.'+encodeURIComponent(account.id));
       if (jobs && jobs[0]) {
         await rest('nexora_registration_events',{
           method:'POST', body:{job_id:jobs[0].id,event_type:state},
         });
+        if (jobs[0].batch_id) {
+          const batchId=jobs[0].batch_id;
+          const all=await rest('nexora_registration_jobs?select=state&batch_id=eq.'+encodeURIComponent(batchId));
+          const states=(all||[]).map(item=>item.state);
+          if (states.length) {
+            const terminal=s=>['completed','failed','cancelled'].includes(s);
+            const batchState=states.every(s=>s==='completed') ? 'completed'
+              : states.every(s=>s==='failed' || s==='cancelled') ? 'failed'
+              : states.every(terminal) ? 'partial'
+              : states.some(s=>s!=='queued') ? 'running' : 'queued';
+            await rest('nexora_batches?id=eq.'+encodeURIComponent(batchId),{
+              method:'PATCH',body:{status:batchState,updated_at:new Date().toISOString()},
+            });
+          }
+        }
       }
     }
     async function post(path, body) {
       if (path === '/api/registration/sites') {
+        if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(body.id)) {
+          throw new Error('ID de site inválido: use letras, números, _ ou -.');
+        }
+        if (!/^https:\/\/[^\s/]+/.test(body.baseUrl || '')) {
+          throw new Error('Informe a URL HTTPS completa do site.');
+        }
+        for (const pathValue of [body.registrationPath,body.loginPath]) {
+          if (typeof pathValue !== 'string' || !pathValue.startsWith('/') || pathValue.startsWith('//')) {
+            throw new Error('As rotas do site precisam começar com uma única barra (/).');
+          }
+        }
+        if (body.authorized && (!Object.keys(body.fields || {}).length || !body.submitSelector?.trim())) {
+          throw new Error('Site autorizado precisa dos campos e do seletor de envio.');
+        }
         const rows=await rest('nexora_sites', {
           method:'POST',body:{
             site_key:body.id,display_name:body.displayName,base_url:body.baseUrl,
