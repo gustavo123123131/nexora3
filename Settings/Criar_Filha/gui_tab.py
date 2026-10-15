@@ -2088,12 +2088,6 @@ class FilhaTab(ctk.CTkFrame):
 
         ctk.CTkLabel(right, text="Ações", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=16, pady=(16, 12))
 
-        self.btn_create_local = ctk.CTkButton(
-            right, text="Abrir Conta", height=42, corner_radius=14,
-            command=self.create_local_profile,
-        )
-        self.btn_create_local.pack(fill="x", padx=16, pady=(0, 10))
-
         self.btn_start_manual = ctk.CTkButton(
             right, text="Abrir Navegadores", height=42, corner_radius=14,
             fg_color="#111827", hover_color="#1F2937",
@@ -2312,18 +2306,19 @@ class FilhaTab(ctk.CTkFrame):
             btn.configure(state="normal")
         
     def create_local_profile(self):
-        """Create a local record without opening a browser."""
+        """Add one local profile to Contas for this browser launch."""
         try:
             from nexora_accounts.local_profiles import LocalProfileStore
             profile = LocalProfileStore().create(AREA_PIX_SCOPE)
-            self._set_status(f"{profile['label']} criada.")
             self._log(f"[Contas] {profile['label']} salva.")
+            return True
         except Exception as exc:
             self._set_status("Erro ao salvar perfil.")
             self._log(f"[Contas] Falha: {type(exc).__name__}")
+            return False
 
     def start_browsers(self):
-        """Launch isolated Chromium windows without creating accounts."""
+        """Launch Chromium windows and add one record to Contas."""
         self._start(False)
 
     def _start(self, run_auto: bool):
@@ -2365,10 +2360,12 @@ class FilhaTab(ctk.CTkFrame):
         if self.proxy_var.get().strip() and proxy is None:
             return
 
-        # Launches only browsers, without JSON accounts or generated identities.
+        # Chromium profiles stay untouched; Contas records are stored separately.
         launch_plans = None
 
         self.save_settings()
+        if not self.create_local_profile():
+            return
 
         autopix_enabled = bool(self.autopix_enabled_var.get()) and run_auto
         autochave_enabled = bool(self.autochave_enabled_var.get()) and run_auto
