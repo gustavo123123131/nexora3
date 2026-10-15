@@ -38,6 +38,58 @@
         heading.textContent = profile.label;
         const origin = document.createElement('span');
         origin.textContent = profile.origin === 'mae' ? 'Conta Mãe' : 'Conta Filha';
+        const open = document.createElement('button');
+        open.type = 'button';
+        open.textContent = 'Abrir';
+        open.className = 'accounts-open';
+        const legacy = !profile.deviceMode;
+        const legacyConfig = document.createElement('div');
+        legacyConfig.className = 'accounts-legacy-config';
+        const deviceSelect = document.createElement('select');
+        const legacyUrl = document.createElement('input');
+        if (legacy) {
+          const hint = document.createElement('p');
+          hint.textContent = 'Conta antiga: escolha o dispositivo usado e, se desejar, a URL do site.';
+          legacyConfig.append(hint);
+          for (const [value, text] of [
+            ['', 'Escolher dispositivo'],
+            ['android', 'Android'],
+            ['iphone', 'iPhone'],
+            ['desktop', 'Computador']
+          ]) {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = text;
+            deviceSelect.append(option);
+          }
+          deviceSelect.setAttribute('aria-label', 'Dispositivo da ' + profile.label);
+          legacyUrl.placeholder = 'URL do site (opcional)';
+          legacyUrl.setAttribute('aria-label', 'URL original da ' + profile.label);
+          legacyUrl.autocomplete = 'off';
+          legacyConfig.append(deviceSelect, legacyUrl);
+        }
+        open.addEventListener('click', async () => {
+          if (legacy && !deviceSelect.value) {
+            status.textContent = 'Selecione o dispositivo de ' + profile.label + '.';
+            deviceSelect.focus();
+            return;
+          }
+          open.disabled = true;
+          try {
+            const payload = {id: profile.id};
+            if (legacy) {
+              payload.deviceMode = deviceSelect.value;
+              payload.startUrl = legacyUrl.value.trim();
+            }
+            await post('/api/local-profiles/open', payload);
+            status.textContent = 'Abrindo navegador exclusivo da ' + profile.label + '.';
+            if (legacy) await refresh();
+          } catch (error) {
+            status.textContent = 'Não foi possível abrir ' + profile.label + ': ' + error.message;
+          } finally {
+            open.disabled = false;
+          }
+        });
         const select = document.createElement('button');
         select.type = 'button';
         const chosen = profile.id === selectedId;
@@ -55,7 +107,10 @@
             select.disabled = false;
           }
         });
-        head.append(heading, origin, select);
+        const buttons = document.createElement('div');
+        buttons.className = 'accounts-card-actions';
+        buttons.append(open, select);
+        head.append(heading, origin, buttons);
         // Compact persistent association; the Proxy section stays one-input only.
         const proxyRow = document.createElement('div');
         proxyRow.className = 'accounts-proxy-association';
@@ -99,7 +154,17 @@
           row.append(dt, dd);
           details.appendChild(row);
         }
-        card.append(head, proxyRow, details);
+        if (!legacy) {
+          const deviceInfo = document.createElement('p');
+          deviceInfo.className = 'accounts-device';
+          const deviceLabel = {android: 'Android', iphone: 'iPhone', desktop: 'Computador'};
+          deviceInfo.textContent = 'Dispositivo: ' +
+            (deviceLabel[profile.deviceMode] || profile.deviceMode);
+          card.append(head, deviceInfo);
+        } else {
+          card.append(head, legacyConfig);
+        }
+        card.append(proxyRow, details);
         list.appendChild(card);
       }
     }
