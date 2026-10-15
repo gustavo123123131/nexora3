@@ -10,59 +10,14 @@
     return el;
   };
   const text = value => value == null || value === '' ? 'Não disponível' : String(value);
-  const date = value => {
-    if (!value) return 'Não disponível';
-    const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString('pt-BR');
-  };
-  const stageNames = {
-    'profile-created':'Perfil local criado', 'username-prefilled':'Username preenchido',
-    'credentials-prefilled':'Username e senhas preenchidos (cadastro não enviado)',
-    'credentials-fill-error':'Falha ao preencher senha',
-    'username-field-not-found':'Campo de username não encontrado',
-    'username-fill-error':'Falha ao preencher username',
-    'username-filled':'Username preenchido', 'password-filled':'Senha preenchida',
-    'password-confirmed':'Confirmação de senha preenchida',
-    'real-name-filled':'Nome do titular preenchido',
-    'owner-name-prefilled':'Nome legítimo preenchido; envio pendente',
-    'real-name-fill-error':'Erro ao preencher o nome do titular',
-    'real-name-field-found':'Campo de nome encontrado',
-    'real-name-field-missing':'Campo de nome não encontrado',
-    'submit-button-found':'Botão Registro encontrado',
-    'submit-button-missing':'Botão Registro não encontrado',
-    'real-name-required':'Campo Nome aguardando preenchimento',
-    'name-entry-pending':'Campo Nome aguardando preenchimento no navegador',
-    'name-entered-in-browser':'Nome preenchido manualmente no navegador',
-    'manual-submit-clicked':'Botão Registro clicado pelo usuário',
-    'submit-not-sent':'Envio automático não realizado; formulário disponível no navegador',
-    'browser-starting':'Iniciando Chromium',
-    'browser-ready':'Chromium pronto', 'site-loading':'Carregando site',
-    'site-loaded':'Site carregado', 'form-scanning':'Procurando formulário',
-    'form-found':'Campos identificados', 'browser-error':'Falha ao iniciar navegador',
-    'navigation-error':'Falha ao carregar site', 'site-load-timeout':'Tempo limite ao abrir o site',
-    'registration-blocked':'Cadastro externo exige dados autorizados', 'review':'Formulário preenchido; aguardando revisão',
-    'submit-queued':'Envio solicitado', 'submitting':'Enviando formulário',
-    'awaiting-provider':'Aguardando a plataforma',
-    'provider-response-unverified':'Resposta recebida; aguardando confirmação',
-    'provider-http-error':'Resposta HTTP de erro', 'provider-confirmed':'Cadastro externo confirmado',
-    'timeout-unverified':'Tempo limite: resultado desconhecido',
-    'submit-result-unknown':'Envio incerto; confira no site',
-    'submit-button-missing':'Botão de registro ausente',
-    'test-data-blocked':'Dados fictícios: cadastro real bloqueado',
-    'form-not-found':'Formulário não encontrado', 'origin-changed':'Domínio mudou',
-    'review-real-data':'Dados autorizados preparados',
-    'browser-closed-unverified':'Navegador fechado antes da confirmação',
-  };
-  const stageLabel = key => stageNames[key] || text(key);
-
-  function create({get, post}) {
+  function create({get}) {
     const root = make('div', 'accounts-workspace');
     const heading = make('div', 'accounts-heading');
     const titleBox = make('div');
     titleBox.append(
       make('div', 'workspace-eyebrow', 'PERFIS / LOCAL'),
       make('h1', '', 'Contas'),
-      make('p', '', 'Perfis criados em Conta Mãe ou Conta Filha, com andamento e logs individuais.')
+      make('p', '', 'Perfis criados em Conta Mãe ou Conta Filha.')
     );
     const refreshButton = make('button', 'accounts-refresh', '↻ Atualizar');
     refreshButton.type = 'button';
@@ -89,33 +44,10 @@
     directory.append(toolbar,caption,cards);
     root.append(heading,message,directory);
     let profiles = [], busy=false, lastSnapshot=null, lastReadAt=0;
-    // Preserve expanded profile details when the live log poll updates cards.
-    const expandedIds = new Set();
     function inform(msg,error=false) {
       message.hidden=!msg;
       message.textContent=msg||'';
       message.className='accounts-message '+(error?'is-error':'is-ok');
-    }
-    function detailValue(title, value, protect=false) {
-      const wrapper=make('div','accounts-detail-field');
-      wrapper.append(make('span','accounts-detail-label',title));
-      if (!protect || !value) {
-        wrapper.append(make('strong','accounts-detail-value',text(value)));
-      } else {
-        const panel=make('div','accounts-private-value');
-        const input=make('input','accounts-protected');
-        input.type='password'; input.readOnly=true; input.value=String(value);
-        input.setAttribute('aria-label',title);
-        const toggle=make('button','accounts-reveal','Mostrar');
-        toggle.type='button';
-        toggle.addEventListener('click',()=>{
-          const show=input.type==='password';
-          input.type=show?'text':'password';
-          toggle.textContent=show?'Ocultar':'Mostrar';
-        });
-        panel.append(input,toggle);wrapper.append(panel);
-      }
-      return wrapper;
     }
     function cardFor(acc) {
       const data=acc.profileData||{};
@@ -124,71 +56,20 @@
       const head=make('div','accounts-card-heading');
       const headText=make('div');
       headText.append(make('h3','',text(acc.displayName)));
-      const mode=acc.profileMode||'desktop';
-      headText.append(make('p','',((acc.profileScope==='mae')?'Mãe':'Filha')+
-        ' · '+mode+' · perfil '+text(acc.profileIndex)));
-      head.append(headText,make('span','accounts-test-badge',
-        data.isTestData ? 'Perfil sintético (teste)' : 'Perfil local'));
+      headText.append(make('p','',
+        (acc.profileScope==='mae'?'Conta Mãe':'Conta Filha')));
+      head.append(headText);
       const summary=make('div','accounts-summary');
-      for(const [label,value] of [
+      for (const [label,value] of [
+        ['Nome da conta',data.fullName],
         ['Username',data.username||acc.loginIdentifier],
-        ['E-mail',data.email],
-        ['Telefone',data.phone],
-        ['CPF (não verificado)',data.cpf ? '***.***.***-'+String(data.cpf).slice(-2) : null],
-        ['Etapa do cadastro',stageLabel(acc.stage||acc.status||'local')],
-        ['Criado em',date(acc.createdAt)]
+        ['E-mail',data.email]
       ]) {
         const item=make('div','accounts-summary-item');
         item.append(make('span','',label),make('strong','',text(value)));
         summary.append(item);
       }
-      const button=make('button','accounts-details-button','Ver detalhes');
-      button.type='button';button.setAttribute('aria-expanded','false');
-      const details=make('div','accounts-details');
-      details.hidden=!expandedIds.has(acc.id);
-      if (!details.hidden) {
-        button.textContent='Fechar detalhes';
-        button.setAttribute('aria-expanded','true');
-      }
-      if (data.isTestData) details.append(make('p','accounts-detail-warning',
-        'Perfil de teste: nome, CPF e contatos são sintéticos e não foram verificados.'));
-      for(const [label,value,protectedField] of [
-        ['Nome do perfil',data.fullName||null,false],
-        ['Username',data.username||acc.loginIdentifier,false],
-        ['Senha do perfil de teste',data.password,true],
-        ['E-mail (não verificado)',data.email,false],
-        ['Telefone (não verificado)',data.phone,false],
-        ['CPF não verificado (teste)',data.cpf,true],
-        ['Tipo / modo',(acc.profileScope==='mae'?'Mãe':'Filha')+' · '+mode,false],
-        ['Número do perfil',acc.profileIndex,false],
-        ['Criado em',date(acc.createdAt),false]
-      ]) details.append(detailValue(label,value,protectedField));
-      button.addEventListener('click',()=>{
-        details.hidden=!details.hidden;
-        const expanded=!details.hidden;
-        if (expanded) expandedIds.add(acc.id); else expandedIds.delete(acc.id);
-        button.setAttribute('aria-expanded',String(expanded));
-        button.textContent=expanded?'Fechar detalhes':'Ver detalhes';
-        if (!expanded) for(const field of details.querySelectorAll('.accounts-protected')) {
-          field.type='password';field.nextElementSibling.textContent='Mostrar';
-        }
-      });
-      const events=Array.isArray(acc.registrationLog)?acc.registrationLog.slice(-15).reverse():[];
-      const logPanel=make('section','accounts-registration-log');
-      logPanel.append(make('h4','','Histórico do cadastro'));
-      if (!events.length) logPanel.append(make('p','','Aguardando eventos de cadastro.'));
-      for (const entry of events) {
-        const row=make('div','accounts-log-row');
-        const status=(entry.httpStatus? ' · HTTP '+entry.httpStatus:'')
-          +(entry.errorCode?' · '+entry.errorCode:'')
-          +(Number.isInteger(entry.durationMs)?' · '+entry.durationMs+' ms':'');
-        row.append(make('time','',date(entry.at)),
-                   make('span','',stageLabel(entry.stage)+status));
-        logPanel.append(row);
-      }
-      // Logs must remain visible even when "Ver detalhes" is closed.
-      // Display the latest events directly on the profile card.
-      card.append(head,summary,logPanel,button,details);
+      card.append(head,summary);
       return card;
     }
     function render() {
@@ -230,11 +111,11 @@
     // The outer /api/state UI poll only re-renders on tree changes and does
     // NOT guarantee onShow() gets called regularly. Poll records ourselves.
     // Keep exactly one interval for the one singleton Contas view.
-    const livePoll=setInterval(()=>{
+    setInterval(()=>{
       if(root.isConnected && !root.hidden) void refresh();
     },2000);
     return {node:root,onShow(){
-      // The outer workspace polls frequently; don't collapse open details on polls.
+      // Keep the account directory fresh when the workspace is opened.
       if(Date.now()-lastReadAt>2200) void refresh();
     }};
   }
