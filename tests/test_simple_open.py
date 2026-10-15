@@ -1,10 +1,11 @@
-"""Mãe/Filha open Chromium profiles without creating or filling accounts."""
+"""Mãe/Filha create one local profile per click and launch browsers."""
 import importlib
 import threading
 
 from fastapi.testclient import TestClient
 import servidor
 import nexora_accounts.proxy_store as proxy_store
+import nexora_accounts.local_profiles as local_profiles
 
 
 def children(node):
@@ -13,8 +14,9 @@ def children(node):
         yield from children(child)
 
 
-def test_both_buttons_open_browsers_without_identity_records(monkeypatch, tmp_path):
+def test_both_buttons_open_browsers_and_create_one_local_profile_each(monkeypatch, tmp_path):
     monkeypatch.setattr(proxy_store, "_default_path", lambda: tmp_path / "proxies.json")
+    monkeypatch.setattr(local_profiles, "_default_path", lambda: tmp_path / "Nexora" / "generated_profiles.json")
     with TestClient(servidor.app) as client:
         initial = client.get("/api/state").json()
         csrf = {"X-LixoCPA-CSRF": initial["csrf_token"]}
@@ -56,6 +58,7 @@ def test_both_buttons_open_browsers_without_identity_records(monkeypatch, tmp_pa
                     and node["options"].get("text") == "Abrir Navegadores"
                 ]
                 assert len(buttons) == 1
+                assert not any(node["options"].get("text") == "Abrir Conta" for node in children(tab_node))
                 response = client.post(
                     "/api/event", headers=csrf,
                     json={"id": buttons[0]["id"], "event": "click"}
@@ -79,7 +82,12 @@ def test_both_buttons_open_browsers_without_identity_records(monkeypatch, tmp_pa
                     {"idx": 1, "url": "https://exemplo.com"},
                     {"idx": 2, "url": "https://exemplo.com"},
                 ]
-                assert not path.exists()  # No disk data written before browser launch.
+                assert not path.exists()  # Browser directories are created only by Chromium.
+                records = client.get("/api/local-profiles").json()["profiles"]
+                assert len(records) == (1 if label == "mae" else 2)
+                assert records[-1]["origin"] == label
+                assert records[-1]["label"] == f"Conta {len(records)}"
+                assert records[-1]["password"] == records[-1]["confirmPassword"]
                 assert not (tmp_path / "Nexora" / "accounts.json").exists()
                 assert client.get("/api/registration/accounts").status_code == 404
             finally:
