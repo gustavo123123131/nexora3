@@ -121,6 +121,37 @@ def request_submit(account_id, user_confirmed, repository=None, values=None):
     return {"queued": True, "duplicate": False}
 
 
+
+def request_confirmed_auto_submit(account_id, repository=None):
+    """Queue one browser submit only for explicitly confirmed, non-test profiles.
+
+    Called after Abrir Conta has filled its form. Uses the same safe queue
+    and one-click watcher as request_submit. A generated test profile must
+    never be automatically submitted to a third-party registration service.
+    """
+    from nexora_accounts.registration_autofill import _demo
+    repo = repository if repository is not None else AccountsRepository()
+    account = repo.account(account_id)
+    profile = account.get("profileData") or {}
+    if _demo(account.get("targetUrl", "")):
+        return False  # request_demo_submit handles the local test route.
+    if profile.get("isTestData") is not False or profile.get("ownerConfirmed") is not True:
+        return False
+    # Do not click on an unverified or incomplete individual owner identity.
+    full_name = profile.get("fullName")
+    email = profile.get("email")
+    phone = profile.get("phone")
+    if not isinstance(full_name, str) or len(full_name.strip().split()) < 2:
+        return False
+    if isinstance(email, str) and email.lower().endswith(
+            ("@example.test", "@example.com", "@example.org", "@example.net")):
+        return False
+    if not (isinstance(email, str) and email.strip() or
+            isinstance(phone, str) and phone.strip()):
+        return False
+    return bool(request_submit(account_id, True, repo)["queued"])
+
+
 def request_demo_submit(account_id, repository=None):
     """Auto-send ONLY to local/.test demo pages after Abrir Conta; never remotely.
 
