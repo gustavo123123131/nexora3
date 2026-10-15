@@ -9,11 +9,13 @@ from nexora_accounts.local_profiles import LocalProfileStore, LocalProfileError
 
 
 class FakeLocator:
-    def __init__(self, selector, events, broken=False):
+    def __init__(self, selector, events, broken=False, enabled=True, click_error=None):
         self.selector = selector
         self.events = events
         self.value = ""
         self.broken = broken
+        self.enabled = enabled
+        self.click_error = click_error
 
     def wait_for(self, *, state, timeout):
         assert state == "visible"
@@ -27,7 +29,15 @@ class FakeLocator:
         self.events.append(("read", self.selector))
         return "unexpected" if self.broken else self.value
 
+    def count(self):
+        return 1
+
+    def is_enabled(self):
+        return self.enabled
+
     def click(self, *, timeout):
+        if self.click_error:
+            raise TimeoutError(self.click_error)
         self.events.append(("click", self.selector))
 
 
@@ -68,6 +78,29 @@ def test_fills_exact_fields_in_order_then_clicks(monkeypatch):
         assert ("read", selector) in page.events
     assert "Clique em Registrar enviado" in messages[-1]
     assert "piXez#v3q" not in "\n".join(messages)
+
+
+def test_logs_disabled_button_failure(monkeypatch):
+    monkeypatch.setattr("Settings.registration_autofill.time.sleep", lambda seconds: None)
+    page = FakePage()
+    page.locators[SUBMIT].enabled = False
+    page.locators[SUBMIT].click_error = "element is not enabled"
+    messages = []
+    assert not fill_registration_form(page, sample(), messages.append, threading.Event())
+    assert any("habilitado=não" in msg for msg in messages)
+    assert any("manteve o botão desabilitado" in msg for msg in messages)
+    assert ("click", SUBMIT) not in page.events
+
+
+def test_logs_click_interception(monkeypatch):
+    monkeypatch.setattr("Settings.registration_autofill.time.sleep", lambda seconds: None)
+    page = FakePage()
+    page.locators[SUBMIT].click_error = "another element intercepts pointer events"
+    messages = []
+    assert not fill_registration_form(page, sample(), messages.append, threading.Event())
+    assert any("Iniciando clique" in msg for msg in messages)
+    assert any("interceptando o clique" in msg for msg in messages)
+    assert ("click", SUBMIT) not in page.events
 
 
 def test_aborts_without_click_if_field_value_mismatch(monkeypatch):
