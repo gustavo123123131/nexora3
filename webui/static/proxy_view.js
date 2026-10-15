@@ -17,7 +17,7 @@
         <span class="proxy-notice-icon" aria-hidden="true">i</span>
         <div>
           <strong>Proxies para o Chromium</strong>
-          <p>Salve, teste a conexão TCP e escolha qual proxy será usado nas próximas janelas Mãe e Filha. Janelas já abertas não mudam de conexão.</p>
+          <p>Salve, teste a porta TCP e escolha o proxy padrão para Mãe e Filha. Troque o proxy com os navegadores fechados: novas requisições em janelas HTTP já abertas podem seguir outra rota.</p>
         </div>
       </div>
       <div class="proxy-layout">
@@ -175,7 +175,7 @@
       count.textContent = list.length + (list.length === 1 ? ' registro' : ' registros');
       table.replaceChildren();
       const active = list.find(p => p.id === activeId);
-      activeLabel.textContent = active ? 'Em uso nas próximas janelas: ' + active.name : 'Nenhum proxy ativo';
+      activeLabel.textContent = active ? 'Padrão selecionado: ' + active.name : 'Nenhum proxy ativo';
       disableActive.disabled = !active;
       if (list.length === 0) {
         const row = document.createElement('tr');
@@ -202,7 +202,7 @@
         td.className = 'proxy-record-actions';
         td.append(
           actionButton(item.id === activeId ? 'Em uso' : 'Usar', () =>
-            invoke('/api/proxies/activate', {id: item.id}, 'Proxy selecionado para novas janelas.'),
+            invoke('/api/proxies/activate', {id: item.id}, 'Proxy padrão selecionado. Reinicie os navegadores para aplicar de forma consistente.'),
             item.id === activeId),
           actionButton('Editar', () => edit(item)),
           actionButton('Testar TCP', async () => {
