@@ -31,8 +31,8 @@ class MainWindow(ctk.CTk):
         tabs = ctk.CTkTabview(self, corner_radius=18)
         tabs.pack(fill="both", expand=True, padx=16, pady=16)
 
-        tab_mae = tabs.add("Criar Mãe")
-        tab_filha = tabs.add("Criar Filha")
+        tab_mae = tabs.add("Mãe")
+        tab_filha = tabs.add("Filha")
 
         MaeTab(tab_mae, speed_controller=self.speed_mae).pack(fill="both", expand=True)
         FilhaTab(tab_filha, speed_controller=self.speed_filha).pack(fill="both", expand=True)
