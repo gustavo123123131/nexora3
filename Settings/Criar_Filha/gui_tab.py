@@ -1303,6 +1303,15 @@ def run_instance(
                                 else:
                                     log(f"[#{idx}] ⚠️ Iniciar jogo marcado, mas nome/ID do jogo não foram preenchidos.")
                         else:
+                            # Use the same Playwright page and the saved record created by Abrir Conta.
+                            # Never submit registration or send fictional identities to remote sites.
+                            if instance_plan and instance_plan.get("profile_record_id"):
+                                try:
+                                    from nexora_accounts.registration_autofill import autofill_existing_registration
+                                    prefill_result = autofill_existing_registration(page, instance_plan)
+                                    log(f"[#{idx}] Cadastro: {prefill_result['message']}")
+                                except Exception:
+                                    log(f"[#{idx}] Cadastro: preenchimento indisponível; verifique o formulário.")
                             log(f"[#{idx}] ✋ MODO MANUAL pronto em {url}.")
 
                         success_finished = True
