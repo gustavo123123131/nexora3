@@ -49,8 +49,13 @@ def make_profile_data() -> dict:
         "Almeida", "Moraes", "Costa", "Barbosa", "Teixeira",
         "Pereira", "Martins", "Rocha", "Nogueira", "Ferreira",
     ))
-    token = secrets.token_hex(4)
-    username = first.lower() + last.lower() + token[:6]
+    # Keep account usernames short (6-9 chars), readable, and independent
+    # of the generated surname. Use CSPRNG rather than predictable counters.
+    username_length = 6 + secrets.randbelow(4)
+    username = first[:2].lower() + "".join(
+        secrets.choice("abcdefghijklmnopqrstuvwxyz0123456789")
+        for _ in range(username_length - 2)
+    )
     nine = "".join(str(secrets.randbelow(10)) for _ in range(9))
     while len(set(nine)) == 1:
         nine = "".join(str(secrets.randbelow(10)) for _ in range(9))
