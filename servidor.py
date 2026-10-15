@@ -286,7 +286,18 @@ async def proxy_test(body: dict):
 @app.get('/api/local-profiles')
 async def list_local_profiles():
     from nexora_accounts.local_profiles import LocalProfileStore
-    return {'profiles': LocalProfileStore().list()}
+    store = LocalProfileStore()
+    return {'profiles': store.list(), 'selectedProfileId': store.selected_id()}
+
+
+@app.post('/api/local-profiles/select')
+async def select_local_profile(body: dict):
+    from nexora_accounts.local_profiles import LocalProfileStore, LocalProfileError
+    try:
+        selected_id = LocalProfileStore().select(body.get('id'))
+        return {'selectedProfileId': selected_id}
+    except LocalProfileError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 
