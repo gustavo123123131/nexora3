@@ -355,3 +355,47 @@ def test_browser_manual_name_and_registro_click_are_logged_in_chromium(tmp_path)
                 assert repo.account(key)["profileData"]["password"] not in logs
             finally:
                 browser.close()
+
+
+
+def test_form_name_fills_when_profile_owner_is_confirmed_in_mock_https(tmp_path):
+    """Regression: selector works; identity policy is what blocks synthetic data.
+
+    This is a mocked HTTPS document in local Chromium, not a real provider.
+    """
+    url = "https://registration.preview.example.org/register"
+    repo = AccountsRepository(tmp_path / "accounts.json")
+    plan = repo.create_launch_profiles(
+        "mae", "desktop", [url], 1, tmp_path / "profiles"
+    )[0]
+    key = plan["profile_record_id"]
+    state = json.loads(repo.path.read_text(encoding="utf-8"))
+    profile = next(row["profileData"] for row in state["accounts"]
+                   if row["id"] == key)
+    profile["isTestData"] = False
+    profile["ownerConfirmed"] = True
+    profile["fullName"] = "Titular Confirmado"
+    repo.path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    network_posts = []
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        try:
+            context = browser.new_context()
+            def serve_mock(route):
+                if route.request.method.upper() != "GET":
+                    network_posts.append(route.request.method)
+                route.fulfill(status=200, content_type="text/html; charset=utf-8",
+                              body=HTML)
+            context.route("https://registration.preview.example.org/**", serve_mock)
+            page = context.new_page()
+            page.goto(url, wait_until="domcontentloaded")
+            result = autofill_existing_registration(page, plan, repo)
+            assert result["status"] == "filled"
+            assert page.locator('input[data-input-name="realName"]').input_value() == "Titular Confirmado"
+            assert page.locator('input[data-input-name="account"]').input_value() == profile["username"]
+            assert page.locator('input[data-input-name="userpass"]').input_value() == profile["password"]
+            assert network_posts == []
+            assert repo.account(key)["stage"] == "review"
+            context.close()
+        finally:
+            browser.close()
