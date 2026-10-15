@@ -104,3 +104,70 @@ def test_browser_gateway_uses_upstream_and_never_falls_back_direct():
         server.shutdown()
         server.server_close()
         worker.join(timeout=2)
+
+
+def test_https_probe_uses_destination_sni_and_reports_invalid_certificate(monkeypatch):
+    """A cert error at the target is not a proxy authentication failure."""
+    import ssl
+    from contextlib import nullcontext
+    from Settings import session_proxy_gateway as gateway
+
+    monkeypatch.setattr(
+        gateway, "_open_tunnel",
+        lambda proxy, target, port, timeout: nullcontext(object()),
+    )
+    seen = []
+
+    class BadCertificate:
+        def wrap_socket(self, _sock, *, server_hostname):
+            seen.append(server_hostname)
+            raise ssl.SSLCertVerificationError(1, "certificate verify failed")
+
+    monkeypatch.setattr(gateway.ssl, "create_default_context", lambda: BadCertificate())
+    result = gateway.probe_proxy(
+        ProxyConfig("http://localhost:3120", "demo-user", "demo-password")
+    )
+    assert seen == ["example.com"]
+    assert result["reachable"] is False
+    assert result["status"] == "tls_certificate_invalid"
+    assert result["stage"] == "tls_destination"
+    assert "demo-password" not in str(result)
+
+
+def test_https_probe_separates_tls_handshake_from_authentication(monkeypatch):
+    """SSL handshake failures have their own classification and stage."""
+    import ssl
+    from contextlib import nullcontext
+    from Settings import session_proxy_gateway as gateway
+
+    monkeypatch.setattr(
+        gateway, "_open_tunnel",
+        lambda proxy, target, port, timeout: nullcontext(object()),
+    )
+
+    class BadHandshake:
+        def wrap_socket(self, _sock, *, server_hostname):
+            raise ssl.SSLError(1, "unexpected EOF")
+
+    monkeypatch.setattr(gateway.ssl, "create_default_context", lambda: BadHandshake())
+    result = gateway.probe_proxy(ProxyConfig("http://localhost:3120"))
+    assert result["reachable"] is False
+    assert result["status"] == "tls_handshake_failed"
+    assert result["stage"] == "tls_destination"
+    assert "Negociação TLS" in result["message"]
+
+
+def test_proxy_authenticated_connect_remains_fail_closed(monkeypatch):
+    from Settings import session_proxy_gateway as gateway
+
+    def reject(_proxy, _target, _port, _timeout):
+        raise ProxyConnectionError("auth_rejected")
+
+    monkeypatch.setattr(gateway, "_open_tunnel", reject)
+    result = gateway.probe_proxy(
+        ProxyConfig("http://localhost:3120", "demo-user", "demo-password")
+    )
+    assert result["reachable"] is False
+    assert result["status"] == "auth_rejected"
+    assert result["stage"] == "connect"
+    assert "demo-password" not in str(result)
