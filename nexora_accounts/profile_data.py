@@ -25,10 +25,20 @@ def make_profile_data() -> dict:
     while len(set(nine)) == 1:
         nine = "".join(str(secrets.randbelow(10)) for _ in range(9))
     cpf = valid_cpf_digits(nine)
+    # 9 characters like "piXez#v3q": six lowercase, an uppercase, digit
+    # and special character, with cryptographically secure randomness.
+    chars = (
+        [secrets.choice("abcdefghijklmnopqrstuvwxyz") for _ in range(6)]
+        + [secrets.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ")]
+        + [secrets.choice("0123456789")]
+        + [secrets.choice("#!@?")]
+    )
+    secrets.SystemRandom().shuffle(chars)
+    password = "".join(chars)
     return {
         "fullName": "Pessoa Teste " + token[:5].upper(),
         "username": username,
-        "password": secrets.token_urlsafe(18),
+        "password": password,
         "email": username + "@example.test",
         "phone": "+55 (11) 90000-" + str(secrets.randbelow(10000)).zfill(4),
         "cpf": cpf[:3] + "." + cpf[3:6] + "." + cpf[6:9] + "-" + cpf[9:],
