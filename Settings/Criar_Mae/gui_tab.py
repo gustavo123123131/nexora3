@@ -1507,16 +1507,25 @@ def run_all(
         if stop_event.is_set():
             break
 
-        t = threading.Thread(
-            target=run_instance,
-            args=(
-                plan["idx"], plan["url"], mode, headless, plan.get("proxy_config", proxy), exts,
-                auto_goto, keep_profiles, run_auto, start_game_enabled, start_game_name, start_game_id, stop_event,
-                winpos_controller, speed_controller, mirror, withdraw_controller, verify_phone_controller,
-                game_launch_controller, instance_target_controller, plan, log, automation_callback
-            ),
-            daemon=True
+        args = (
+            plan["idx"], plan["url"], mode, headless, plan.get("proxy_config", proxy), exts,
+            auto_goto, keep_profiles, run_auto, start_game_enabled, start_game_name, start_game_id, stop_event,
+            winpos_controller, speed_controller, mirror, withdraw_controller, verify_phone_controller,
+            game_launch_controller, instance_target_controller, plan, log, automation_callback,
         )
+
+        def _run_one(session_plan=plan, session_args=args):
+            from nexora_accounts.browser_sessions import claim_account, AccountSessionBusy
+            profile = session_plan.get("account_profile")
+            if not profile:
+                return run_instance(*session_args)
+            try:
+                with claim_account(profile["origin"], int(profile["id"])):
+                    return run_instance(*session_args)
+            except AccountSessionBusy:
+                log(f"[Contas] {profile['label']} já está aberta; não será reutilizado o mesmo diretório.")
+
+        t = threading.Thread(target=_run_one, daemon=True)
         t.start()
         threads.append(t)
 
