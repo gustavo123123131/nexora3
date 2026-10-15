@@ -34,8 +34,9 @@ def _gateway_proxy_enabled() -> bool:
     # An explicitly selected workspace proxy is enabled regardless of the
     # legacy hidden tab toggle. Legacy settings remain a fallback.
     from nexora_accounts.proxy_store import ProxyStore
-    if ProxyStore().active() is not None:
-        return True
+    registry = ProxyStore()
+    if registry.is_managed():
+        return registry.active() is not None
     st = _read_settings()
     return bool(st.get(_scope_key("proxy_enabled"), True))
 
@@ -87,10 +88,10 @@ def _resolve_upstream_for_idx(idx: int) -> Optional[dict]:
     if not _gateway_proxy_enabled():
         return None
 
-    from nexora_accounts.proxy_store import active_proxy_config
-    selected = active_proxy_config()
-    if selected is not None:
-        return build_upstream_proxy_dict(selected, idx=idx)
+    from nexora_accounts.proxy_store import ProxyStore, active_proxy_config
+    if ProxyStore().is_managed():
+        selected = active_proxy_config()
+        return build_upstream_proxy_dict(selected, idx=idx) if selected else None
 
     raw = _raw_upstream_proxy()
     if not raw:
