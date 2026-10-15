@@ -180,6 +180,12 @@ def request_autosubmit_after_fill(page, instance_plan, prefill_result, log, repo
     log_registration_preflight(page, log)
     status = prefill_result.get("status", "sem-estado")
     if status != "filled":
+        account = repo.account(instance_plan["profile_record_id"])
+        from nexora_accounts.registration_autofill import _demo
+        if (not _demo(account.get("targetUrl", "")) and
+                (account.get("profileData") or {}).get("isTestData") is not False):
+            log("[Cadastro] CLIQUE BLOQUEADO: este perfil contém dados fictícios "
+                "e a página é de um site externo.")
         log(f"[Cadastro] CLIQUE NÃO SOLICITADO: preenchimento terminou em '{status}'; "
             "o watcher só envia formulários concluídos e autorizados.")
         return False
