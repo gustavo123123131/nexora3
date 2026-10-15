@@ -1239,8 +1239,15 @@ def run_instance(
                 def _periodic_proxy_ip_refresh():
                     if not session_proxy or stop_event.is_set():
                         return
-                    from Settings.session_proxy_gateway import refresh_browser_exit_ip
-                    latest = refresh_browser_exit_ip(page, session_gateway)
+                    from Settings.session_proxy_gateway import (
+                        refresh_browser_exit_ip, ProxyConnectionError,
+                    )
+                    try:
+                        latest = refresh_browser_exit_ip(page, session_gateway)
+                    except ProxyConnectionError:
+                        log(f"[#{idx}] [Proxy] ALERTA: o Chromium parece ter deixado de usar o gateway. Fechando sessão para impedir navegação direta.")
+                        stop_event.set()
+                        return
                     if latest:
                         previous = last_overlay_ip_refresh["ip"]
                         last_overlay_ip_refresh["ip"] = latest
