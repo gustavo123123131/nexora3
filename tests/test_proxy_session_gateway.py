@@ -309,3 +309,47 @@ def test_tls_failure_during_upstream_connect_does_not_allow_browser_fallback(mon
     assert result["status"] == "tls_handshake_failed"
     assert result["stage"] == "connect"
     assert result["browserVerificationRequired"] is False
+
+
+def test_rotating_proxy_exit_ip_can_change_without_direct_bypass():
+    from Settings.session_proxy_gateway import verify_browser_exit_ip
+    gateway = FakeBrowserGateway()
+    page = FakeIpPage(gateway, text='{"ip":"203.0.113.10"}')
+    first = verify_browser_exit_ip(page, gateway)
+    page.text = '{"ip":"198.51.100.28"}'
+    second = verify_browser_exit_ip(page, gateway)
+    assert first == "203.0.113.10"
+    assert second == "198.51.100.28"
+    assert gateway.connect_count("api.ipify.org") == 2
+
+
+def test_upstream_refused_connect_is_not_confused_with_authentication():
+    class Handler(socketserver.BaseRequestHandler):
+        def handle(self):
+            self.request.settimeout(3)
+            received = b""
+            while b"\\r\\n\\r\\n" not in received:
+                data = self.request.recv(4096)
+                if not data:
+                    return
+                received += data
+            self.request.sendall(
+                b"HTTP/1.1 403 Forbidden\\r\\nContent-Length: 0\\r\\n\\r\\n"
+            )
+
+    server = FakeUpstream(("127.0.0.1", 0), Handler)
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    try:
+        proxy = ProxyConfig(
+            f"http://127.0.0.1:{server.server_address[1]}",
+            "demo-user", "demo-password",
+        )
+        result = probe_proxy(proxy, target="example.test", timeout=3)
+        assert result["status"] == "connect_rejected"
+        assert result["stage"] == "connect"
+        assert result["reachable"] is False
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join(timeout=2)
