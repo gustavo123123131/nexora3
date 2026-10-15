@@ -89,6 +89,32 @@ def request_submit(account_id, user_confirmed, repository=None, values=None):
     return {"queued": True, "duplicate": False}
 
 
+def request_demo_submit(account_id, repository=None):
+    """Auto-send ONLY to local/.test demo pages after Abrir Conta; never remotely.
+
+    The user's Abrir Conta action starts the local-only test workflow.
+    No personal identity is claimed and no real registration is attempted.
+    """
+    from nexora_accounts.registration_autofill import _demo
+    repo = repository if repository is not None else AccountsRepository()
+    account = repo.account(account_id)
+    if not _demo(account.get("targetUrl", "")):
+        return False
+    if (account.get("profileData") or {}).get("isTestData") is not True:
+        return False
+    with _QUEUE_LOCK:
+        if account.get("stage") != "review" or account_id in _QUEUED:
+            return False
+        _QUEUED[account_id] = {"values": None}
+    try:
+        repo.set_stage(account_id, "pending", "submit-queued")
+    except Exception:
+        with _QUEUE_LOCK:
+            _QUEUED.pop(account_id, None)
+        raise
+    return True
+
+
 def _take(account_id):
     with _QUEUE_LOCK:
         return _QUEUED.pop(account_id, None)
