@@ -49,3 +49,11 @@
 .accounts-log-row{display:grid;grid-template-columns:160px minmax(0,1fr);gap:8px;padding:7px 0;border-top:1px solid #2a3f5b;color:#d3e0f5;font-size:11px;overflow-wrap:anywhere}
 .accounts-log-row time{color:#93a9c9}
 @media(max-width:600px){.accounts-log-row{grid-template-columns:1fr;gap:2px}}
+
+.accounts-real-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:13px;padding:14px;background:#14253b;border:1px solid #385475;border-radius:10px}
+.accounts-real-form[hidden]{display:none!important}
+.accounts-real-field{display:flex;flex-direction:column;gap:5px;color:#aec6e5;font-size:11px;min-width:0}
+.accounts-real-input{width:100%;min-width:0;background:#0f1d30;color:#eff6ff;border:1px solid #557097;border-radius:8px;padding:10px;font:inherit;font-size:12px}
+.accounts-consent-label{display:flex;grid-column:1/-1;align-items:flex-start;gap:9px;color:#e2eaf8;font-size:11px;line-height:1.5}
+.accounts-real-form>.accounts-submit-button{grid-column:1/-1;justify-self:start}
+@media(max-width:600px){.accounts-real-form{grid-template-columns:1fr}}
