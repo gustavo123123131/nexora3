@@ -74,6 +74,8 @@
     directory.append(toolbar,caption,cards);
     root.append(heading,message,directory);
     let profiles = [], busy=false, lastSnapshot=null, lastReadAt=0;
+    // Preserve expanded profile details when the live log poll updates cards.
+    const expandedIds = new Set();
     function inform(msg,error=false) {
       message.hidden=!msg;
       message.textContent=msg||'';
@@ -127,7 +129,12 @@
       }
       const button=make('button','accounts-details-button','Ver detalhes');
       button.type='button';button.setAttribute('aria-expanded','false');
-      const details=make('div','accounts-details');details.hidden=true;
+      const details=make('div','accounts-details');
+      details.hidden=!expandedIds.has(acc.id);
+      if (!details.hidden) {
+        button.textContent='Fechar detalhes';
+        button.setAttribute('aria-expanded','true');
+      }
       if (data.isTestData) details.append(make('p','accounts-detail-warning',
         'Perfil de teste: nome, CPF e contatos são sintéticos e não foram verificados.'));
       for(const [label,value,protectedField] of [
@@ -144,6 +151,7 @@
       button.addEventListener('click',()=>{
         details.hidden=!details.hidden;
         const expanded=!details.hidden;
+        if (expanded) expandedIds.add(acc.id); else expandedIds.delete(acc.id);
         button.setAttribute('aria-expanded',String(expanded));
         button.textContent=expanded?'Fechar detalhes':'Ver detalhes';
         if (!expanded) for(const field of details.querySelectorAll('.accounts-protected')) {
@@ -163,8 +171,9 @@
                    make('span','',stageLabel(entry.stage)+status));
         logPanel.append(row);
       }
-      details.append(logPanel);
-      card.append(head,summary,button,details);
+      // Logs must remain visible even when "Ver detalhes" is closed.
+      // Display the latest events directly on the profile card.
+      card.append(head,summary,logPanel,button,details);
       return card;
     }
     function render() {
@@ -203,6 +212,12 @@
     search.addEventListener('input',render);
     filter.addEventListener('change',render);
     refreshButton.addEventListener('click',()=>{void refresh();});
+    // The outer /api/state UI poll only re-renders on tree changes and does
+    // NOT guarantee onShow() gets called regularly. Poll records ourselves.
+    // Keep exactly one interval for the one singleton Contas view.
+    const livePoll=setInterval(()=>{
+      if(root.isConnected && !root.hidden) void refresh();
+    },2000);
     return {node:root,onShow(){
       // The outer workspace polls frequently; don't collapse open details on polls.
       if(Date.now()-lastReadAt>2200) void refresh();
