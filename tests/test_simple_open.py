@@ -75,7 +75,14 @@ def test_both_buttons_open_browsers_and_create_one_local_profile_each(monkeypatc
                 assert plans[0]["url"] == "https://exemplo.com"
                 assert plans[0]["registration_profile"]["origin"] == label
                 assert plans[0]["registration_profile"]["password"] == plans[0]["registration_profile"]["confirmPassword"]
-                assert plans[1] == {"idx": 2, "url": "https://exemplo.com"}
+                assert plans[1]["idx"] == 2
+                assert plans[1]["url"] == "https://exemplo.com"
+                assert plans[0]["account_profile"]["id"] != plans[1]["account_profile"]["id"]
+                for planned in plans:
+                    assert planned["account_profile"] == planned["registration_profile"]
+                    assert planned["device_mode"] == "desktop"
+                    assert planned["account_profile"]["deviceMode"] == "desktop"
+                    assert planned["account_profile"]["startUrl"] == "https://exemplo.com"
                 assert call["keep_profiles"] is True
                 assert call["auto_goto"] is True
                 assert call["urls_string"] == "https://exemplo.com"
@@ -90,8 +97,9 @@ def test_both_buttons_open_browsers_and_create_one_local_profile_each(monkeypatc
                 ]
                 assert not path.exists()  # Browser directories are created only by Chromium.
                 records = client.get("/api/local-profiles").json()["profiles"]
-                assert len(records) == (1 if label == "mae" else 2)
-                assert records[-1]["origin"] == label
+                assert len(records) == (2 if label == "mae" else 4)
+                assert all(p["origin"] == label for p in records[-2:])
+                assert records[-1]["deviceMode"] == "desktop"
                 assert records[-1]["label"] == f"Conta {len(records)}"
                 assert records[-1]["password"] == records[-1]["confirmPassword"]
                 assert not (tmp_path / "Nexora" / "accounts.json").exists()
