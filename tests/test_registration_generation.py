@@ -149,3 +149,29 @@ def test_auto_demo_submits_never_allow_external_sites():
     repo = Repo(account)
     assert request_demo_submit("external-test", repo) is False
     assert repo.events == []
+
+
+
+def test_short_usernames_retry_duplicates_across_batches(tmp_path, monkeypatch):
+    """Previously saved and same-batch usernames must never be reused."""
+    from nexora_accounts import profile_data
+
+    generated = iter(("ma1234", "ma1234", "lu5678", "lu5678", "ra9021"))
+    original = profile_data.make_profile_data
+
+    def forced_collisions():
+        data = original()
+        username = next(generated)
+        data["username"] = username
+        data["email"] = username + "@example.test"
+        return data
+
+    monkeypatch.setattr(profile_data, "make_profile_data", forced_collisions)
+    repo = AccountsRepository(tmp_path / "accounts.json")
+    root = tmp_path / "profiles"
+    repo.create_launch_profiles("mae", "desktop", [], 2, root)
+    repo.create_launch_profiles("filha", "desktop", [], 1, root)
+    usernames = [entry["profileData"]["username"] for entry in repo.accounts()]
+    assert usernames == ["ma1234", "lu5678", "ra9021"]
+    assert all(6 <= len(name) <= 9 for name in usernames)
+    assert len(set(usernames)) == len(usernames)
