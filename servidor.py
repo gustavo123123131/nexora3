@@ -251,8 +251,12 @@ async def registration_add_site(body: dict):
 
 
 @app.get('/api/registration/accounts')
-async def registration_accounts(query: str = '', status: str = ''):
-    return {'accounts': _account_request(lambda: _accounts().repo.accounts(query, status, profiles_only=True))}
+async def registration_accounts(query: str = '', status: str = '', profiles_only: bool = True):
+    # The Contas UI receives only profiles from Abrir Conta. Legacy callers
+    # can still query old manually created records for migration/backup.
+    return {'accounts': _account_request(lambda: _accounts().repo.accounts(
+        query, status, profiles_only=profiles_only
+    ))}
 
 
 @app.post('/api/registration/accounts')
