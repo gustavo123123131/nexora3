@@ -86,6 +86,35 @@ def request_submit(account_id, user_confirmed, repository=None, values=None):
     return {"queued": True, "duplicate": False}
 
 
+
+def request_confirmed_auto_submit(account_id, repository=None):
+    """Click Registro after autofill for confirmed, non-test owner profiles only.
+
+    Reuse the existing queue and the same browser page. Local demos have their
+    own test-only path, and synthetic identities must never be sent remotely.
+    """
+    from nexora_accounts.registration_autofill import _demo
+    repo = repository if repository is not None else AccountsRepository()
+    account = repo.account(account_id)
+    profile = account.get("profileData") or {}
+    if _demo(account.get("targetUrl", "")):
+        return False
+    if profile.get("isTestData") is not False or profile.get("ownerConfirmed") is not True:
+        return False
+    name = profile.get("fullName")
+    email = profile.get("email")
+    phone = profile.get("phone")
+    if not isinstance(name, str) or len(name.strip().split()) < 2:
+        return False
+    if isinstance(email, str) and email.lower().endswith(
+            ("@example.test", "@example.com", "@example.org", "@example.net")):
+        return False
+    if not ((isinstance(email, str) and email.strip()) or
+            (isinstance(phone, str) and phone.strip())):
+        return False
+    return bool(request_submit(account_id, True, repo)["queued"])
+
+
 def request_demo_submit(account_id, repository=None):
     """Auto-send ONLY to local/.test demo pages after Abrir Conta; never remotely.
 
