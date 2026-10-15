@@ -2426,10 +2426,11 @@ class FilhaTab(ctk.CTkFrame):
         # A selected proxy in the Proxy workspace overrides the legacy
         # text field for NEW browsers. Existing sessions are not altered.
         try:
-            from nexora_accounts.proxy_store import active_proxy_config
-            selected = active_proxy_config()
-            if selected is not None:
-                return selected
+            from nexora_accounts.proxy_store import ProxyStore, active_proxy_config
+            # Once Proxy tab selection has been used, disabling it must mean
+            # DIRECT routing, not fallback to an invisible legacy proxy_raw.
+            if ProxyStore().is_managed():
+                return active_proxy_config()
         except Exception:
             self._set_status("Não foi possível ler os proxies salvos.")
             self._log("[UI] Falha ao consultar o gerenciador de proxies.")
