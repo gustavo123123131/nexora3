@@ -3,6 +3,7 @@
 This module never sends a registration, invokes a private HTTP API, confirms a
 real account or solves CAPTCHA. The site owns its final submission.
 """
+import os
 import time
 from urllib.parse import urlparse
 from nexora_accounts.service import AccountsRepository
@@ -190,16 +191,50 @@ def autofill_existing_registration(page, instance_plan, repository=None, progres
             real_name = _visible(page, FIELDS["realName"])
             report("real-name-field-found" if real_name is not None
                    else "real-name-field-missing")
+            # An explicitly user-configured, genuine owner name may be
+            # populated without claiming that a generated name is a legal ID.
+            # Do not persist this private value to accounts.json or logs.
+            owner_name = os.environ.get("NEXORA_REGISTRATION_OWNER_NAME", "").strip()
+            owner_name_valid = (
+                3 <= len(owner_name) <= 120
+                and any(char.isalpha() for char in owner_name)
+                and all(char.isalpha() or char.isspace() or char in "-'’." for char in owner_name)
+            )
+            if real_name is not None and owner_name_valid:
+                if not _same_site(target, page.url):
+                    report("origin-changed")
+                    return {
+                        "status": "blocked", "fieldCount": filled,
+                        "message": "Domínio alterado antes de preencher o nome.",
+                    }
+                try:
+                    real_name.fill(owner_name, timeout=6000)
+                    filled += 1
+                    report("real-name-filled")
+                    repo.set_stage(key, "local", "owner-name-prefilled")
+                except Exception:
+                    report("real-name-fill-error")
+                    return {
+                        "status": "error", "fieldCount": filled,
+                        "message": "O campo realName foi encontrado, mas não aceitou o nome.",
+                    }
+            elif real_name is not None:
+                report("real-name-required")
             submit_button = _visible(page, ("#insideRegisterSubmitClick",))
             report("submit-button-found" if submit_button is not None
                    else "submit-button-missing")
-            report("real-name-required")
             report("submit-not-sent")
             return {
-                "status": "credentials-filled", "fieldCount": filled,
-                "message": "Username, senha e confirmação preenchidos. "
-                           "Nome civil e verificações devem ser concluídos "
-                           "pelo titular antes de qualquer envio.",
+                "status": "owner-name-filled" if filled == 4 else "credentials-filled",
+                "fieldCount": filled,
+                "message": (
+                    "Username, senha, confirmação e nome legítimo preenchidos. "
+                    "Confira os dados e as verificações; envio externo não realizado."
+                    if filled == 4 else
+                    "Username, senha e confirmação preenchidos. "
+                    "Configure NEXORA_REGISTRATION_OWNER_NAME com o nome do titular "
+                    "para preencher realName; envio externo não realizado."
+                ),
             }
         return {
             "status": "username-filled", "fieldCount": 1,
