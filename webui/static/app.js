@@ -49,7 +49,9 @@ async function checkCloudServer() {
     const response = await fetch('/api/health', {cache: 'no-store'});
     if (!response.ok) throw Error(String(response.status));
     const status = await response.json();
-    if (status.service !== 'lixocpa') throw Error('Serviço inesperado');
+    if (status.service !== 'lixocpa' || status.edition !== 'browser-only') {
+      throw Error('Servidor do Codespaces em versão antiga; atualize a branch.');
+    }
     if (cloudWasOffline || (cloudServerVersion && cloudServerVersion !== status.server_version)) {
       location.reload();
       return;
@@ -59,7 +61,7 @@ async function checkCloudServer() {
     showConnectionWarning('');
   } catch (_) {
     cloudWasOffline = true;
-    showConnectionWarning('Servidor do Codespaces indisponível. Reabra o Codespace e execute: bash .devcontainer/start.sh');
+    showConnectionWarning('Codespaces indisponível ou em versão antiga. Atualize para fix/remover-criacao-contas e execute: bash .devcontainer/start.sh');
   } finally {
     setTimeout(checkCloudServer, 3500);
   }
@@ -137,6 +139,9 @@ function showAgentPairing(message = '') {
       if (!response.ok) throw Error('Código inválido ou agente indisponível (HTTP ' + response.status + ').');
       const data = await response.json();
       if (!data.tree || !data.csrf_token) throw Error('Resposta inválida do agente.');
+      if (data.edition !== 'browser-only') {
+        throw Error('Agente Windows antigo: ainda contém cadastro. Feche-o e reinstale usando iniciar-agente-desenvolvimento.cmd da branch fix/remover-criacao-contas.');
+      }
       agentKey = key;
       sessionStorage.setItem('lixocpa-agent-key', key);
       agentConnected = true;
@@ -497,7 +502,7 @@ async function handleDialogs(dialogs) {
 async function poll() {
   try {
     if (runningInCodespaces && !agentKey) {
-      showAgentPairing();
+      if (!pairingScreen || !pairingScreen.isConnected) showAgentPairing();
       return;
     }
     const response = runningInCodespaces
@@ -512,6 +517,16 @@ async function poll() {
     }
     if (!response.ok) throw Error(String(response.status));
     const data = await response.json();
+    if (data.edition !== 'browser-only') {
+      if (runningInCodespaces) {
+        agentKey = '';
+        sessionStorage.removeItem('lixocpa-agent-key');
+        agentConnected = false;
+        showAgentPairing('Agente Windows desatualizado: ainda contém criação de contas. Feche-o e reinstale com o iniciador novo da branch fix/remover-criacao-contas.');
+        return;
+      }
+      throw Error('Este painel requer o agente sem criação de contas.');
+    }
     if (disconnectedAfterSuccess || (lastServerVersion && lastServerVersion !== data.server_version)) {
       location.reload(); // Python/CSS/JS hot reload.
       return;
