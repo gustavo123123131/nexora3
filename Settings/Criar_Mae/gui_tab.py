@@ -1340,7 +1340,7 @@ def run_instance(
                                     log(f"[#{idx}] ⚠️ Iniciar jogo marcado, mas nome/ID do jogo não foram preenchidos.")
                         else:
                             # Use the same Playwright page and the saved record created by Abrir Conta.
-                            # Never submit registration or send fictional identities to remote sites.
+                            # Only local demos or confirmed non-test owners may auto-submit.
                             registration_watcher = None
                             if instance_plan and instance_plan.get("profile_record_id"):
                                 try:
@@ -1357,11 +1357,17 @@ def run_instance(
                                     )
                                     # Even a test-data-blocked profile needs a watcher:
                                     # the user can supply legitimate values transiently in Contas.
-                                    from nexora_accounts.registration_submit import RegistrationWatcher, request_demo_submit
+                                    from nexora_accounts.registration_submit import (
+                                        RegistrationWatcher, request_demo_submit,
+                                        request_confirmed_auto_submit
+                                    )
                                     registration_watcher = RegistrationWatcher(page, instance_plan, log=log)
-                                    # One-click end-to-end test is allowed ONLY on local demo domains.
-                                    if prefill_result["status"] == "filled" and request_demo_submit(instance_plan["profile_record_id"]):
-                                        log(f"[#{idx}] Cadastro DEMO: envio automático solicitado (ambiente local).")
+                                    if prefill_result["status"] == "filled":
+                                        profile_id = instance_plan["profile_record_id"]
+                                        if request_demo_submit(profile_id):
+                                            log(f"[#{idx}] Cadastro DEMO: clique em Registro solicitado (ambiente local).")
+                                        elif request_confirmed_auto_submit(profile_id):
+                                            log(f"[#{idx}] Cadastro confirmado: clique único em Registro solicitado no navegador.")
                                 except Exception as exc:
                                     _registration_stage(
                                         "browser-error", "local",
