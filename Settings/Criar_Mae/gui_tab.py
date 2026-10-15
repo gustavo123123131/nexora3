@@ -1329,13 +1329,17 @@ def run_instance(
                                     from nexora_accounts.registration_autofill import autofill_existing_registration
                                     prefill_result = autofill_existing_registration(page, instance_plan)
                                     log(f"[#{idx}] Cadastro: {prefill_result['message']}")
-                                    # Even a test-data-blocked profile needs a watcher:
-                                    # the user can supply legitimate values transiently in Contas.
-                                    from nexora_accounts.registration_submit import RegistrationWatcher, request_demo_submit
+                                    from nexora_accounts.registration_submit import (
+                                        RegistrationWatcher, request_demo_submit,
+                                        request_confirmed_auto_submit,
+                                    )
                                     registration_watcher = RegistrationWatcher(page, instance_plan, log=log)
-                                    # One-click end-to-end test is allowed ONLY on local demo domains.
-                                    if prefill_result["status"] == "filled" and request_demo_submit(instance_plan["profile_record_id"]):
-                                        log(f"[#{idx}] Cadastro DEMO: envio automático solicitado (ambiente local).")
+                                    if prefill_result["status"] == "filled":
+                                        profile_id = instance_plan["profile_record_id"]
+                                        if request_demo_submit(profile_id):
+                                            log(f"[#{idx}] Cadastro DEMO: clique em Registro solicitado.")
+                                        elif request_confirmed_auto_submit(profile_id):
+                                            log(f"[#{idx}] Cadastro autorizado: clique em Registro solicitado.")
                                 except Exception:
                                     log(f"[#{idx}] Cadastro: preenchimento indisponível; verifique o formulário.")
                             log(f"[#{idx}] ✋ MODO MANUAL pronto em {url}.")
