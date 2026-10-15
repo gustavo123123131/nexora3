@@ -21,4 +21,4 @@ jobs:
           python -m compileall -q nexora_accounts servidor.py Settings/Criar_Mae/gui_tab.py Settings/Criar_Filha/gui_tab.py
           node --check webui/static/accounts_view.js
       - name: Testar isolamento, senha e regras de ambiente
-        run: python -m pytest -q tests/test_registration_generation.py tests/test_registration_autofill.py tests/test_registration_submit.py tests/test_registration_bridge.py
+        run: python -m pytest -q tests/test_registration_generation.py tests/test_registration_autofill.py tests/test_registration_submit.py tests/test_registration_bridge.py tests/test_account_flow_regression.py
