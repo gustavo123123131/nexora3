@@ -207,7 +207,7 @@ def test_accounts_ui_displays_only_three_fields_from_created_profiles(tmp_path):
             browser.close()
 
 
-def test_real_site_layout_preview_fills_only_nonidentity_credentials(tmp_path):
+def test_real_site_layout_preview_fills_profile_name_without_submit(tmp_path):
     """Mock HTTPS document locally: NO outbound site call or registration."""
     url = "https://registration.preview.example.org/register"
     repo = AccountsRepository(tmp_path / "accounts.json")
@@ -234,19 +234,19 @@ def test_real_site_layout_preview_fills_only_nonidentity_credentials(tmp_path):
                 completed_events.append(stage)
                 trace_registration(key, plan["idx"], stage, repository=repo)
             result = autofill_existing_registration(page, plan, repo, progress=progress)
-            assert result["status"] == "credentials-filled"
-            assert result["fieldCount"] == 3
+            assert result["status"] == "profile-name-filled"
+            assert result["fieldCount"] == 4
             assert page.locator("input[data-input-name='account']").input_value() == data["username"]
             assert page.locator("input[data-input-name='userpass']").input_value() == data["password"]
             assert page.locator("input[data-input-name='confirmPassword']").input_value() == data["password"]
-            assert page.locator("input[data-input-name='realName']").input_value() == ""
+            assert page.locator("input[data-input-name='realName']").input_value() == data["fullName"]
             assert page.locator("#insideRegisterSubmitClick").is_visible()
             assert repo.account(key)["stage"] == "submit-not-sent"
             assert repo.account(key)["status"] == "local"
             assert completed_events == [
                 "username-filled", "password-filled", "password-confirmed",
-                "real-name-field-found", "submit-button-found",
-                "name-entry-pending", "submit-not-sent",
+                "real-name-field-found", "real-name-filled",
+                "submit-button-found", "submit-not-sent",
             ]
             assert len(repo.account(key)["registrationLog"]) >= 8
             assert all(
@@ -293,17 +293,16 @@ def test_old_global_surname_cannot_be_injected_into_another_profile_in_chromium(
                     account_id, plan["idx"], stage, repository=repo
                 ),
             )
-            assert result["status"] == "credentials-filled"
-            assert result["fieldCount"] == 3
-            # Neither old global "Silva" nor test identity "Felipe Nogueira"
-            # is forwarded as a civil identity to the external form.
-            assert page.locator("input[data-input-name='realName']").input_value() == ""
+            assert result["status"] == "profile-name-filled"
+            assert result["fieldCount"] == 4
+            # The saved profile name wins over the stale Windows setting.
+            assert page.locator("input[data-input-name='realName']").input_value() == "Felipe Nogueira"
             assert page.locator("input[data-input-name='account']").input_value() == account["profileData"]["username"]
             assert page.locator("#insideRegisterSubmitClick").is_visible()
             assert post_count == []
             assert repo.account(account_id)["stage"] == "submit-not-sent"
             assert any(
-                entry["stage"] == "name-entry-pending"
+                entry["stage"] == "real-name-filled"
                 for entry in repo.account(account_id)["registrationLog"]
             )
             context.close()
