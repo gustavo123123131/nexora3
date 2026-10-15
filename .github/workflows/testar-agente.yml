@@ -1,7 +1,7 @@
 name: Testar painel e agente Windows
 on:
   push:
-    branches: [main, integracao-cadastro-contas]
+    branches: [main, integracao-cadastro-contas, supabase-contas-integracao]
   workflow_dispatch:
 jobs:
   smoke-tests:
@@ -25,6 +25,7 @@ jobs:
           node --check webui/static/app.js
           node --check webui/static/proxy_view.js
           node --check webui/static/accounts_view.js
+          node --check webui/static/supabase_accounts.js
           node --test proxybet_registration_bridge/test/registration.test.js
       - name: Executar testes sem operacoes externas
         run: |
