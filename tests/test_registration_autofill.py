@@ -113,27 +113,27 @@ def test_unverified_cpf_not_prefilled():
 
 
 
-def test_external_form_uses_only_explicit_owner_name_not_synthetic_name(monkeypatch):
-    monkeypatch.setenv("NEXORA_REGISTRATION_OWNER_NAME", "Nome do Titular")
+def test_global_windows_name_does_not_overwrite_another_profile(monkeypatch):
+    # Reproduces the user's issue: Windows contained "Silva" but this
+    # independently generated profile had a different fullName.
+    monkeypatch.setenv("NEXORA_REGISTRATION_OWNER_NAME", "Silva")
     fields = elements()
-    log_stages = []
-    repo = Repo(profile(isTestData=True, fullName="Nome Gerado Diferente"),
+    progress = []
+    repo = Repo(profile(isTestData=True, fullName="Felipe Nogueira"),
                 "https://example.org/register")
     result = autofill_existing_registration(
         Page("https://example.org/register", fields),
-        {"profile_record_id": "id"}, repo,
-        progress=log_stages.append,
+        {"profile_record_id": "id"}, repo, progress=progress.append
     )
-    assert result["status"] == "owner-name-filled"
-    assert result["fieldCount"] == 4
-    assert fields["input[data-input-name='realName']"].fills == ["Nome do Titular"]
+    assert result["status"] == "credentials-filled"
+    assert result["fieldCount"] == 3
+    assert fields["input[data-input-name='realName']"].fills == []
     assert fields["input[data-input-name='userpass']"].fills == ["Senha!Teste12345"]
     assert fields["input[data-input-name='confirmPassword']"].fills == ["Senha!Teste12345"]
     assert all(field.clicks == 0 for field in fields.values())
-    assert repo.stages[-1] == ("id", "local", "owner-name-prefilled")
-    assert "real-name-filled" in log_stages
-    assert "submit-button-found" in log_stages
-    assert log_stages[-1] == "submit-not-sent"
+    assert "real-name-filled" not in progress
+    assert "name-entry-pending" in progress
+    assert progress[-1] == "submit-not-sent"
 
 
 def test_external_form_without_explicit_owner_name_keeps_real_name_empty(monkeypatch):
