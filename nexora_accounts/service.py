@@ -9,10 +9,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse, urljoin
 import json
+import hashlib
 import os
 import re
+import shutil
 import sqlite3
 import threading
+import time
 import uuid
 
 
@@ -292,13 +295,16 @@ class AccountsRepository:
             self._write(state)
         return dict(config)
 
-    def accounts(self, query="", status=""):
+    def accounts(self, query="", status="", profiles_only=False):
         if not isinstance(query, str) or len(query) > 128 or status not in ("", *STATUS):
             raise AccountError("Filtro inválido.")
         with self._lock:
             records = sorted(self._read()["accounts"], key=lambda r: r["createdAt"], reverse=True)
         return [dict(item) for item in records
-                if (not status or item["status"] == status)
+                if (not profiles_only or item.get("createdBy") == "abrir-conta"
+                    or (isinstance(item.get("profileData"), dict)
+                        and "targetUrl" in item))
+                and (not status or item["status"] == status)
                 and (not query or query.lower() in (
                     item["displayName"] + " " + item["siteId"] + " " +
                     item.get("loginIdentifier", "")).lower())]
@@ -419,6 +425,24 @@ class AccountsRepository:
         targets = urls if urls else [""]
         with self._lock:
             state = self._read()
+            # Persisted 15-second idempotency window prevents double clicks
+            # and concurrent HTTP event handlers from creating extra records.
+            fingerprint = hashlib.sha256(json.dumps(
+                [scope, mode, targets, count_per_url],
+                ensure_ascii=False, separators=(",", ":")
+            ).encode("utf-8")).hexdigest()
+            now_epoch = time.time()
+            recent = [
+                item for item in state.get("recentLaunches", [])
+                if isinstance(item, dict) and isinstance(item.get("at"), (int, float))
+                and now_epoch - item["at"] < 15
+                and now_epoch >= item["at"]
+            ][-50:]
+            if any(item.get("fingerprint") == fingerprint for item in recent):
+                raise AccountError(
+                    "Abrir Conta já recebeu esse pedido há poucos segundos. "
+                    "Aguarde; nenhum perfil duplicado foi criado."
+                )
             used = {
                 a.get("profileIndex") for a in state["accounts"]
                 if a.get("profileScope") == scope and a.get("profileMode") == mode
@@ -437,7 +461,7 @@ class AccountsRepository:
                 raise AccountError("Não existem índices livres suficientes para criar os perfis.")
             plans = []
             created_folders = []
-            old_len = len(state["accounts"])
+            launch_id = str(uuid.uuid4())
             try:
                 for position, (idx, folder) in enumerate(zip(indices, folders)):
                     url = targets[position // count_per_url]
@@ -447,10 +471,12 @@ class AccountsRepository:
                     created_folders.append(folder)
                     account = {
                         "id": str(uuid.uuid4()), "siteId": "", "targetUrl": url,
+                        "createdBy": "abrir-conta", "launchId": launch_id,
                         "displayName": ("Conta Mãe" if scope == "mae" else "Conta Filha") + f" #{idx}",
                         "loginIdentifier": data["username"], "parentId": None,
                         "profileScope": scope, "profileMode": mode, "profileIndex": idx,
                         "profileData": data, "status": "local", "stage": "profile-created",
+                        "registrationLog": [{"at": now, "stage": "profile-created", "durationMs": 0}],
                         "createdAt": now, "updatedAt": now,
                     }
                     state["accounts"].append(account)
@@ -462,6 +488,9 @@ class AccountsRepository:
                         "should_autochave": False,
                         "profile_record_id": account["id"],
                     })
+                state["recentLaunches"] = recent + [
+                    {"fingerprint": fingerprint, "at": now_epoch, "launchId": launch_id}
+                ]
                 self._write(state)
             except Exception:
                 # Only remove directories that this transaction just created.
@@ -474,13 +503,21 @@ class AccountsRepository:
                 raise
             return plans
 
-    def set_stage(self, key, status, stage, http_status=None):
+    def set_stage(self, key, status, stage, http_status=None, error_code=None, duration_ms=None):
         if status not in STATUS or not re.fullmatch(r"[a-z0-9_-]{1,60}", stage):
             raise AccountError("Status inválido.")
         if http_status is not None and (
                 isinstance(http_status, bool) or not isinstance(http_status, int)
                 or not 100 <= http_status <= 599):
             raise AccountError("Código HTTP inválido.")
+        if error_code is not None and (
+                not isinstance(error_code, str)
+                or not re.fullmatch(r"[a-z0-9_-]{1,60}", error_code)):
+            raise AccountError("Código de erro inválido.")
+        if duration_ms is not None and (
+                isinstance(duration_ms, bool) or not isinstance(duration_ms, int)
+                or not 0 <= duration_ms <= 86_400_000):
+            raise AccountError("Duração inválida.")
         with self._lock:
             state = self._read()
             account = next((a for a in state["accounts"] if a["id"] == key), None)
@@ -489,14 +526,18 @@ class AccountsRepository:
             now = _now()
             changed = account.get("status") != status or account.get("stage") != stage
             account.update({"status": status, "stage": stage, "updatedAt": now})
-            if changed or http_status is not None:
+            if changed or http_status is not None or error_code is not None or duration_ms is not None:
                 # Fixed stage identifiers and numeric HTTP codes, never credentials
                 # or untrusted response bodies. Logs are per account and bounded.
                 entry = {"at": now, "stage": stage}
                 if http_status is not None:
                     entry["httpStatus"] = http_status
+                if error_code is not None:
+                    entry["errorCode"] = error_code
+                if duration_ms is not None:
+                    entry["durationMs"] = duration_ms
                 account.setdefault("registrationLog", []).append(entry)
-                account["registrationLog"] = account["registrationLog"][-30:]
+                account["registrationLog"] = account["registrationLog"][-100:]
             mapping = {"provider-confirmed": "completed", "review": "form_ready",
                        "submit-queued": "submitting", "submitting": "submitting",
                        "awaiting-provider": "submitting",
@@ -520,6 +561,57 @@ class AccountsRepository:
             self._audit(state, "account.status", key)
             self._write(state)
             return dict(account)
+
+    def cleanup_test_candidates(self, apply=False):
+        """Preview or remove ONLY provably generated, unsubmitted local tests.
+
+        Real, completed, pending-submitted or ambiguous records are untouched.
+        This never deletes Chromium folders, sessions or credentials.
+        """
+        safe_stages = {
+            "profile-created", "test-data-blocked", "form-not-found",
+            "browser-error", "navigation-error", "browser-closed-unverified",
+            "site-load-timeout", "site-unavailable", "registration-blocked",
+        }
+        with self._lock:
+            state = self._read()
+            eligible = [
+                a for a in state["accounts"]
+                if isinstance(a.get("profileData"), dict)
+                and a["profileData"].get("isTestData") is True
+                and "targetUrl" in a
+                and a.get("status") == "local"
+                and a.get("stage") in safe_stages
+                and not any(
+                    entry.get("stage") in {
+                        "submit-queued", "submitting", "awaiting-provider",
+                        "provider-response-unverified", "provider-confirmed",
+                    }
+                    for entry in a.get("registrationLog", [])
+                    if isinstance(entry, dict)
+                )
+            ]
+            report = [{
+                "id": a["id"], "scope": a.get("profileScope"),
+                "index": a.get("profileIndex"), "stage": a.get("stage"),
+            } for a in eligible]
+            if apply and eligible:
+                # Back up before touching local data; keep every browser folder.
+                backup = self.path.with_name(
+                    self.path.name + ".backup-" +
+                    datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") +
+                    "-" + uuid.uuid4().hex[:6]
+                )
+                shutil.copy2(self.path, backup)
+                if os.name != "nt":
+                    os.chmod(backup, 0o600)
+                ids = {a["id"] for a in eligible}
+                state["accounts"] = [a for a in state["accounts"] if a["id"] not in ids]
+                state["jobs"] = [j for j in state["jobs"] if j.get("accountId") not in ids]
+                self._audit(state, "test-records.cleanup", str(len(ids)))
+                self._write(state)
+                return {"candidates": report, "deleted": len(ids), "backup": str(backup)}
+            return {"candidates": report, "deleted": 0, "backup": None}
 
     def delete(self, key):
         with self._lock:
