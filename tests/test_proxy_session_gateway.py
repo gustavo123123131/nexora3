@@ -328,13 +328,13 @@ def test_upstream_refused_connect_is_not_confused_with_authentication():
         def handle(self):
             self.request.settimeout(3)
             received = b""
-            while b"\\r\\n\\r\\n" not in received:
+            while b"\r\n\r\n" not in received:
                 data = self.request.recv(4096)
                 if not data:
                     return
                 received += data
             self.request.sendall(
-                b"HTTP/1.1 403 Forbidden\\r\\nContent-Length: 0\\r\\n\\r\\n"
+                b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n"
             )
 
     server = FakeUpstream(("127.0.0.1", 0), Handler)
