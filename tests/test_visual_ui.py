@@ -49,7 +49,7 @@ def test_nexora_visual_and_existing_controls(tmp_path):
             try:
                 page = browser.new_page(viewport={"width": 1440, "height": 900})
                 page.goto(URL, wait_until="domcontentloaded")
-                expect(page.locator(".tab-bar button")).to_have_count(3, timeout=15000)
+                expect(page.locator(".tab-bar button")).to_have_count(4, timeout=15000)
                 expect(page.locator(".brand-wordmark")).to_have_text("NEXORA")
                 expect(page.locator(".tab-bar button.active")).to_have_text("Mãe")
                 expect(page.get_by_role("button", name="Abrir Navegadores")).to_be_visible()
