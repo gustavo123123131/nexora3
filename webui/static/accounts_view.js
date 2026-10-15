@@ -16,7 +16,11 @@
     return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString('pt-BR');
   };
   const stageNames = {
-    'profile-created':'Perfil local criado', 'browser-starting':'Iniciando Chromium',
+    'profile-created':'Perfil local criado', 'username-prefilled':'Username preenchido',
+    'credentials-prefilled':'Username e senhas preenchidos (cadastro não enviado)',
+    'credentials-fill-error':'Falha ao preencher senha',
+    'username-field-not-found':'Campo de username não encontrado',
+    'username-fill-error':'Falha ao preencher username', 'browser-starting':'Iniciando Chromium',
     'browser-ready':'Chromium pronto', 'site-loading':'Carregando site',
     'site-loaded':'Site carregado', 'form-scanning':'Procurando formulário',
     'form-found':'Campos identificados', 'browser-error':'Falha ao iniciar navegador',
