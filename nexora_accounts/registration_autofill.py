@@ -97,8 +97,15 @@ def _wait_for_username(page, seconds=8):
     return None
 
 
-def autofill_existing_registration(page, instance_plan, repository=None):
-    """Use only this browser's saved profile; NEVER submit the form."""
+def autofill_existing_registration(page, instance_plan, repository=None, progress=None):
+    """Fill available fields in the original browser; never submit fictional identities.
+
+    Optional progress callback records completed DOM actions (no field values).
+    """
+    def report(stage):
+        if callable(progress):
+            progress(stage)
+
     plan = instance_plan if isinstance(instance_plan, dict) else {}
     key = plan.get("profile_record_id")
     if not isinstance(key, str) or not key:
@@ -143,6 +150,7 @@ def autofill_existing_registration(page, instance_plan, repository=None):
             }
         try:
             field.fill(username.strip(), timeout=6000)
+            report("username-filled")
         except Exception:
             repo.set_stage(key, "local", "username-fill-error")
             return {
@@ -165,6 +173,8 @@ def autofill_existing_registration(page, instance_plan, repository=None):
                         }
                     try:
                         fields[name].fill(password, timeout=6000)
+                        report("password-filled" if name == "userpass"
+                               else "password-confirmed")
                     except Exception:
                         repo.set_stage(key, "local", "credentials-fill-error")
                         return {
@@ -175,6 +185,16 @@ def autofill_existing_registration(page, instance_plan, repository=None):
         stage = "credentials-prefilled" if filled == 3 else "username-prefilled"
         repo.set_stage(key, "local", stage)
         if filled == 3:
+            # Report the exact reason the externally hosted registration stops.
+            # A synthetic "fullName" is not the verified owner of a real account.
+            real_name = _visible(page, FIELDS["realName"])
+            report("real-name-field-found" if real_name is not None
+                   else "real-name-field-missing")
+            submit_button = _visible(page, ("#insideRegisterSubmitClick",))
+            report("submit-button-found" if submit_button is not None
+                   else "submit-button-missing")
+            report("real-name-required")
+            report("submit-not-sent")
             return {
                 "status": "credentials-filled", "fieldCount": filled,
                 "message": "Username, senha e confirmação preenchidos. "
@@ -219,6 +239,15 @@ def autofill_existing_registration(page, instance_plan, repository=None):
            for k in ("account", "userpass", "confirmPassword")):
         return {"status": "blocked", "message": "Dados obrigatórios incompletos."}
     filled = 0
+    progress_stages = {
+        "account": "username-filled",
+        "userpass": "password-filled",
+        "confirmPassword": "password-confirmed",
+        "realName": "real-name-filled",
+        "email": "email-filled",
+        "phone": "phone-filled",
+        "cpf": "cpf-filled",
+    }
     for name, element in fields.items():
         value = values.get(name)
         if element is not None and isinstance(value, str) and value.strip():
@@ -226,6 +255,10 @@ def autofill_existing_registration(page, instance_plan, repository=None):
                 return {"status": "blocked", "message": "Domínio alterado durante o preenchimento."}
             element.fill(value, timeout=6000)
             filled += 1
+            report(progress_stages[name])
+    submit_button = _visible(page, ("#insideRegisterSubmitClick",))
+    report("submit-button-found" if submit_button is not None
+           else "submit-button-missing")
     repo.set_stage(key, "pending", "review")
     return {
         "status": "filled", "fieldCount": filled,
