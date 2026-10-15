@@ -1029,6 +1029,11 @@ def run_instance(
                     raise LocalProfileError("Perfil técnico original não está salvo.")
             except (LocalProfileError, TypeError, ValueError) as exc:
                 log(f"[#{idx}] [Contas] {account_profile['label']}: não é possível restaurar o dispositivo original ({type(exc).__name__}).")
+                if (instance_plan or {}).get("initialize_runtime") is True:
+                    LocalProfileStore().update_status(
+                        int(account_profile["id"]), "error",
+                        "Falha ao salvar o dispositivo original.",
+                    )
                 return
         else:
             cfg = make_config(current_mode, idx)
