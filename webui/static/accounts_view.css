@@ -70,3 +70,17 @@
   .accounts-local { padding: 18px 12px; }
   .accounts-local-card dl > div { grid-template-columns: 100px minmax(0, 1fr); }
 }
+
+.accounts-local-card header .accounts-select {
+  color: #dfe7fd;
+  border: 1px solid #445881;
+  background: #263756;
+  padding: 6px 9px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 11px;
+}
+.accounts-local-card header .accounts-select[aria-pressed="true"] {
+  border-color: #9eafff;
+  background: #334773;
+}
