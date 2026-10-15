@@ -12,6 +12,7 @@ import socket
 import tempfile
 import threading
 from uuid import uuid4
+from urllib.parse import urlsplit, unquote
 
 _LOCK = threading.RLock()
 _SCHEMES = {"http", "https", "socks5"}
@@ -46,6 +47,53 @@ def _public(record):
         "protocol": record["protocol"],
         "username": record.get("username", ""),
         "hasPassword": bool(record.get("password")),
+    }
+
+
+def parse_proxy_line(raw):
+    """Accept common one-line provider formats without guessing protocols.
+
+    host:port[:user:password], user:password@host:port and
+    http(s)://user:password@host:port or socks5://user:password@host:port.
+    A missing scheme explicitly means HTTP.
+    """
+    line = _text(raw, "Linha da proxy", 1024, True)
+    scheme = "http"
+    body = line
+    if "://" in line:
+        scheme, body = line.split("://", 1)
+        scheme = scheme.lower()
+    if scheme == "socks":
+        scheme = "socks5"
+    if scheme not in _SCHEMES:
+        raise ProxyError("Tipo de proxy não suportado. Use HTTP, HTTPS ou SOCKS5.")
+    if not body or "/" in body or "?" in body or "#" in body:
+        raise ProxyError("Formato inválido. Use host:porta:usuario:senha ou protocolo://usuario:senha@host:porta.")
+    if "@" not in body and body.count(":") >= 3 and not body.startswith("["):
+        host, port, username, password = body.split(":", 3)
+        fields = (host, port, username, password)
+    else:
+        try:
+            url = urlsplit(scheme + "://" + body)
+            fields = (url.hostname or "", url.port or "", unquote(url.username or ""), unquote(url.password or ""))
+        except ValueError as exc:
+            raise ProxyError("Endereço ou porta da proxy inválido.") from exc
+    host, port, username, password = fields
+    host = _text(host, "Servidor", 253, True).lower()
+    try:
+        port = int(str(port))
+    except ValueError as exc:
+        raise ProxyError("Porta da proxy inválida.") from exc
+    if not 1 <= port <= 65535:
+        raise ProxyError("Porta da proxy fora do intervalo permitido.")
+    if not re.fullmatch(r"[a-z0-9](?:[a-z0-9._-]{0,251}[a-z0-9])?", host):
+        raise ProxyError("Servidor da proxy inválido.")
+    username = _text(username, "Usuário", 128)
+    password = _text(password, "Senha", 256)
+    return {
+        "name": host + ":" + str(port),
+        "host": host, "port": port,
+        "protocol": scheme, "username": username, "password": password,
     }
 
 
@@ -139,6 +187,33 @@ class ProxyStore:
                 state["items"].append(saved)
             self._write(state)
             return _public(saved)
+
+    def save_line(self, line):
+        result = self.save(parse_proxy_line(line))
+        with _LOCK:
+            state = self._read()
+            state["managed"] = True
+            self._write(state)
+        return result
+
+    def assign(self, count):
+        """Allocate a stable provider endpoint per new browser session.
+
+        Round-robin cursor persists across Mãe/Filha launches. The provider,
+        not Nexora, controls the external IP of any rotating endpoint.
+        """
+        if count < 0:
+            raise ProxyError("Quantidade de sessões inválida.")
+        with _LOCK:
+            state = self._read()
+            items = state["items"]
+            if not items:
+                return []
+            start = state.get("nextSlot", 0) % len(items)
+            selected = [items[(start + i) % len(items)].copy() for i in range(count)]
+            state["nextSlot"] = (start + count) % len(items)
+            self._write(state)
+            return selected
 
     def delete(self, identifier):
         with _LOCK:
