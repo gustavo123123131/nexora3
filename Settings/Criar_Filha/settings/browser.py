@@ -420,7 +420,7 @@ def parse_proxy_string(raw: str) -> Optional[ProxyConfig]:
                 password or None
             )
         except Exception:
-            raise ValueError(f"Proxy inválido: {raw}")
+            raise ValueError("Proxy inválida: confira host, porta e formato das credenciais.")
 
     # Compatibilidade com formato antigo:
     # user:pass@host:port
@@ -429,7 +429,7 @@ def parse_proxy_string(raw: str) -> Optional[ProxyConfig]:
     u = urlparse(raw_for_parse)
 
     if not u.hostname or not u.port:
-        raise ValueError(f"Proxy inválido: {raw}")
+        raise ValueError("Proxy inválida: confira host, porta e formato das credenciais.")
 
     return ProxyConfig(
         f"{u.scheme or 'http'}://{u.hostname}:{u.port}",
