@@ -96,3 +96,25 @@
   border-radius: 7px; background: #192639; color: #e7effb;
   padding: 6px 10px; font-size: 12px;
 }
+
+.accounts-card-actions {
+  display: flex; gap: 6px; margin-left: auto; align-items: center; flex-wrap: wrap;
+}
+.accounts-local-card header .accounts-open {
+  color: #eff9ff; border: 1px solid #337f72; background: #256b60;
+  padding: 7px 12px; border-radius: 8px; cursor: pointer;
+  font-size: 11px; font-weight: 750;
+}
+.accounts-local-card header .accounts-open:disabled { opacity: .55; }
+.accounts-device { color: #b2c7d8; font-size: 11px; margin: 0 0 12px; }
+.accounts-legacy-config { display: grid; gap: 7px; margin-bottom: 12px; }
+.accounts-legacy-config p { font-size: 11px; color: #a6b7cd; margin: 0 0 3px; }
+.accounts-legacy-config select, .accounts-legacy-config input {
+  width: 100%; min-height: 35px; border: 1px solid #435574;
+  border-radius: 7px; background: #192639; color: #e7effb;
+  padding: 6px 10px; font-size: 12px;
+}
+@media (max-width: 540px) {
+  .accounts-local-card header { flex-wrap: wrap; }
+  .accounts-card-actions { margin-left: 0; width: 100%; }
+}
