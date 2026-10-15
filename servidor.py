@@ -240,6 +240,16 @@ def _account_request(callable_):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@app.post('/api/registration/cloud/sync')
+async def registration_cloud_sync(body: dict):
+    """Mirror Supabase metadata into Windows-local profiles.
+
+    Authentication and CSRF are handled by the existing agent middleware.
+    This endpoint never receives user passwords or Supabase tokens.
+    """
+    return _account_request(lambda: _accounts().repo.sync_cloud_records(body))
+
+
 @app.get('/api/registration/sites')
 async def registration_sites():
     return {'sites': _accounts().repo.sites()}
