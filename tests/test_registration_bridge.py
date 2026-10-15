@@ -28,7 +28,7 @@ def site_config(authorized=False):
 
 
 def test_site_guard_validation_and_store(tmp_path):
-    path = tmp_path / "contas.sqlite"
+    path = tmp_path / "contas.json"
     repo = AccountsRepository(path)
     with pytest.raises(AccountError):
         repo.add_site({**site_config(), "baseUrl": "file:///etc/passwd"})
@@ -76,8 +76,7 @@ def test_site_guard_validation_and_store(tmp_path):
     assert repo.account(child["id"])["parentId"] is None
     # Persistence after reopening (no credentials).
     assert len(AccountsRepository(path).accounts()) == 1
-    with sqlite3.connect(path) as db:
-        assert db.execute("SELECT COUNT(*) FROM account_audit").fetchone()[0] >= 5
+    assert len(json.loads(path.read_text(encoding="utf-8"))["audit"]) >= 5
 
 
 def test_form_checks_cpf_and_confirmation():
@@ -99,7 +98,7 @@ def test_form_checks_cpf_and_confirmation():
 def test_routes_have_csrf_and_do_not_touch_cloud(tmp_path, monkeypatch):
     # Replace the persistent default storage with a test-only instance.
     monkeypatch.setattr(servidor, "_accounts_service",
-                        AccountsService(tmp_path / "api.sqlite", start_browser=False))
+                        AccountsService(tmp_path / "api.json", start_browser=False))
     with TestClient(servidor.app) as client:
         assert client.get("/static/accounts_view.js").status_code == 200
         assert client.get("/static/accounts_view.css").status_code == 200
@@ -136,59 +135,77 @@ def test_cloud_posts_blocked_on_registration(monkeypatch):
         assert client.post("/api/registration/sites", json={}).status_code == 403
 
 
-def test_cloud_metadata_sync_is_idempotent_and_keeps_secrets_off_disk(tmp_path):
-    """Supabase IDs map to existing local profiles without storing credentials."""
-    import uuid
-    path = tmp_path / "cloud_mirror.sqlite"
-    repo = AccountsRepository(path)
-    mother_id, daughter_id = str(uuid.uuid4()), str(uuid.uuid4())
-    cfg = site_config(authorized=True)
-    payload = {
-        "sites": [cfg],
-        "accounts": [
-            {
-                "id": mother_id, "siteId": cfg["id"], "displayName": "Mãe Supabase",
-                "profileScope": "mae", "profileMode": "desktop",
-                "profileIndex": 30, "password": "SEGREDO-IGNORADO",
-            },
-            {
-                "id": daughter_id, "siteId": cfg["id"], "displayName": "Filha Supabase",
-                "parentId": mother_id, "profileScope": "filha",
-                "profileMode": "android", "profileIndex": 31,
-                "cpf": "CPF-NAO-ARMAZENADO",
-            },
-        ],
-    }
-    assert repo.sync_cloud_records(payload) == {"sites": 1, "accounts": 2}
-    assert repo.sync_cloud_records(payload) == {"sites": 1, "accounts": 2}
-    assert len(repo.accounts()) == 2
-    assert repo.account(daughter_id)["parentId"] == mother_id
-    assert repo.account(mother_id)["profileIndex"] == 30
-    saved = path.read_bytes()
-    assert b"SEGREDO-IGNORADO" not in saved
-    assert b"CPF-NAO-ARMAZENADO" not in saved
+def test_json_batch_atomic_and_legacy_import(tmp_path):
+    db = tmp_path / "accounts.json"
+    repo = AccountsRepository(db)
+    repo.add_site(site_config(authorized=True))
+    first = repo.add_account({
+        "siteId": "site_teste", "displayName": "Mãe original",
+        "profileScope": "mae", "profileMode": "desktop", "profileIndex": 1,
+    })
+    batch = repo.create_batch({
+        "siteId": "site_teste", "displayName": "Lote local",
+        "profileScope": "mae", "profileMode": "desktop", "quantity": 3,
+    })
+    assert batch["quantity"] == 3
+    state = json.loads(db.read_text(encoding="utf-8"))
+    assert len(state["accounts"]) == 4
+    assert len(state["batches"]) == 1
+    assert len(state["jobs"]) == 3
+    assert sorted(a["profileIndex"] for a in state["accounts"]) == [1, 2, 3, 4]
+    repo.set_stage(batch["account"]["id"], "pending", "review")
+    state = json.loads(db.read_text(encoding="utf-8"))
+    assert state["batches"][0]["status"] == "running"
+    assert AccountsRepository(db).account(first["id"])["displayName"] == "Mãe original"
+    before = db.read_bytes()
     with pytest.raises(AccountError):
-        repo.sync_cloud_account({**payload["accounts"][0], "id": "nao-uuid"})
+        repo.create_batch({"siteId": "site_teste", "displayName": "Inválido",
+                           "profileScope": "mae", "profileMode": "desktop",
+                           "quantity": 101})
+    assert db.read_bytes() == before
+
+    # A damaged JSON file is never overwritten or reset.
+    db.write_text("{unparseable", encoding="utf-8")
     with pytest.raises(AccountError):
-        repo.sync_cloud_records({"sites": [], "accounts": [{}] * 101})
+        AccountsRepository(db)
+    assert db.read_text(encoding="utf-8") == "{unparseable"
+
+    old = tmp_path / "accounts.sqlite"
+    with sqlite3.connect(old) as sql:
+        sql.executescript("""
+        CREATE TABLE sites(id TEXT, config TEXT, created_at TEXT);
+        CREATE TABLE accounts(
+          id TEXT,site_id TEXT,display_name TEXT,login_identifier TEXT,parent_id TEXT,
+          profile_scope TEXT,profile_mode TEXT,profile_index INTEGER,status TEXT,
+          stage TEXT,created_at TEXT,updated_at TEXT);
+        CREATE TABLE account_audit(action TEXT,entity TEXT,occurred_at TEXT);
+        """)
+        sql.execute("INSERT INTO sites VALUES(?,?,?)",
+                    ("site_teste", json.dumps(site_config()), "2026-10-14"))
+        sql.execute("INSERT INTO accounts VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (first["id"], "site_teste", "Conta antiga", "", None,
+                     "mae", "desktop", 1, "local", "saved",
+                     "2026-10-14", "2026-10-14"))
+    db.unlink()
+    migrated = AccountsRepository(db)
+    assert migrated.account(first["id"])["displayName"] == "Conta antiga"
+    assert old.exists()
 
 
-def test_cloud_sync_api_respects_csrf(tmp_path, monkeypatch):
-    import uuid
+def test_json_batch_api_with_csrf(tmp_path, monkeypatch):
     monkeypatch.setattr(servidor, "_accounts_service",
-                        AccountsService(tmp_path / "cloud_api.sqlite", start_browser=False))
-    site = site_config()
-    account_id = str(uuid.uuid4())
-    request = {"sites": [site], "accounts": [{
-        "id": account_id, "siteId": site["id"], "displayName": "Conta remota",
-        "profileScope": "mae", "profileMode": "iphone", "profileIndex": 7,
-    }]}
+                        AccountsService(tmp_path / "batch.json", start_browser=False))
     with TestClient(servidor.app) as client:
-        assert client.post("/api/registration/cloud/sync", json=request).status_code == 403
         csrf = client.get("/api/state").json()["csrf_token"]
-        response = client.post("/api/registration/cloud/sync",
-                               headers={"X-LixoCPA-CSRF": csrf}, json=request)
-        assert response.status_code == 200, response.text
-        assert response.json() == {"sites": 1, "accounts": 1}
-        accounts = client.get("/api/registration/accounts").json()["accounts"]
-        assert len(accounts) == 1 and accounts[0]["id"] == account_id
+        headers = {"X-LixoCPA-CSRF": csrf}
+        assert client.post("/api/registration/sites", headers=headers,
+                           json=site_config()).status_code == 200
+        result = client.post("/api/registration/accounts", headers=headers, json={
+            "siteId": "site_teste", "displayName": "Lote",
+            "profileScope": "filha", "profileMode": "iphone",
+            "profileIndex": 1, "quantity": 3,
+        })
+        assert result.status_code == 200, result.text
+        assert result.json()["quantity"] == 3
+        assert len(client.get("/api/registration/accounts").json()["accounts"]) == 3
+        assert client.post("/api/registration/cloud/sync", headers=headers, json={}).status_code == 404
