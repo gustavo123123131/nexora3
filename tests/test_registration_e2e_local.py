@@ -13,6 +13,7 @@ from playwright.sync_api import sync_playwright
 from nexora_accounts.registration_autofill import autofill_existing_registration
 from nexora_accounts.registration_submit import RegistrationWatcher, request_demo_submit
 from nexora_accounts.service import AccountsRepository
+from nexora_accounts.registration_trace import trace_registration
 
 
 HTML = r"""<!doctype html>
@@ -42,7 +43,7 @@ document.querySelector("#insideRegisterSubmitClick").addEventListener("click", a
 
 @contextmanager
 def demo_registration_server():
-    requests = {"posted": 0, "field_names": set()}
+    requests = {"posted": 0, "field_names": set(), "real_name_filled": False}
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_args):
@@ -68,6 +69,7 @@ def demo_registration_server():
             # Only store NAMES of fields, never their values or personal data.
             requests["posted"] += 1
             requests["field_names"] = set(data)
+            requests["real_name_filled"] = bool(data.get("realName"))
             body = b'{"code":0}'
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -108,6 +110,9 @@ def test_chromium_real_page_and_local_http_submit_and_status(tmp_path):
                     repo.account(key)["profileData"]["password"]
                 )
                 assert len(repo.account(key)["profileData"]["password"]) == 9
+                assert page.locator("input[data-input-name='realName']").input_value() == (
+                    repo.account(key)["profileData"]["fullName"]
+                )
                 watcher = RegistrationWatcher(
                     page, plans[0], repository=repo, log=events.append,
                     success_selector="#demo-registration-success"
@@ -122,6 +127,7 @@ def test_chromium_real_page_and_local_http_submit_and_status(tmp_path):
                         break
                     page.wait_for_timeout(150)
                 assert requests["posted"] == 1
+                assert requests["real_name_filled"] is True
                 assert {"account", "userpass", "confirmPassword", "realName"}.issubset(
                     requests["field_names"]
                 )
@@ -162,8 +168,9 @@ def test_accounts_ui_displays_only_profiles_and_remains_visible_after_refresh(tm
                 page.add_script_tag(content=source)
                 page.evaluate(
                     """(accounts) => {
+                      window.__testAccounts = accounts;
                       window.__directory = window.NexoraAccountsView.create({
-                        get: async () => ({accounts}),
+                        get: async () => ({accounts:window.__testAccounts}),
                         post: async () => { throw Error("No POST expected"); }
                       });
                       document.querySelector("#app").append(window.__directory.node);
@@ -174,6 +181,21 @@ def test_accounts_ui_displays_only_profiles_and_remains_visible_after_refresh(tm
                 assert page.locator(".accounts-card").count() == 1
                 assert page.get_by_text("form-not-found").count() == 0  # user friendly name
                 assert page.get_by_text("Formulário não encontrado").count() >= 1
+                assert page.locator(".accounts-registration-log").first.is_visible()
+                page.get_by_role("button", name="Ver detalhes").click()
+                assert page.locator(".accounts-details").is_visible()
+                # An API state change must be visible without the old page
+                # onShow callback or a manual "Atualizar" click.
+                page.evaluate("""() => {
+                  const record = window.__testAccounts[0];
+                  record.stage = 'submit-button-found';
+                  record.registrationLog.push({
+                    at:'2026-10-15T00:01:02Z',
+                    stage:'submit-button-found', durationMs:12
+                  });
+                }""")
+                page.get_by_text("Botão Registro encontrado").first.wait_for(timeout=6000)
+                assert page.locator(".accounts-details").is_visible()
                 assert page.locator(".accounts-real-form").count() == 0
                 assert page.get_by_text("Configurar site").count() == 0
                 assert page.get_by_text("Adicionar conta").count() == 0
@@ -204,7 +226,12 @@ def test_real_site_layout_preview_fills_only_nonidentity_credentials(tmp_path):
             )
             page = context.new_page()
             page.goto(url, wait_until="domcontentloaded")
-            result = autofill_existing_registration(page, plan, repo)
+            key = plan["profile_record_id"]
+            completed_events = []
+            def progress(stage):
+                completed_events.append(stage)
+                trace_registration(key, plan["idx"], stage, repository=repo)
+            result = autofill_existing_registration(page, plan, repo, progress=progress)
             assert result["status"] == "credentials-filled"
             assert result["fieldCount"] == 3
             assert page.locator("input[data-input-name='account']").input_value() == data["username"]
@@ -212,8 +239,19 @@ def test_real_site_layout_preview_fills_only_nonidentity_credentials(tmp_path):
             assert page.locator("input[data-input-name='confirmPassword']").input_value() == data["password"]
             assert page.locator("input[data-input-name='realName']").input_value() == ""
             assert page.locator("#insideRegisterSubmitClick").is_visible()
-            assert repo.account(plan["profile_record_id"])["stage"] == "credentials-prefilled"
-            assert repo.account(plan["profile_record_id"])["status"] == "local"
+            assert repo.account(key)["stage"] == "submit-not-sent"
+            assert repo.account(key)["status"] == "local"
+            assert completed_events == [
+                "username-filled", "password-filled", "password-confirmed",
+                "real-name-field-found", "submit-button-found",
+                "real-name-required", "submit-not-sent",
+            ]
+            assert len(repo.account(key)["registrationLog"]) >= 8
+            assert all(
+                "password" not in str(e).lower() or e["stage"] in
+                {"password-filled", "password-confirmed"} for e in
+                repo.account(key)["registrationLog"]
+            )
             context.close()
         finally:
             browser.close()
