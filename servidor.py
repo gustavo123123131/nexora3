@@ -309,6 +309,19 @@ async def registration_submit(body: dict):
 async def registration_refresh(body: dict):
     return await _registration_browser('refresh', body)
 
+
+@app.post('/api/registration/accounts/submit-existing')
+async def submit_existing_registration(body: dict):
+    """Queue the explicit confirmation for the existing Playwright window.
+
+    The page is only touched by its owning browser thread, not this handler.
+    """
+    from nexora_accounts.registration_submit import request_submit
+    return _account_request(lambda: request_submit(
+        body.get("accountId"), body.get("userConfirmed"), _accounts().repo
+    ))
+
+
 def main():
     parser = argparse.ArgumentParser(description='Lixo CPA no navegador (apenas máquina local)')
     parser.add_argument('--port', type=int, default=8765)
