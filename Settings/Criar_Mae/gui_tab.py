@@ -1361,7 +1361,7 @@ def run_instance(
                                         type(exc).__name__.lower().replace("_", "-")[:55]
                                     )
                                     log(f"[#{idx}] Cadastro: falha no preenchimento; veja o histórico do perfil.")
-                            log(f"[#{idx}] ✋ MODO MANUAL pronto em {url}.")
+                            log(f"[#{idx} ID={registration_id[:8]}] Navegador pronto; cadastro externo ainda não confirmado.")
 
                         success_finished = True
                         _idle_wait_with_speed(
@@ -2617,6 +2617,13 @@ class MaeTab(ctk.CTkFrame):
             self._log(f"[UI] {exc}")
             return
         count = self._get_int(self.count_var, default=1, min_v=1, max_v=50)
+        if not run_auto:
+            from datetime import datetime, timezone
+            started = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            self._log(
+                f"[{started}] [Abrir Conta] Tipo=Mãe; "
+                f"{count} perfil(is) por link, {len(normalized_urls)} link(s)."
+            )
 
         url_list = [u.strip() for u in urls.split(",") if u.strip()]
         total_urls = len(url_list) if url_list else 1
