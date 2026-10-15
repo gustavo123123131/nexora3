@@ -183,9 +183,9 @@ def test_nexora_visual_and_existing_controls(tmp_path):
                 assert page.get_by_text("Rota de cadastro").count() == 0
                 page.get_by_role("button", name="Ver detalhes").click()
                 expect(page.get_by_text("Pessoa Teste ABC")).to_be_visible()
-                cpf=page.get_by_role("textbox", name="CPF fictício não verificado")
+                expect(page.locator(".accounts-summary")).to_contain_text("123.456.789-09")
+                expect(page.get_by_text("CPF gerado (não verificado)").last).to_be_visible()
                 password=page.get_by_role("textbox", name="Senha gerada")
-                expect(cpf).to_have_attribute("type", "password")
                 expect(password).to_have_attribute("type", "password")
                 page.get_by_role("button", name="Mostrar").first.click()
                 expect(password).to_have_attribute("type", "text")
