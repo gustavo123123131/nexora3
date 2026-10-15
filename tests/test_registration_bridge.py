@@ -117,7 +117,7 @@ def test_routes_have_csrf_and_do_not_touch_cloud(tmp_path, monkeypatch):
         assert response.status_code == 200, response.text
         account = response.json()["account"]
         assert account["status"] == "local"
-        assert len(client.get("/api/registration/accounts").json()["accounts"]) == 1
+        assert len(client.get("/api/registration/accounts?profiles_only=false").json()["accounts"]) == 1
         response = client.post("/api/registration/prepare",
                                headers=headers, json={"accountId": account["id"]})
         # No authorized browser configured, so this is rejected before any Playwright.
@@ -207,7 +207,7 @@ def test_json_batch_api_with_csrf(tmp_path, monkeypatch):
         })
         assert result.status_code == 200, result.text
         assert result.json()["quantity"] == 3
-        assert len(client.get("/api/registration/accounts").json()["accounts"]) == 3
+        assert len(client.get("/api/registration/accounts?profiles_only=false").json()["accounts"]) == 3
         assert client.post("/api/registration/cloud/sync", headers=headers, json={}).status_code == 404
 
 
