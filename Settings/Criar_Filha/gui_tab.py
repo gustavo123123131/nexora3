@@ -1959,8 +1959,6 @@ class FilhaTab(ctk.CTkFrame):
 
         self.headless_var = ctk.BooleanVar(value=False)
         self.keep_profiles_var = ctk.BooleanVar(value=False)
-        self.same_identity_var = ctk.BooleanVar(value=False)
-        self.generated_cpf_var = ctk.BooleanVar(value=True)
 
         flags = ctk.CTkFrame(left, corner_radius=14)
         flags.pack(fill="x", padx=16, pady=(0, 12))
@@ -1969,23 +1967,10 @@ class FilhaTab(ctk.CTkFrame):
 
         self.chk_headless = ctk.CTkCheckBox(flags, text="Rodar invisível (Headless)", variable=self.headless_var)
         self.chk_keep = ctk.CTkCheckBox(flags, text="Manter perfis (__profiles)", variable=self.keep_profiles_var)
-        self.chk_same_identity = ctk.CTkCheckBox(
-            flags,
-            text="Reutilizar dados",
-            variable=self.same_identity_var,
-        )
-        self.chk_generated_cpf = ctk.CTkCheckBox(
-            flags,
-            text="Usar CPF Aleatorio",
-            variable=self.generated_cpf_var,
-        )
-
         self.start_game_enabled_var = ctk.BooleanVar(value=False)
         self.start_game_name_var = ctk.StringVar()
         self.start_game_id_var = ctk.StringVar()
 
-        self.chk_same_identity.grid(row=0, column=0, sticky="w", padx=16, pady=12)
-        self.chk_generated_cpf.grid(row=3, column=0, columnspan=2, sticky="w", padx=16, pady=(0, 12))
 
         self.chk_start_game = ctk.CTkCheckBox(
             flags,
@@ -2196,8 +2181,6 @@ class FilhaTab(ctk.CTkFrame):
         self.quick_game_buttons_data = _normalize_quick_game_buttons(st.get(_scope_key("quick_game_buttons")))
         self._refresh_quick_game_buttons()
         self._on_start_game_ui_change()
-        self.same_identity_var.set(bool(st.get(_scope_key("same_identity_enabled"), st.get("same_identity_enabled", False))))
-        self.generated_cpf_var.set(bool(st.get(_scope_key("use_generated_cpf"), True)))
         self.auto_close_popups_var.set(bool(st.get(_scope_key("auto_close_popups"), False)))
         self.autopix_enabled_var.set(False)  # Pix pausado, inclusive em configurações antigas.
         self.autochave_enabled_var.set(False)  # Evita iniciar sessões Pix ocultas.
@@ -2237,9 +2220,7 @@ class FilhaTab(ctk.CTkFrame):
             _scope_key("start_game_name"): self.start_game_name_var.get().strip(),
             _scope_key("start_game_id"): self.start_game_id_var.get().strip(),
             _scope_key("quick_game_buttons"): _normalize_quick_game_buttons(self.quick_game_buttons_data),
-            _scope_key("same_identity_enabled"): bool(self.same_identity_var.get()),
             _scope_key("auto_close_popups"): bool(self.auto_close_popups_var.get()),
-            _scope_key("use_generated_cpf"): bool(self.generated_cpf_var.get()),
             _scope_key("autopix_enabled"): bool(self.autopix_enabled_var.get()),
             _scope_key("autochave_enabled"): bool(self.autochave_enabled_var.get()),
             _scope_key("autopix_bank"): (self.autopix_bank_var.get().strip() or get_default_bank()),
@@ -2304,8 +2285,6 @@ class FilhaTab(ctk.CTkFrame):
         self.chk_start_game.configure(state=state)
         self.start_game_name_entry.configure(state=state)
         self.start_game_id_entry.configure(state=state)
-        self.chk_same_identity.configure(state=state)
-        self.chk_generated_cpf.configure(state=state)
         self.chk_autopix.configure(state=state)
         self.chk_autochave.configure(state=state)
         if hasattr(self, "autopix_bank_combo") and self.autopix_bank_combo is not None:
@@ -2360,7 +2339,7 @@ class FilhaTab(ctk.CTkFrame):
 
         headless = bool(self.headless_var.get())
         keep_profiles = bool(self.keep_profiles_var.get())
-        use_same_identity = bool(self.same_identity_var.get()) and run_auto
+        use_same_identity = False
         start_game_enabled = bool(self.start_game_enabled_var.get()) and run_auto
         start_game_name = self.start_game_name_var.get().strip()
         start_game_id = self.start_game_id_var.get().strip()
@@ -2373,9 +2352,6 @@ class FilhaTab(ctk.CTkFrame):
         launch_plans = None
 
         self.save_settings()
-
-        if use_same_identity:
-            self._log("[UI] Mesmo nick/email ativo: a 1ª ocorrência de cada site entra no grupo compartilhado; repetidos ficam individuais.")
 
         autopix_enabled = bool(self.autopix_enabled_var.get()) and run_auto
         autochave_enabled = bool(self.autochave_enabled_var.get()) and run_auto
