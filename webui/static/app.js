@@ -11,7 +11,7 @@ const ACCOUNTS_VIEW_ID = '__nexora_accounts_local__';
 let accountsViewInstance = null;
 function accountsView() {
   if (!accountsViewInstance) {
-    accountsViewInstance = window.NexoraAccountsView.create({get: getRegistration});
+    accountsViewInstance = window.NexoraAccountsView.create({get: getRegistration, post});
   }
   accountsViewInstance.onShow();
   return accountsViewInstance.node;
