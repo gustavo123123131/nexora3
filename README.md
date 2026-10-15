@@ -17,8 +17,9 @@ Ao clicar **Abrir Conta**, o agente Windows:
 - abre Chromium nos links configurados. Em **demonstrações locais**, preenche
   e pode enviar o formulário de teste sem digitação. Em plataformas reais,
   **não** envia dados fictícios, pois nome civil e contato precisam ser legítimos;
-- disponibiliza os registros para consulta na aba **Contas**, com CPF gerado
-  visível e senha mascarada por padrão e botão **Ver detalhes**.
+- disponibiliza cada perfil na aba **Contas** em cartão compacto mostrando
+  somente **Nome da conta, Username e E-mail**, sem formulários de cadastro,
+  histórico de cadastro ou botão **Ver detalhes**.
 
 O JSON é gravado por substituição atômica. Contas antigas do arquivo
 `accounts.sqlite` são importadas quando o `accounts.json` ainda não existe,
@@ -36,7 +37,8 @@ locais, tenta preencher e enviar o cadastro de teste automaticamente.
 Em plataformas externas, dados de identificação fictícios continuam bloqueados:
 username e senha podem ser gerados, mas nome e contatos legítimos devem ser
 informados pelo titular. Nenhuma confirmação externa é inferida de um clique ou
-HTTP 200. Os detalhes e os logs aparecem em **Contas**.
+HTTP 200. Os logs técnicos permanecem no terminal/console do agente Windows,
+não nos cartões da aba **Contas**.
 
 ### Atualizar a instalação atual (máximo três ações)
 
