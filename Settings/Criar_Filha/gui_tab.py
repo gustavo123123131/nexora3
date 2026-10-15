@@ -1350,16 +1350,12 @@ def run_instance(
                                     # Even a test-data-blocked profile needs a watcher:
                                     # the user can supply legitimate values transiently in Contas.
                                     from nexora_accounts.registration_submit import (
-                                        RegistrationWatcher, request_demo_submit,
-                                        request_confirmed_auto_submit
+                                        RegistrationWatcher, request_autosubmit_after_fill,
                                     )
                                     registration_watcher = RegistrationWatcher(page, instance_plan, log=log)
-                                    if prefill_result["status"] == "filled":
-                                        profile_id = instance_plan["profile_record_id"]
-                                        if request_demo_submit(profile_id):
-                                            log(f"[#{idx}] Cadastro DEMO: clique em Registro solicitado (ambiente local).")
-                                        elif request_confirmed_auto_submit(profile_id):
-                                            log(f"[#{idx}] Cadastro confirmado: clique único em Registro solicitado no navegador.")
+                                    request_autosubmit_after_fill(
+                                        page, instance_plan, prefill_result, log,
+                                    )
                                 except Exception as exc:
                                     _registration_stage(
                                         "browser-error", "local",
