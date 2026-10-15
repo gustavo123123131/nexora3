@@ -168,9 +168,38 @@ class LocalProfileStore:
             self._write(data)
             return profile_id
 
-    def create(self, origin: str) -> dict:
+    def get(self, profile_id: int) -> dict:
+        if type(profile_id) is not int or profile_id < 1:
+            raise LocalProfileError("ID da conta inválido.")
+        with _LOCK:
+            profile = next(
+                (p.copy() for p in self._read()["profiles"] if p["id"] == profile_id),
+                None,
+            )
+        if profile is None:
+            raise LocalProfileError("Conta não encontrada.")
+        return profile
+
+    def create(
+        self, origin: str, *,
+        device_mode: str | None = None,
+        start_url: str | None = None,
+    ) -> dict:
         if origin not in ("mae", "filha"):
             raise LocalProfileError("Origem do perfil inválida.")
+        if device_mode is not None:
+            from Settings.device_modes import resolve_mode
+            try:
+                resolved = resolve_mode(device_mode)
+            except ValueError as exc:
+                raise LocalProfileError("Dispositivo inválido para a conta.") from exc
+            if resolved == "mixed":
+                raise LocalProfileError("Escolha Android ou iPhone para esta conta.")
+            device_mode = resolved
+        if start_url is not None and (
+            not isinstance(start_url, str) or len(start_url) > 2048
+        ):
+            raise LocalProfileError("URL inicial inválida.")
         with _LOCK:
             data = self._read()
             number = data["nextNumber"]
@@ -201,6 +230,10 @@ class LocalProfileStore:
                 "confirmPassword": password,
                 "createdAt": datetime.now(timezone.utc).isoformat(),
             }
+            if device_mode is not None:
+                record["deviceMode"] = device_mode
+            if start_url is not None:
+                record["startUrl"] = start_url
             data["profiles"].append(record)
             data["nextNumber"] = number + 1
             self._write(data)
