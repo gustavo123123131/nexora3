@@ -54,8 +54,6 @@ async def lifespan(_app):
     finally:
         if _GUI is not None:
             _GUI.gateway_stop_event.set()
-        if _accounts_service is not None:
-            _accounts_service.stop()
         ctk.shutdown()
 
 
@@ -216,115 +214,6 @@ async def answer_dialog(body: DialogAnswer):
     if not dialogs.answer_dialog(body.id, body.value):
         raise HTTPException(status_code=404, detail='Janela expirada')
     return {'ok': True}
-
-
-
-# Cadastro e diretório de contas: executados SOMENTE pelo agente localhost do
-# Windows. A página do Codespaces acessa estas rotas via pareamento privado.
-_accounts_service = None
-
-
-def _accounts():
-    global _accounts_service
-    if _accounts_service is None:
-        from nexora_accounts.service import AccountsService
-        _accounts_service = AccountsService()
-    return _accounts_service
-
-
-def _account_request(callable_):
-    from nexora_accounts.service import AccountError
-    try:
-        return callable_()
-    except AccountError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
-@app.get('/api/registration/sites')
-async def registration_sites():
-    return {'sites': _accounts().repo.sites()}
-
-
-@app.post('/api/registration/sites')
-async def registration_add_site(body: dict):
-    return {'site': _account_request(lambda: _accounts().repo.add_site(body))}
-
-
-@app.get('/api/registration/accounts')
-async def registration_accounts(query: str = '', status: str = '', profiles_only: bool = True):
-    # The Contas UI receives only profiles from Abrir Conta. Legacy callers
-    # can still query old manually created records for migration/backup.
-    return {'accounts': _account_request(lambda: _accounts().repo.accounts(
-        query, status, profiles_only=profiles_only
-    ))}
-
-
-@app.post('/api/registration/accounts')
-async def registration_add_account(body: dict):
-    quantity = body.get('quantity', 1)
-    if quantity == 1:
-        return {'account': _account_request(lambda: _accounts().repo.add_account(body)), 'quantity': 1}
-    return _account_request(lambda: _accounts().repo.create_batch(body))
-
-
-@app.post('/api/registration/accounts/delete')
-async def registration_delete_account(body: dict):
-    _account_request(lambda: _accounts().repo.delete(body.get('accountId')))
-    return {'ok': True}
-
-
-async def _registration_browser(action: str, body: dict):
-    import asyncio
-    from nexora_accounts.service import AccountError
-    key = body.get('accountId', '')
-    if not isinstance(key, str) or len(key) > 60:
-        raise HTTPException(status_code=422, detail='Conta inválida.')
-    service = _accounts()
-    try:
-        account = service.repo.account(key)
-        if action != 'open' and not service.repo.site(account['siteId'])['authorized']:
-            raise AccountError('O cadastro guiado exige autorização explícita do site.')
-        if service.browser is None:
-            raise HTTPException(status_code=503, detail='Navegador local não inicializado.')
-        future = service.browser.execute(action, key, body)
-        return await asyncio.wait_for(asyncio.wrap_future(future), timeout=35)
-    except AccountError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except asyncio.TimeoutError as exc:
-        raise HTTPException(status_code=504, detail='Operação demorou demais. Confira o navegador.') from exc
-
-
-@app.post('/api/registration/accounts/open')
-async def registration_open_account(body: dict):
-    return await _registration_browser('open', body)
-
-
-@app.post('/api/registration/prepare')
-async def registration_prepare(body: dict):
-    return await _registration_browser('prepare', body)
-
-
-@app.post('/api/registration/submit')
-async def registration_submit(body: dict):
-    return await _registration_browser('submit', body)
-
-
-@app.post('/api/registration/refresh')
-async def registration_refresh(body: dict):
-    return await _registration_browser('refresh', body)
-
-
-@app.post('/api/registration/accounts/submit-existing')
-async def submit_existing_registration(body: dict):
-    """Queue the explicit confirmation for the existing Playwright window.
-
-    The page is only touched by its owning browser thread, not this handler.
-    """
-    from nexora_accounts.registration_submit import request_submit
-    return _account_request(lambda: request_submit(
-        body.get("accountId"), body.get("userConfirmed"), _accounts().repo,
-        body.get("values")
-    ))
 
 
 
