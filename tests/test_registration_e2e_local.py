@@ -255,3 +255,49 @@ def test_real_site_layout_preview_fills_only_nonidentity_credentials(tmp_path):
             context.close()
         finally:
             browser.close()
+
+
+
+def test_configured_owner_name_autofills_in_real_chromium_without_sending(
+        tmp_path, monkeypatch):
+    """Real browser, intercepted HTTPS document: field fill only, no signup POST."""
+    monkeypatch.setenv("NEXORA_REGISTRATION_OWNER_NAME", "Titular Autorizado")
+    url = "https://registration.preview.example.org/register"
+    repo = AccountsRepository(tmp_path / "accounts.json")
+    plan = repo.create_launch_profiles(
+        "filha", "desktop", [url], 1, tmp_path / "profiles"
+    )[0]
+    account_id = plan["profile_record_id"]
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        try:
+            context = browser.new_context()
+            post_count = []
+            def intercept(route):
+                if route.request.method.upper() != "GET":
+                    post_count.append(route.request.method)
+                route.fulfill(status=200, content_type="text/html; charset=utf-8",
+                              body=HTML)
+            context.route("https://registration.preview.example.org/**", intercept)
+            page = context.new_page()
+            page.goto(url, wait_until="domcontentloaded")
+            result = autofill_existing_registration(
+                page, plan, repo,
+                progress=lambda stage: trace_registration(
+                    account_id, plan["idx"], stage, repository=repo
+                ),
+            )
+            assert result["status"] == "owner-name-filled"
+            assert result["fieldCount"] == 4
+            assert page.locator("input[data-input-name='realName']").input_value() == "Titular Autorizado"
+            assert page.locator("#insideRegisterSubmitClick").is_visible()
+            assert post_count == []
+            assert "Titular Autorizado" not in repo.path.read_text(encoding="utf-8")
+            assert repo.account(account_id)["stage"] == "submit-not-sent"
+            assert any(
+                entry["stage"] == "real-name-filled"
+                for entry in repo.account(account_id)["registrationLog"]
+            )
+            context.close()
+        finally:
+            browser.close()
