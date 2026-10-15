@@ -26,12 +26,19 @@ class Locator:
         self.first = self
         self.present = present
         self.clicks = 0
+        self.fills = []
 
     def is_visible(self):
         return self.present
 
     def click(self, timeout=None):
         self.clicks += 1
+
+    def fill(self, value, timeout=None):
+        self.fills.append(value)
+
+    def get_attribute(self, _name):
+        return "text"
 
 
 class Page:
@@ -41,9 +48,15 @@ class Page:
         self.callbacks = {}
         self.button = Locator()
         self.success = Locator(False)
+        self.fields = {f"input[data-input-name='{name}']": Locator()
+                       for name in ("account", "userpass", "confirmPassword",
+                                    "realName", "email", "phone")}
 
     def on(self, event, callback):
         self.callbacks[event] = callback
+
+    def wait_for_load_state(self, *args, **kwargs):
+        pass
 
     def is_closed(self):
         return self.closed
@@ -53,7 +66,7 @@ class Page:
             return self.button
         if selector == "#registration-success":
             return self.success
-        return Locator(False)
+        return self.fields.get(selector, Locator(False))
 
     def response(self, status):
         class Request:
@@ -188,3 +201,41 @@ def test_json_events_are_bounded_and_exclude_credentials(tmp_path):
     assert len(row["registrationLog"]) == 30
     assert all(event == {"at": event["at"], "stage": "provider-response-unverified",
                          "httpStatus": 200} for event in row["registrationLog"])
+
+
+
+def test_real_values_are_transient_and_submit_using_existing_page():
+    repo = Repo(valid_account())
+    repo.account_record["profileData"] = {"isTestData": True}
+    repo.account_record["stage"] = "test-data-blocked"
+    repo.account_record["status"] = "local"
+    key = repo.account_record["id"]
+    page, clock = Page("https://example.org/register"), Clock()
+    watcher = RegistrationWatcher(page, {"profile_record_id": key},
+                                  repository=repo, clock=clock,
+                                  success_selector="#registration-success")
+    values = {
+        "username": "titular_123",
+        "fullName": "Titular Autorizado",
+        "email": "titular@provedor.example",
+        "phone": "+55 11987654321",
+        "password": "SenhaSegura!123",
+        "confirmPassword": "SenhaSegura!123",
+    }
+    assert request_submit(key, True, repo, values)["queued"]
+    watcher.tick()
+    assert page.fields["input[data-input-name='account']"].fills == ["titular_123"]
+    assert page.fields["input[data-input-name='userpass']"].fills == ["SenhaSegura!123"]
+    assert page.button.clicks == 1
+    assert repo.account_record["profileData"] == {"isTestData": True}
+    assert all("SenhaSegura!123" not in str(event) for event in repo.events)
+
+
+def test_rejects_invalid_transient_values():
+    repo = Repo(valid_account())
+    values = {"username": "abc", "fullName": "Titular Autorizado",
+              "email": "falso@example.test", "password": "SenhaSegura!123",
+              "confirmPassword": "SenhaSegura!123"}
+    with pytest.raises(Exception):
+        request_submit(repo.account_record["id"], True, repo, values)
+    assert not repo.events
