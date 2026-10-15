@@ -63,6 +63,7 @@ def test_real_profile_autofills_but_never_submits():
     assert result["status"] == "filled"
     assert fields["input[data-input-name='account']"].fills == ["joana_titular"]
     assert fields["input[data-input-name='confirmPassword']"].fills == ["Senha!Teste12345"]
+    assert fields["input[data-input-name='realName']"].fills == ["Pessoa Autorizada"]
     assert all(field.clicks == 0 for field in fields.values())
     assert repo.stages == [("id", "pending", "review")]
 
