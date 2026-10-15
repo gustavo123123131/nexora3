@@ -1,5 +1,7 @@
 name: Cadastro e logs — testes offline
 on:
+  push:
+    branches: [feat/registration-prefill-existing-profiles]
   pull_request:
     branches: [main]
   workflow_dispatch:
