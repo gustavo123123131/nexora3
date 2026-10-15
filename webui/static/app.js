@@ -74,6 +74,7 @@ if (runningInCodespaces) checkCloudServer();
 const localAgentBase = 'http://127.0.0.1:8767';
 let agentKey = runningInCodespaces ? (sessionStorage.getItem('lixocpa-agent-key') || '') : '';
 let agentConnected = false;
+let agentOutageSince = 0;
 let pairingScreen = null;
 
 async function fetchAgentState(key) {
@@ -145,6 +146,7 @@ function showAgentPairing(message = '') {
       agentKey = key;
       sessionStorage.setItem('lixocpa-agent-key', key);
       agentConnected = true;
+      agentOutageSince = 0;
       pairingScreen = null;
       csrfToken = data.csrf_token;
       lastServerVersion = data.server_version;
@@ -533,7 +535,8 @@ async function poll() {
     }
     lastServerVersion = data.server_version;
     hadSuccessfulConnection = true;
-    if (!runningInCodespaces) showConnectionWarning('');
+    agentOutageSince = 0;
+    showConnectionWarning('');
     if (runningInCodespaces) agentConnected = true;
     const serialized = JSON.stringify(data.tree);
     csrfToken = data.csrf_token;
@@ -545,12 +548,18 @@ async function poll() {
     await handleDialogs(data.dialogs);
   } catch (e) {
     if (runningInCodespaces) {
+      // The Windows supervisor automatically restarts Python after installing
+      // an update. Preserve the pairing key during that brief interruption.
+      if (!agentOutageSince) agentOutageSince = Date.now();
+      if (agentKey && (Date.now() - agentOutageSince) < 45000) {
+        showConnectionWarning('Agente Windows reiniciando ou atualizando... reconectando automaticamente.');
+        return;
+      }
       agentConnected = false;
-      // A remote site cannot guarantee local-network browser permission.
       if (!pairingScreen) {
         agentKey = '';
         sessionStorage.removeItem('lixocpa-agent-key');
-        showAgentPairing('Conexão com o Windows interrompida. Confira o agente e conecte novamente.');
+        showAgentPairing('O Windows ficou indisponível por mais de 45 segundos. Confira o agente e conecte novamente.');
       }
     } else {
       if (hadSuccessfulConnection) disconnectedAfterSuccess = true;
