@@ -1,0 +1,72 @@
+.accounts-local {
+  padding: 28px 30px 44px;
+  min-height: 100%;
+  color: #e8edf5;
+}
+.accounts-local h1 {
+  font-size: 27px;
+  font-weight: 750;
+  margin: 0 0 6px;
+}
+.accounts-local > p {
+  color: #95a3b8;
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+.accounts-local-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  gap: 14px;
+  align-items: start;
+}
+.accounts-local-card {
+  background: #151e2c;
+  border: 1px solid #2a3749;
+  border-radius: 14px;
+  padding: 18px;
+  min-width: 0;
+}
+.accounts-local-card header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.accounts-local-card h2 {
+  font-size: 17px;
+  margin: 0;
+  color: #f3f7fc;
+}
+.accounts-local-card header span {
+  color: #a6b6cc;
+  font-size: 11px;
+  border: 1px solid #3b4a60;
+  border-radius: 999px;
+  padding: 4px 8px;
+}
+.accounts-local-card dl {
+  display: grid;
+  gap: 0;
+  margin: 0;
+}
+.accounts-local-card dl > div {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  padding: 8px 0;
+  border-top: 1px solid #283448;
+  font-size: 12px;
+}
+.accounts-local-card dt { color: #94a3b8; }
+.accounts-local-card dd {
+  color: #e6edf7;
+  margin: 0;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+@media (max-width: 620px) {
+  .accounts-local { padding: 18px 12px; }
+  .accounts-local-card dl > div { grid-template-columns: 100px minmax(0, 1fr); }
+}
