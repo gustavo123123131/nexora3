@@ -557,11 +557,14 @@ def _idle_wait_with_speed(
     log: Callable[[str], None],
     idx: int,
     shared_phone_key: str = "",
+    ip_refresh_callback=None,
 ):
     last_version = -1
 
     last_heartbeat = 0.0
     HEARTBEAT_EVERY = 8.0
+    last_ip_check = time.time()
+    IP_REFRESH_EVERY = 45.0
 
     last_popup_sweep = 0.0
     POPUP_SWEEP_EVERY = 0.8
@@ -700,6 +703,15 @@ def _idle_wait_with_speed(
             if now - last_heartbeat >= HEARTBEAT_EVERY:
                 last_heartbeat = now
                 page.evaluate("()=>0")
+        except Exception:
+            pass
+
+        # Best effort: refresh the displayed proxy IP from this actual browser
+        # page. A page's CSP/CORS may deny the check; keep the verified IP.
+        try:
+            if ip_refresh_callback and time.time() - last_ip_check >= IP_REFRESH_EVERY:
+                last_ip_check = time.time()
+                ip_refresh_callback()
         except Exception:
             pass
 
@@ -1129,6 +1141,26 @@ def run_instance(
 
                 page = context.pages[0] if context.pages else context.new_page()
 
+                browser_exit_ip = ""
+                if session_proxy:
+                    # A TCP or separate Python proxy test cannot prove the
+                    # Chromium context took the proxy route. Navigate this
+                    # actual browser page to a public IP endpoint and confirm
+                    # the local gateway handled the authenticated CONNECT.
+                    from Settings.session_proxy_gateway import (
+                        verify_browser_exit_ip, ProxyConnectionError,
+                    )
+                    try:
+                        browser_exit_ip = verify_browser_exit_ip(page, session_gateway)
+                        log(f"[#{idx}] [Proxy] IP público verificado no Chromium: {browser_exit_ip}.")
+                    except ProxyConnectionError as exc:
+                        if exc.code == "browser_proxy_bypassed":
+                            log(f"[#{idx}] [Proxy] BLOQUEADO: navegador acessou o verificador de IP sem passar pelo gateway. Possível interferência de configuração/extensão.")
+                        else:
+                            log(f"[#{idx}] [Proxy] BLOQUEADO: não foi possível confirmar o IP através do Chromium e do gateway (verificadores indisponíveis ou erro de rede).")
+                        raise HttpsNavigationError(
+                            "Proxy não verificada no Chromium; a navegação externa foi cancelada."
+                        ) from exc
 
                 # Match the native window to the emulated phone independently
                 # from the site's CSS viewport. No DOM/CSS edits or zoom.
@@ -1147,7 +1179,7 @@ def run_instance(
                 mirror.register(idx)
                 mirror.install_receiver(page)
 
-                last_overlay_ip_refresh = {"at": 0.0, "url": "", "ip": ""}
+                last_overlay_ip_refresh = {"at": 0.0, "url": "", "ip": browser_exit_ip}
 
                 def _ensure_overlay():
                     try:
@@ -1187,9 +1219,14 @@ def run_instance(
                         return last_overlay_ip_refresh["ip"]
 
                     _ensure_overlay()
-                    # APIRequestContext's proxy isolation is not guaranteed
-                    # here; never query the exit IP over an unverified route.
-                    ip_live = "" if session_proxy else fetch_public_ip_via_context(context)
+                    # The browser's exit IP was verified through the
+                    # session gateway before visiting the target site. Keep
+                    # that address visible across main-frame navigations.
+                    # Context.request could use a separate (direct) network path.
+                    ip_live = (
+                        last_overlay_ip_refresh["ip"] if session_proxy
+                        else fetch_public_ip_via_context(context)
+                    )
                     last_overlay_ip_refresh["at"] = now
                     last_overlay_ip_refresh["url"] = current_url
                     last_overlay_ip_refresh["ip"] = ip_live or ""
@@ -1198,6 +1235,19 @@ def run_instance(
 
                 _ensure_overlay()
                 _refresh_overlay_ip(force=True)
+
+                def _periodic_proxy_ip_refresh():
+                    if not session_proxy or stop_event.is_set():
+                        return
+                    from Settings.session_proxy_gateway import refresh_browser_exit_ip
+                    latest = refresh_browser_exit_ip(page, session_gateway)
+                    if latest:
+                        previous = last_overlay_ip_refresh["ip"]
+                        last_overlay_ip_refresh["ip"] = latest
+                        last_overlay_ip_refresh["at"] = time.time()
+                        _set_overlay_ip(latest)
+                        if previous != latest:
+                            log(f"[#{idx}] [Proxy] IP de saída observado novamente no Chromium: {latest}.")
 
                 def _reapply_overlay(*_args):
                     _refresh_overlay_ip(force=True)
@@ -1287,6 +1337,9 @@ def run_instance(
                             log,
                             idx,
                             shared_phone_key=shared_phone_key,
+                            ip_refresh_callback=(
+                                _periodic_proxy_ip_refresh if session_proxy else None
+                            ),
                         )
 
                     else:
@@ -1305,6 +1358,9 @@ def run_instance(
                             log,
                             idx,
                             shared_phone_key=shared_phone_key,
+                            ip_refresh_callback=(
+                                _periodic_proxy_ip_refresh if session_proxy else None
+                            ),
                         )
 
                 except HttpsNavigationError:
