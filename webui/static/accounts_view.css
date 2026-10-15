@@ -61,3 +61,20 @@
 .accounts-close-review{background:#253752;border:1px solid #4e6588;border-radius:7px;color:#cad6ed;font-size:10px;padding:9px 12px;cursor:pointer}
 @media(max-width:1050px){.accounts-main-grid{grid-template-columns:1fr}.accounts-directory header{flex-direction:column}.accounts-directory-tools{width:100%}.accounts-directory-tools input{flex:1}}
 @media(max-width:620px){.accounts-heading{align-items:flex-start;flex-direction:column}.accounts-two,.accounts-review .accounts-submit-fields{grid-template-columns:1fr}.accounts-panel form,.accounts-panel>header{padding:15px}.accounts-selector-row{grid-template-columns:1fr}.accounts-panel .accounts-required{padding:4px}}
+
+/* Supabase Auth: locked workspace until a signed-in user's RLS session is active. */
+.accounts-cloud-locked .accounts-main-grid,
+.accounts-cloud-locked .accounts-directory,
+.accounts-cloud-locked .accounts-review{display:none!important}
+.accounts-cloud-auth{margin-bottom:18px}
+.accounts-cloud-auth form{padding:0 22px 22px}
+.accounts-cloud-auth .cloud-auth-buttons{display:flex;flex-wrap:wrap;gap:12px;margin-top:16px}
+.accounts-cloud-auth .cloud-auth-buttons button,
+.accounts-cloud-auth .cloud-logout{border-radius:8px;padding:11px 15px;cursor:pointer;font-weight:700}
+.accounts-cloud-auth .cloud-create,
+.accounts-cloud-auth .cloud-logout{background:#26364e;color:#cddcfa;border:1px solid #516485}
+.accounts-cloud-auth .cloud-auth-connected{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 22px 20px;flex-wrap:wrap}
+.accounts-cloud-auth .cloud-auth-connected[hidden],
+.accounts-cloud-auth form[hidden]{display:none!important}
+.accounts-cloud-auth .cloud-auth-email{font-size:12px;color:#a4e6cd;overflow-wrap:anywhere}
+.accounts-cloud-auth .cloud-auth-notice{padding:0 22px 18px;color:#bbcae2;font-size:12px;margin:0;min-height:1em}
