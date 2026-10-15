@@ -2426,6 +2426,8 @@ class FilhaTab(ctk.CTkFrame):
                         )
                         return
                     self._log(f"[Proxy] {entry['host']}:{entry['port']}: HTTPS e CONNECT verificados.")
+                    if result.get("exitIp"):
+                        self._log(f"[Proxy] IP de saída observado no teste: {result['exitIp']} (pode mudar em proxy rotativa).")
                 for plan, entry in zip(launch_plans, assignments):
                     plan["proxy_config"] = ProxyConfig(
                         server=f"{entry['protocol']}://{entry['host']}:{entry['port']}",
