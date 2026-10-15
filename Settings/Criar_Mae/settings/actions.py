@@ -5,6 +5,11 @@ import json
 from pathlib import Path
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 
+
+class RegistrationUnverified(Exception):
+    """Registration has no trustworthy confirmation; do not retry submission."""
+    pass
+
 # --- IMPORTAÇÕES ---
 from .identity import get_random_identity
 from .withdrawal import configure_withdrawal
@@ -620,6 +625,15 @@ def check_and_fill_register(page: Page, idx: int, instance_plan: dict | None = N
 
     submit_loc, _ = _first_visible_locator(page, SEL["submit_register"], timeout=15000)
 
+    # Fail before submitting anything when the provider has no verified outcome rule.
+    import os
+    confirmation_selector = os.environ.get("NEXORA_REGISTRATION_SUCCESS_SELECTOR", "").strip()
+    if not confirmation_selector:
+        raise RegistrationUnverified(
+            "CADASTRO NÃO EXECUTADO: falta o indicador de conta autenticada "
+            "NEXORA_REGISTRATION_SUCCESS_SELECTOR do site autorizado. "
+            "Nenhum formulário foi enviado."
+        )
     max_retries = 6
     success = False
     final_account = None
@@ -687,21 +701,13 @@ def check_and_fill_register(page: Page, idx: int, instance_plan: dict | None = N
                     pass
 
             # No HTTP 200, modal close, or click can prove a completed account.
-            # Each authorized provider needs its own unequivocal logged-in indicator.
-            import os
-            confirmation_selector = os.environ.get("NEXORA_REGISTRATION_SUCCESS_SELECTOR", "").strip()
-            if not confirmation_selector:
-                raise Exception(
-                    "CADASTRO NÃO CONFIRMADO: falta configurar "
-                    "NEXORA_REGISTRATION_SUCCESS_SELECTOR para este site. "
-                    "Não salvamos conta sem comprovação."
-                )
+            # Use a specific, unambiguous authenticated-account marker.
             try:
                 page.locator(confirmation_selector).first.wait_for(
                     state="visible", timeout=30000
                 )
             except Exception as exc:
-                raise Exception(
+                raise RegistrationUnverified(
                     "CADASTRO PENDENTE/NÃO CONFIRMADO: indicador do site ausente. "
                     "Verifique o resultado e conclua as verificações oficiais. "
                     "Nenhuma conta foi salva como concluída."
