@@ -557,6 +557,7 @@ def _idle_wait_with_speed(
     log: Callable[[str], None],
     idx: int,
     shared_phone_key: str = "",
+    registration_watcher=None,
 ):
     last_version = -1
 
@@ -576,6 +577,13 @@ def _idle_wait_with_speed(
     last_game_launch_version = game_launch_controller.get().version
     last_verify_phone_version = verify_phone_controller.get_version()
     while not stop_event.is_set():
+        # Playwright can only be accessed by the thread that owns this page.
+        if registration_watcher is not None:
+            try:
+                registration_watcher.tick()
+            except Exception:
+                log(f"[#{idx}] Cadastro: falha ao verificar retorno. Confira o perfil.")
+                registration_watcher = None
         # ---- salvar posição individual por idx (1x por clique) ----
         try:
             v = winpos_controller.get_version()
@@ -1149,6 +1157,8 @@ def run_instance(
 
                 page = context.pages[0] if context.pages else context.new_page()
 
+                registration_watcher = None
+
                 # Match the native window to the emulated phone independently
                 # from the site's CSS viewport. No DOM/CSS edits or zoom.
                 mobile_presentation_session = None
@@ -1305,11 +1315,15 @@ def run_instance(
                         else:
                             # Use the same Playwright page and the saved record created by Abrir Conta.
                             # Never submit registration or send fictional identities to remote sites.
+                            registration_watcher = None
                             if instance_plan and instance_plan.get("profile_record_id"):
                                 try:
                                     from nexora_accounts.registration_autofill import autofill_existing_registration
                                     prefill_result = autofill_existing_registration(page, instance_plan)
                                     log(f"[#{idx}] Cadastro: {prefill_result['message']}")
+                                    if prefill_result["status"] == "filled":
+                                        from nexora_accounts.registration_submit import RegistrationWatcher
+                                        registration_watcher = RegistrationWatcher(page, instance_plan, log=log)
                                 except Exception:
                                     log(f"[#{idx}] Cadastro: preenchimento indisponível; verifique o formulário.")
                             log(f"[#{idx}] ✋ MODO MANUAL pronto em {url}.")
@@ -1328,6 +1342,7 @@ def run_instance(
                             log,
                             idx,
                             shared_phone_key=shared_phone_key,
+                            registration_watcher=registration_watcher,
                         )
 
                     else:
@@ -1346,6 +1361,7 @@ def run_instance(
                             log,
                             idx,
                             shared_phone_key=shared_phone_key,
+                            registration_watcher=registration_watcher,
                         )
 
                 except RegistrationUnverified:
