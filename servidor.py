@@ -24,6 +24,7 @@ ROOT_DIR = Path(__file__).resolve().parent
 UI_LOCK = threading.RLock()
 _GUI = None
 _SERVER_VERSION = uuid.uuid4().hex
+NEXORA_EDITION = 'browser-only'
 _CSRF_TOKEN = secrets.token_urlsafe(32)
 
 
@@ -160,7 +161,7 @@ async def only_loopback(request: Request, call_next):
 @app.get('/api/health')
 async def health():
     """Lightweight liveness check; does not initialize accounts or GUI."""
-    return {'service': 'lixocpa', 'status': 'ok', 'server_version': _SERVER_VERSION}
+    return {'service': 'lixocpa', 'status': 'ok', 'edition': NEXORA_EDITION, 'server_version': _SERVER_VERSION}
 
 
 @app.get('/')
@@ -171,7 +172,7 @@ async def index():
 @app.get('/api/state')
 async def state():
     gui = init_original_ui()
-    return {'server_version': _SERVER_VERSION, 'csrf_token': _CSRF_TOKEN, 'tree': ctk.serialize(gui), 'dialogs': dialogs.list_pending()}
+    return {'server_version': _SERVER_VERSION, 'edition': NEXORA_EDITION, 'csrf_token': _CSRF_TOKEN, 'tree': ctk.serialize(gui), 'dialogs': dialogs.list_pending()}
 
 
 class UiEvent(BaseModel):
