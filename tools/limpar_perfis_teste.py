@@ -17,7 +17,7 @@ def main(argv=None):
         help="Remove the previewed TEST records (creates a JSON backup first)"
     )
     args = parser.parse_args(argv)
-    repo = AccountsRepository()
+    repo = AccountsRepository(migrate_test_passwords=False)
     result = repo.cleanup_test_candidates(apply=args.apply)
     print("Armazenamento: " + str(repo.path))
     print("Registros de teste elegíveis: " + str(len(result["candidates"])))
