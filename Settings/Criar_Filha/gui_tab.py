@@ -1249,8 +1249,13 @@ def run_instance(
                         except Exception:
                             pass
 
-                        # Browser-only mode: do not fill, register, or submit forms.
-                        log(f"[#{idx}] Navegador pronto. Nenhum cadastro será executado.")
+                        profile = (instance_plan or {}).get("registration_profile")
+                        if profile:
+                            from Settings.registration_autofill import fill_registration_form
+                            log(f"[#{idx}] [Registro] Preparando {profile['label']}.")
+                            fill_registration_form(page, profile, log, stop_event)
+                        else:
+                            log(f"[#{idx}] Navegador pronto; nenhum perfil designado a esta janela.")
 
                         success_finished = True
                         _idle_wait_with_speed(
@@ -2309,13 +2314,18 @@ class FilhaTab(ctk.CTkFrame):
         """Add one local profile to Contas for this browser launch."""
         try:
             from nexora_accounts.local_profiles import LocalProfileStore
-            profile = LocalProfileStore().create(AREA_PIX_SCOPE)
-            self._log(f"[Contas] {profile['label']} salva.")
-            return True
+            store = LocalProfileStore()
+            profile = store.selected()
+            if profile:
+                self._log(f"[Contas] Usando {profile['label']} selecionada.")
+            else:
+                profile = store.create(AREA_PIX_SCOPE)
+                self._log(f"[Contas] {profile['label']} criada e salva.")
+            return profile
         except Exception as exc:
             self._set_status("Erro ao salvar perfil.")
             self._log(f"[Contas] Falha: {type(exc).__name__}")
-            return False
+            return None
 
     def start_browsers(self):
         """Launch Chromium windows and add one record to Contas."""
@@ -2364,8 +2374,14 @@ class FilhaTab(ctk.CTkFrame):
         launch_plans = None
 
         self.save_settings()
-        if not self.create_local_profile():
+        profile = self.create_local_profile()
+        if not profile:
             return
+        if normalized_urls:
+            launch_plans = _build_instance_plans(normalized_urls, count, use_same_identity)
+            launch_plans[0]["registration_profile"] = profile
+            if len(launch_plans) > 1:
+                self._log("[Registro] Somente a primeira janela usará a conta selecionada.")
 
         autopix_enabled = bool(self.autopix_enabled_var.get()) and run_auto
         autochave_enabled = bool(self.autochave_enabled_var.get()) and run_auto
