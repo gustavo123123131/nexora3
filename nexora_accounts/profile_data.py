@@ -35,18 +35,24 @@ def make_profile_data() -> dict:
     example.test intentionally never receives messages. No generated personal
     identity is authorized for a third-party/KYC registration.
     """
-    prefix = secrets.choice((
-        "aurora", "brisa", "vento", "laguna", "coral", "atlas",
-        "mirante", "sereno", "litoral", "solare",
+    # Synthetically generated, readable names for isolated local test
+    # profiles. These are not verified legal identities.
+    first = secrets.choice((
+        "Marina", "Clara", "Larissa", "Juliana", "Camila",
+        "Felipe", "Lucas", "Bruno", "Rafael", "Daniel",
+    ))
+    last = secrets.choice((
+        "Almeida", "Moraes", "Costa", "Barbosa", "Teixeira",
+        "Pereira", "Martins", "Rocha", "Nogueira", "Ferreira",
     ))
     token = secrets.token_hex(4)
-    username = prefix + token
+    username = first.lower() + last.lower() + token[:6]
     nine = "".join(str(secrets.randbelow(10)) for _ in range(9))
     while len(set(nine)) == 1:
         nine = "".join(str(secrets.randbelow(10)) for _ in range(9))
     cpf = valid_cpf_digits(nine)
     return {
-        "fullName": "Pessoa Teste " + token[:5].upper(),
+        "fullName": first + " " + last,
         "username": username,
         "password": make_password(),
         "email": username + "@example.test",
