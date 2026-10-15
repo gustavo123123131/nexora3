@@ -174,6 +174,71 @@ def request_demo_submit(account_id, repository=None):
     return True
 
 
+
+def log_registration_preflight(page, log):
+    """Read back known form fields without recording any user data or passwords."""
+    from nexora_accounts.registration_autofill import FIELDS
+    log("[Cadastro] Diagnóstico após preenchimento (valores ocultos):")
+    for field in ("account", "userpass", "confirmPassword", "realName", "email", "phone", "cpf"):
+        state = "ausente/oculto"
+        for selector in FIELDS[field]:
+            try:
+                locator = page.locator(selector).first
+                if locator.is_visible():
+                    # input_value is read-only and does not change the form.
+                    try:
+                        value = locator.input_value(timeout=1200)
+                        state = "preenchido" if isinstance(value, str) and value.strip() else "vazio"
+                    except Exception as exc:
+                        state = "visível, leitura falhou (" + type(exc).__name__ + ")"
+                    break
+            except Exception:
+                continue
+        log(f"[Cadastro] Campo {field}: {state}")
+    try:
+        button = page.locator(_SUBMIT_SELECTOR).first
+        visible = button.is_visible()
+        enabled = button.is_enabled() if visible else False
+        log(f"[Cadastro] Botão {_SUBMIT_SELECTOR}: visível={visible} habilitado={enabled}")
+    except Exception as exc:
+        log(f"[Cadastro] Botão {_SUBMIT_SELECTOR}: falha na inspeção ({type(exc).__name__})")
+
+
+def request_autosubmit_after_fill(page, instance_plan, prefill_result, log, repository=None):
+    """Log exactly why the already-existing submit watcher will or will not click.
+
+    Do not modify form filling, generated records, or authorization rules.
+    """
+    repo = repository if repository is not None else AccountsRepository()
+    log_registration_preflight(page, log)
+    status = prefill_result.get("status", "sem-estado")
+    if status != "filled":
+        log(f"[Cadastro] CLIQUE NÃO SOLICITADO: preenchimento terminou em '{status}'; "
+            "o watcher só envia formulários concluídos e autorizados.")
+        return False
+    key = instance_plan["profile_record_id"]
+    account = repo.account(key)
+    if request_demo_submit(key, repo):
+        log(f"[Cadastro] CLIQUE NA FILA: demonstração local; seletor {_SUBMIT_SELECTOR}.")
+        return True
+    profile = account.get("profileData") or {}
+    from nexora_accounts.registration_autofill import _demo
+    if not _demo(account.get("targetUrl", "")):
+        if profile.get("isTestData") is not False:
+            log("[Cadastro] CLIQUE BLOQUEADO: identidade fictícia em site externo.")
+            return False
+        if profile.get("ownerConfirmed") is not True:
+            log("[Cadastro] CLIQUE BLOQUEADO: titular ainda não confirmou os dados.")
+            return False
+    if request_confirmed_auto_submit(key, repo):
+        log(f"[Cadastro] CLIQUE NA FILA: cadastro autorizado; seletor {_SUBMIT_SELECTOR}.")
+        return True
+    log("[Cadastro] CLIQUE NÃO SOLICITADO: perfil não elegível, campos de titular "
+        "incompletos ou etapa incompatível com envio.")
+    return False
+
+
+
 def _take(account_id):
     with _QUEUE_LOCK:
         return _QUEUED.pop(account_id, None)
@@ -341,19 +406,40 @@ class RegistrationWatcher:
                                 return
                             element.fill(value, timeout=6000)
                     self._stage("pending", "review-real-data")
-                # Wait for the exact Registro button in the opened form.
-                # Never fall back to another similarly named element.
+                # Diagnose the real form immediately before the click.
+                log_registration_preflight(self.page, self.log)
                 button = self.page.locator(_SUBMIT_SELECTOR).first
+                self.log(f"[Cadastro] CLIQUE: aguardando {_SUBMIT_SELECTOR} ficar visível.")
                 try:
                     button.wait_for(state="visible", timeout=5000)
-                except Exception:
+                except Exception as exc:
+                    self.log(f"[Cadastro] CLIQUE NÃO EXECUTADO: botão ausente/oculto "
+                             f"({type(exc).__name__}).")
                     self._stage("pending", "submit-button-missing",
                                 error_code="selector-not-found")
                     return
-                # One click only, without bypassing site validation.
+                self.log(f"[Cadastro] CLIQUE: iniciando click() em {_SUBMIT_SELECTOR} "
+                         "(uma tentativa, timeout=8000ms).")
                 self.started_at = self.clock()
                 self._stage("pending", "submitting")
-                button.click(timeout=8000)
+                try:
+                    button.click(timeout=8000)
+                except Exception as exc:
+                    reason = type(exc).__name__
+                    # Avoid logging Playwright's full DOM dump (it may include PII).
+                    try:
+                        if not button.is_visible():
+                            reason += ": botão não está visível"
+                        elif not button.is_enabled():
+                            reason += ": botão está desabilitado"
+                        else:
+                            reason += ": elemento interceptado, alterado ou tempo esgotado"
+                    except Exception:
+                        reason += ": página/elemento indisponível"
+                    self.log(f"[Cadastro] CLIQUE FALHOU: {reason}; sem nova tentativa automática.")
+                    raise
+                self.log(f"[Cadastro] CLIQUE EXECUTADO: Playwright concluiu click() em "
+                         f"{_SUBMIT_SELECTOR}; aceitação pelo site ainda não confirmada.")
                 self._stage("pending", "awaiting-provider")
             except Exception as exc:
                 # The click could already have reached the provider; never retry.
