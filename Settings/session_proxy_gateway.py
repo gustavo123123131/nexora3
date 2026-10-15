@@ -1,13 +1,12 @@
 """Per-browser loopback proxy: isolated credentials, upstream auth and fail-closed routing.
 
 Reuses the Nexora HTTP proxy gateway helpers. Each Chromium instance gets an
-independent localhost port and random credentials; no endpoint is shared by idx.
+independent localhost port and upstream credentials; no endpoint is shared by idx.
 Never forwards a request directly if an upstream proxy was configured.
 """
 from __future__ import annotations
 
-import base64
-import secrets
+import ipaddress
 import socket
 import socketserver
 import ssl
@@ -127,6 +126,33 @@ def probe_proxy(proxy, *, target="example.com", timeout=8):
     except (OSError, TimeoutError, ValueError):
         return {"reachable": False, "status": "network_error",
                 "message": "Proxy indisponível, DNS não resolvido ou tempo de conexão esgotado."}
+
+
+def probe_exit_ip(proxy, timeout=6):
+    """Optional provider-routed HTTPS IP lookup; never use a direct connection."""
+    try:
+        with _open_tunnel(proxy, "api.ipify.org", 443, timeout) as tunnel:
+            with ssl.create_default_context().wrap_socket(
+                tunnel, server_hostname="api.ipify.org"
+            ) as secure:
+                secure.settimeout(timeout)
+                secure.sendall(
+                    b"GET / HTTP/1.1\r\nHost: api.ipify.org\r\nConnection: close\r\n\r\n"
+                )
+                data = bytearray()
+                while len(data) < 8192:
+                    chunk = secure.recv(1024)
+                    if not chunk:
+                        break
+                    data.extend(chunk)
+        header, separator, body = bytes(data).partition(b"\r\n\r\n")
+        if not separator or b" 200 " not in header.split(b"\r\n", 1)[0]:
+            return ""
+        address = body.decode("ascii", errors="ignore").strip()
+        return str(ipaddress.ip_address(address))
+    except (OSError, TimeoutError, ValueError, UnicodeError):
+        return ""
+
 
 
 class SessionProxyGateway:
