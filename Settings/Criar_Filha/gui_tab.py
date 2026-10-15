@@ -1326,6 +1326,8 @@ def run_instance(
                         pass
 
         except HttpsNavigationError as e:
+            if (instance_plan or {}).get("proxy_config") is not None:
+                log(f"[#{idx}] [Proxy] Não foi possível navegar com a proxy atribuída; não haverá conexão direta.")
             log(f"[#{idx}] {e}")
             log(f"[#{idx}] ⚠️ Navegação HTTPS indisponível; verifique conexão, proxy e certificado.")
             log(f"[#{idx}] Navegação HTTPS interrompida sem novas tentativas.")
