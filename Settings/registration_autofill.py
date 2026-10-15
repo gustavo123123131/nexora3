@@ -29,11 +29,13 @@ def fill_registration_form(page, profile: dict, log, stop_event, *,
         log(f"{prefix} [Registro] Cancelado.")
         return False
 
+    stage = "Aguardar formulário"
     try:
         first = page.locator(FIELDS[0][1])
         first.wait_for(state="visible", timeout=timeout_ms)
         time.sleep(delay_seconds)
         for label, selector, key in FIELDS:
+            stage = label
             if stop_event.is_set():
                 log(f"{prefix} [Registro] Interrompido antes de {label}.")
                 return False
@@ -53,6 +55,7 @@ def fill_registration_form(page, profile: dict, log, stop_event, *,
         if stop_event.is_set():
             log(f"{prefix} [Registro] Interrompido antes de Registrar.")
             return False
+        stage = "Registrar"
         button = page.locator(SUBMIT)
         button.wait_for(state="visible", timeout=timeout_ms)
         time.sleep(delay_seconds)
@@ -63,5 +66,5 @@ def fill_registration_form(page, profile: dict, log, stop_event, *,
         log(f"{prefix} [Registro] Clique em Registrar enviado; resultado do site não confirmado.")
         return True
     except Exception as exc:
-        log(f"{prefix} [Registro] Fluxo interrompido em formulário/clique: {type(exc).__name__}.")
+        log(f"{prefix} [Registro] Falha na etapa {stage}: {type(exc).__name__}.")
         return False
