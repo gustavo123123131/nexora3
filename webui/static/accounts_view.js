@@ -59,8 +59,8 @@
       '<h1>Contas e cadastro</h1>',
       '<p>Gerencie contas próprias, perfis existentes e cadastros autorizados.</p>',
       '</div><button type="button" class="accounts-refresh">↻ Atualizar</button></div>',
-      '<div class="accounts-notice">Plataformas e contas ficam no Supabase, com acesso por usuário. ',
-      'O Windows mantém só os metadados necessários para abrir os perfis. ',
+      '<div class="accounts-notice">Plataformas e contas são guardadas em accounts.json no agente Windows. ',
+      'Perfis, registros e status ficam neste computador. ',
       'Cadastros exigem revisão e verificações oficiais do site.</div>',
       '<p class="accounts-message" role="status" hidden></p>',
       '<section class="accounts-main-grid">',
@@ -81,7 +81,7 @@
       '<label>Seletor de confirmação inequívoca (opcional)<input name="successSelector" maxlength="200" placeholder=".registro-confirmado"></label>',
       '<label class="accounts-consent"><input type="checkbox" name="authorized">',
       '<span>Confirmo que tenho autorização para usar o cadastro deste site.</span></label>',
-      '<button type="submit" class="accounts-primary">Salvar no Supabase</button>',
+      '<button type="submit" class="accounts-primary">Salvar no JSON local</button>',
       '</form></article>',
       '<article class="accounts-panel">',
       '<header><h2>02 · Adicionar conta</h2><p>Vincule a um perfil do Windows ou crie registros em lote.</p></header>',
@@ -100,7 +100,7 @@
       '<p class="accounts-tip">Em lote, nomes e números sequenciais são definidos automaticamente. ',
       'O mesmo tipo, modo e número acessam o diretório ',
       'de perfil já usado no multi-login. Feche uma janela desse perfil antes de reabri-la por aqui.</p>',
-      '<button type="submit" class="accounts-primary">Salvar no Supabase</button>',
+      '<button type="submit" class="accounts-primary">Salvar no JSON local</button>',
       '</form></article>',
       '</section>',
       '<section class="accounts-panel accounts-directory">',
@@ -146,24 +146,6 @@
     }
 
     let sites = [], accounts = [], activeReview = null;
-    let cloud = null;
-    if (window.NexoraCloudAccounts) {
-      const localPost = post;
-      cloud = window.NexoraCloudAccounts.create({
-        postLocal: localPost,
-        onAuthChange: logged => {
-          root.classList.toggle('accounts-cloud-locked', !logged);
-          review.hidden = true; activeReview = null;
-          if (logged) void safeRun(refresh);
-          else { sites = []; accounts = []; redraw(); }
-        },
-      });
-      root.insertBefore(cloud.authNode, root.querySelector('.accounts-main-grid'));
-      root.classList.toggle('accounts-cloud-locked', !cloud.signedIn());
-      get = cloud.get;
-      post = cloud.post;
-    }
-
     let busy = false, lastShown = 0;
     const safeRun = async (fn) => {
       if (busy) return;
@@ -215,7 +197,6 @@
     }
 
     async function refresh() {
-      if (cloud && !cloud.signedIn()) { sites = []; accounts = []; redraw(); return; }
       const [s, a] = await Promise.all([
         get('/api/registration/sites'), get('/api/registration/accounts'),
       ]);
@@ -243,7 +224,7 @@
         siteForm.reset();
         await refresh();
         siteSelect.value = result.site.id;
-        notify(root, 'Site salvo no Supabase. Será sincronizado com o Windows ao abrir uma conta.');
+        notify(root, 'Site salvo no JSON local do Windows.');
       });
     });
 
@@ -261,7 +242,7 @@
         accountForm.elements.namedItem('displayName').value = '';
         accountForm.elements.namedItem('loginIdentifier').value = '';
         await refresh();
-        notify(root, result.quantity > 1 ? result.quantity + ' contas criadas no Supabase.' : 'Conta ' + result.account.displayName + ' salva no Supabase.');
+        notify(root, result.quantity > 1 ? result.quantity + ' contas criadas no JSON local.' : 'Conta ' + result.account.displayName + ' salva no JSON local.');
       });
     });
 
@@ -271,10 +252,10 @@
       const action = button.dataset.action, accountId = button.dataset.key;
       void safeRun(async () => {
         if (action === 'delete') {
-          if (!confirm('Excluir este registro do Supabase e sua cópia local? O perfil Chromium e a conta externa serão preservados.')) return;
+          if (!confirm('Excluir o registro local? O perfil Chromium e a conta externa serão preservados.')) return;
           await post('/api/registration/accounts/delete', {accountId});
           review.hidden = true; activeReview = null;
-          notify(root, 'Registro removido do Supabase. O perfil Chromium não foi apagado.');
+          notify(root, 'Registro removido do JSON local. O perfil Chromium não foi apagado.');
         } else if (action === 'open') {
           await post('/api/registration/accounts/open', {accountId});
           notify(root, 'Chromium solicitado no seu Windows, usando o perfil original.');
