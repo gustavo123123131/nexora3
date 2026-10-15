@@ -161,19 +161,16 @@
         actions.append(send);
       } else if (data.isTestData) {
         actions.append(make('p','accounts-action-hint',
-          'O perfil possui dados fictícios. Para cadastrar no site real, forneça seus dados legítimos.'));
-        const openForm=make('button','accounts-submit-button','Cadastrar com meus dados');
+          'Username e senha já foram gerados neste perfil. Informe somente os dados legítimos do titular; não é necessário criar outra senha.'));
+        const openForm=make('button','accounts-submit-button','Continuar cadastro com dados legítimos');
         openForm.type='button';
         const form=make('form','accounts-real-form');
         form.hidden=true;
         const entries={};
         for (const [key,label,type,required] of [
-          ['fullName','Nome completo','text',true],
-          ['username','Usuário','text',true],
-          ['email','E-mail (se disponível)','email',false],
-          ['phone','Telefone (se disponível)','tel',false],
-          ['password','Senha','password',true],
-          ['confirmPassword','Confirmar senha','password',true]
+          ['fullName','Nome legítimo do titular','text',true],
+          ['email','E-mail que você controla (se disponível)','email',false],
+          ['phone','Telefone que você controla (se disponível)','tel',false]
         ]) {
           const wrapper=make('label','accounts-real-field');
           wrapper.append(make('span','',label));
@@ -197,12 +194,11 @@
         form.addEventListener('submit',async event=>{
           event.preventDefault();
           if (!own.checked) { inform('Confirme que os dados são seus.',true); return; }
-          if (entries.password.value!==entries.confirmPassword.value) {
-            inform('A confirmação da senha não coincide.',true);return;
-          }
           if (!entries.email.value.trim() && !entries.phone.value.trim()) {
             inform('Informe seu e-mail ou telefone verdadeiro.',true);return;
           }
+          // Username and password are resolved by the local server from this
+          // specific profile, never regenerated or copied from another profile.
           if (!window.confirm('Autoriza enviar estes dados para criar a conta no site aberto? '+
                               'Leia e aceite os termos exigidos no próprio site.')) return;
           send.disabled=true;

@@ -1,13 +1,13 @@
-"""Fictional, isolated profile data. Never represents a verified legal identity.
+"""Independent local profile test data.
 
-These values belong to local browser profiles; do not send them to real
-registration/KYC forms or infer that a CPF belongs to a real person.
+Usernames and passwords are suitable identifiers for local form testing.
+Email/CPF/phone and full name are unverified TEST DATA, never real identities.
 """
 import secrets
 
 
 def valid_cpf_digits(base: str) -> str:
-    """Return a syntactically valid 11-digit CPF from a nine-digit seed."""
+    """Return an 11-digit checksum-valid synthetic CPF for LOCAL TESTS only."""
     if len(base) != 9 or not base.isdigit() or len(set(base)) == 1:
         raise ValueError("CPF de teste: base inválida.")
     digits = [int(x) for x in base]
@@ -17,28 +17,38 @@ def valid_cpf_digits(base: str) -> str:
     return "".join(map(str, digits))
 
 
+def make_password() -> str:
+    """Generate a 16-character secret matching the local 12+ validation rule."""
+    chars = (
+        [secrets.choice("abcdefghijklmnopqrstuvwxyz") for _ in range(10)]
+        + [secrets.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ") for _ in range(2)]
+        + [secrets.choice("0123456789") for _ in range(2)]
+        + [secrets.choice("#!@?") for _ in range(2)]
+    )
+    secrets.SystemRandom().shuffle(chars)
+    return "".join(chars)
+
+
 def make_profile_data() -> dict:
-    """Use OS entropy, reserved example.test email domain and unverified CPF."""
-    token = secrets.token_hex(5)
-    username = "teste" + token
+    """Produce visually neutral usernames, cryptographic passwords and demo-only contact data.
+
+    example.test intentionally never receives messages. No generated personal
+    identity is authorized for a third-party/KYC registration.
+    """
+    prefix = secrets.choice((
+        "aurora", "brisa", "vento", "laguna", "coral", "atlas",
+        "mirante", "sereno", "litoral", "solare",
+    ))
+    token = secrets.token_hex(4)
+    username = prefix + token
     nine = "".join(str(secrets.randbelow(10)) for _ in range(9))
     while len(set(nine)) == 1:
         nine = "".join(str(secrets.randbelow(10)) for _ in range(9))
     cpf = valid_cpf_digits(nine)
-    # 9 characters like "piXez#v3q": six lowercase, an uppercase, digit
-    # and special character, with cryptographically secure randomness.
-    chars = (
-        [secrets.choice("abcdefghijklmnopqrstuvwxyz") for _ in range(6)]
-        + [secrets.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ")]
-        + [secrets.choice("0123456789")]
-        + [secrets.choice("#!@?")]
-    )
-    secrets.SystemRandom().shuffle(chars)
-    password = "".join(chars)
     return {
         "fullName": "Pessoa Teste " + token[:5].upper(),
         "username": username,
-        "password": password,
+        "password": make_password(),
         "email": username + "@example.test",
         "phone": "+55 (11) 90000-" + str(secrets.randbelow(10000)).zfill(4),
         "cpf": cpf[:3] + "." + cpf[3:6] + "." + cpf[6:9] + "-" + cpf[9:],

@@ -1,0 +1,24 @@
+name: Geracao e Cadastro — regressao offline
+on:
+  push:
+    branches: [fix/contas-geracao-senha-fluxo]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Instalar dependencias
+        run: python -m pip install -r requirements-web.txt pytest httpx
+      - name: Validar sintaxe
+        run: |
+          python -m compileall -q nexora_accounts servidor.py Settings/Criar_Mae/gui_tab.py Settings/Criar_Filha/gui_tab.py
+          node --check webui/static/accounts_view.js
+      - name: Testar isolamento, senha e regras de ambiente
+        run: python -m pytest -q tests/test_registration_generation.py tests/test_registration_autofill.py tests/test_registration_submit.py tests/test_registration_bridge.py
