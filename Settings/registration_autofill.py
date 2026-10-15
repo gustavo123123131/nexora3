@@ -114,6 +114,29 @@ def fill_registration_form(page, profile: dict, log, stop_event, *,
         log(f"{prefix} [Registro] Botão visível; habilitado={'sim' if enabled else 'não'}.")
         if not enabled:
             log(f"{prefix} [Registro] Aguardando o site habilitar o botão antes do clique.")
+
+        # The supplied section has an infinite scale/pulse animation. Playwright
+        # requires a stable bounding box for a normal click. Pause only running
+        # animations inside this exact registration section; keep actionability
+        # checks intact (no force click, no DOM-dispatched click).
+        stage = "Estabilizar botão Registrar"
+        animation_info = button.evaluate(
+            """button => {
+                const section = button.closest('section.login-register-fragment-submit');
+                if (!section) return {sectionFound: false, paused: 0};
+                let paused = 0;
+                for (const animation of section.getAnimations({subtree: true})) {
+                    if (animation.playState === 'running') {
+                        animation.pause();
+                        paused++;
+                    }
+                }
+                return {sectionFound: true, paused};
+            }"""
+        )
+        log(f"{prefix} [Registro] Seção animada encontrada="
+            f"{'sim' if animation_info.get('sectionFound') else 'não'}; "
+            f"animações pausadas={animation_info.get('paused', 0)}.")
         time.sleep(delay_seconds)
         if stop_event.is_set():
             log(f"{prefix} [Registro] Interrompido antes do clique.")
@@ -128,6 +151,8 @@ def fill_registration_form(page, profile: dict, log, stop_event, *,
         detail = str(exc).lower()
         if "intercepts pointer events" in detail:
             reason = "Outro elemento está interceptando o clique no botão."
+        elif "element is not stable" in detail:
+            reason = "O botão continuou em movimento; o Playwright aguardou estabilidade."
         elif "not enabled" in detail or "disabled" in detail:
             reason = "O site manteve o botão desabilitado."
         elif "strict mode violation" in detail:
