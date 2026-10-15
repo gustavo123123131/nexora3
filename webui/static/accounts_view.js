@@ -16,17 +16,22 @@
     return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString('pt-BR');
   };
   const stageNames = {
-    'profile-created':'Perfil criado', 'review':'Formulário preenchido; aguardando revisão',
+    'profile-created':'Perfil local criado', 'browser-starting':'Iniciando Chromium',
+    'browser-ready':'Chromium pronto', 'site-loading':'Carregando site',
+    'site-loaded':'Site carregado', 'form-scanning':'Procurando formulário',
+    'form-found':'Campos identificados', 'browser-error':'Falha ao iniciar navegador',
+    'navigation-error':'Falha ao carregar site', 'site-load-timeout':'Tempo limite ao abrir o site',
+    'registration-blocked':'Cadastro externo exige dados autorizados', 'review':'Formulário preenchido; aguardando revisão',
     'submit-queued':'Envio solicitado', 'submitting':'Enviando formulário',
     'awaiting-provider':'Aguardando a plataforma',
     'provider-response-unverified':'Resposta recebida; aguardando confirmação',
-    'provider-http-error':'Erro HTTP do provedor', 'provider-confirmed':'Cadastro confirmado',
+    'provider-http-error':'Resposta HTTP de erro', 'provider-confirmed':'Cadastro externo confirmado',
     'timeout-unverified':'Tempo limite: resultado desconhecido',
     'submit-result-unknown':'Envio incerto; confira no site',
     'submit-button-missing':'Botão de registro ausente',
     'test-data-blocked':'Dados fictícios: cadastro real bloqueado',
     'form-not-found':'Formulário não encontrado', 'origin-changed':'Domínio mudou',
-    'review-real-data':'Dados legítimos preenchidos para envio',
+    'review-real-data':'Dados autorizados preparados',
     'browser-closed-unverified':'Navegador fechado antes da confirmação',
   };
   const stageLabel = key => stageNames[key] || text(key);
@@ -38,7 +43,7 @@
     titleBox.append(
       make('div', 'workspace-eyebrow', 'PERFIS / LOCAL'),
       make('h1', '', 'Contas'),
-      make('p', '', 'Perfis criados em Conta Mãe ou Conta Filha. Dados fictícios de teste, não verificados.')
+      make('p', '', 'Perfis criados em Conta Mãe ou Conta Filha, com andamento e logs individuais.')
     );
     const refreshButton = make('button', 'accounts-refresh', '↻ Atualizar');
     refreshButton.type = 'button';
@@ -102,13 +107,13 @@
       headText.append(make('p','',((acc.profileScope==='mae')?'Mãe':'Filha')+
         ' · '+mode+' · perfil '+text(acc.profileIndex)));
       head.append(headText,make('span','accounts-test-badge',
-        data.isTestData ? 'Dados fictícios' : 'Perfil local'));
+        data.isTestData ? 'Perfil sintético (teste)' : 'Perfil local'));
       const summary=make('div','accounts-summary');
       for(const [label,value] of [
         ['Username',data.username||acc.loginIdentifier],
         ['E-mail',data.email],
         ['Telefone',data.phone],
-        ['CPF gerado (não verificado)',data.cpf],
+        ['CPF (não verificado)',data.cpf ? '***.***.***-'+String(data.cpf).slice(-2) : null],
         ['Etapa do cadastro',stageLabel(acc.stage||acc.status||'local')],
         ['Criado em',date(acc.createdAt)]
       ]) {
@@ -119,15 +124,15 @@
       const button=make('button','accounts-details-button','Ver detalhes');
       button.type='button';button.setAttribute('aria-expanded','false');
       const details=make('div','accounts-details');details.hidden=true;
-      details.append(make('p','accounts-detail-warning',
-        'Dados gerados para testes. Um CPF com dígitos verificadores válidos pode coincidir com o de uma pessoa real; a titularidade não foi verificada. Não use estes dados para se passar por alguém.'));
+      if (data.isTestData) details.append(make('p','accounts-detail-warning',
+        'Perfil de teste: nome, CPF e contatos são sintéticos e não foram verificados.'));
       for(const [label,value,protectedField] of [
-        ['Nome completo',data.fullName||null,false],
+        ['Nome do perfil',data.fullName||null,false],
         ['Username',data.username||acc.loginIdentifier,false],
-        ['Senha gerada',data.password,true],
-        ['E-mail de teste',data.email,false],
-        ['Telefone de teste',data.phone,false],
-        ['CPF gerado (não verificado)',data.cpf,false],
+        ['Senha do perfil de teste',data.password,true],
+        ['E-mail (não verificado)',data.email,false],
+        ['Telefone (não verificado)',data.phone,false],
+        ['CPF não verificado (teste)',data.cpf,true],
         ['Tipo / modo',(acc.profileScope==='mae'?'Mãe':'Filha')+' · '+mode,false],
         ['Número do perfil',acc.profileIndex,false],
         ['Criado em',date(acc.createdAt),false]
@@ -141,93 +146,21 @@
           field.type='password';field.nextElementSibling.textContent='Mostrar';
         }
       });
-      const actions=make('div','accounts-registration-actions');
-      if (acc.status==='pending' && acc.stage==='review' &&
-          data.isTestData===false && data.ownerConfirmed===true) {
-        const send=make('button','accounts-submit-button','Enviar cadastro');
-        send.type='button';
-        send.addEventListener('click',async()=>{
-          if (!window.confirm('Confirma o envio dos dados legítimos deste perfil ao site? '+
-                              'Conclua também os termos e verificações do provedor.')) return;
-          send.disabled=true; inform('Solicitando envio no navegador do perfil...');
-          try {
-            await post('/api/registration/accounts/submit-existing',
-                       {accountId:acc.id,userConfirmed:true});
-            inform('Solicitação enviada ao navegador. Acompanhe os logs do perfil.');
-            await refresh();
-          } catch(err) { inform('Não foi possível enviar: '+(err.message||err),true); }
-          finally { send.disabled=false; }
-        });
-        actions.append(send);
-      } else if (data.isTestData) {
-        actions.append(make('p','accounts-action-hint',
-          'Username e senha já foram gerados neste perfil. Informe somente os dados legítimos do titular; não é necessário criar outra senha.'));
-        const openForm=make('button','accounts-submit-button','Continuar cadastro com dados legítimos');
-        openForm.type='button';
-        const form=make('form','accounts-real-form');
-        form.hidden=true;
-        const entries={};
-        for (const [key,label,type,required] of [
-          ['fullName','Nome legítimo do titular','text',true],
-          ['email','E-mail que você controla (se disponível)','email',false],
-          ['phone','Telefone que você controla (se disponível)','tel',false]
-        ]) {
-          const wrapper=make('label','accounts-real-field');
-          wrapper.append(make('span','',label));
-          const field=make('input','accounts-real-input');
-          field.type=type; field.required=required;
-          field.autocomplete='off'; field.maxLength=160;
-          wrapper.append(field); form.append(wrapper);
-          entries[key]=field;
-        }
-        const confirmLabel=make('label','accounts-consent-label');
-        const own=make('input');own.type='checkbox';own.required=true;
-        confirmLabel.append(own,make('span','',
-          'Confirmo que estes são meus dados legítimos e autorizo o cadastro no site selecionado.'));
-        form.append(confirmLabel);
-        const send=make('button','accounts-submit-button','Confirmar e enviar cadastro');
-        send.type='submit';form.append(send);
-        openForm.addEventListener('click',()=>{
-          form.hidden=!form.hidden;openForm.textContent=form.hidden?
-            'Cadastrar com meus dados':'Ocultar formulário';
-        });
-        form.addEventListener('submit',async event=>{
-          event.preventDefault();
-          if (!own.checked) { inform('Confirme que os dados são seus.',true); return; }
-          if (!entries.email.value.trim() && !entries.phone.value.trim()) {
-            inform('Informe seu e-mail ou telefone verdadeiro.',true);return;
-          }
-          // Username and password are resolved by the local server from this
-          // specific profile, never regenerated or copied from another profile.
-          if (!window.confirm('Autoriza enviar estes dados para criar a conta no site aberto? '+
-                              'Leia e aceite os termos exigidos no próprio site.')) return;
-          send.disabled=true;
-          try {
-            const values=Object.fromEntries(Object.entries(entries).map(([k,v])=>[k,v.value]));
-            await post('/api/registration/accounts/submit-existing',
-                       {accountId:acc.id,userConfirmed:true,values});
-            form.reset();form.hidden=true;
-            inform('Cadastro solicitado no navegador. Veja o histórico para acompanhar a resposta.');
-            await refresh();
-          } catch(err) {
-            inform('Cadastro não enviado: '+(err.message||err),true);
-          } finally {send.disabled=false;}
-        });
-        actions.append(openForm,form);
-      }
       const events=Array.isArray(acc.registrationLog)?acc.registrationLog.slice(-15).reverse():[];
       const logPanel=make('section','accounts-registration-log');
       logPanel.append(make('h4','','Histórico do cadastro'));
       if (!events.length) logPanel.append(make('p','','Aguardando eventos de cadastro.'));
       for (const entry of events) {
         const row=make('div','accounts-log-row');
-        const status=(entry.httpStatus? ' · HTTP '+entry.httpStatus:'');
+        const status=(entry.httpStatus? ' · HTTP '+entry.httpStatus:'')
+          +(entry.errorCode?' · '+entry.errorCode:'')
+          +(Number.isInteger(entry.durationMs)?' · '+entry.durationMs+' ms':'');
         row.append(make('time','',date(entry.at)),
                    make('span','',stageLabel(entry.stage)+status));
         logPanel.append(row);
       }
       details.append(logPanel);
-      card.append(head,summary,actions,button,details);
+      card.append(head,summary,button,details);
       return card;
     }
     function render() {
