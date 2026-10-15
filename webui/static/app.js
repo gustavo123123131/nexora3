@@ -475,8 +475,8 @@ function renderNode(obj) {
       accountsButton.classList.toggle('active', active === ACCOUNTS_VIEW_ID);
       patchChildren(bar, [...buttons, proxyButton, accountsButton]);
       const activeTab = tabs.find(tab => tab.id === active);
-      el.dataset.activeView = active === PROXY_PREVIEW_ID
-        ? 'Proxy' : (activeTab?.options?._tab_label || '');
+      el.dataset.activeView = active === ACCOUNTS_VIEW_ID ? 'Contas' :
+        active === PROXY_PREVIEW_ID ? 'Proxy' : (activeTab?.options?._tab_label || '');
       const content = el.querySelector('.tab-content');
       patchChildren(content, active === PROXY_PREVIEW_ID
         ? [proxyPreview()] : (activeTab ? [renderNode(activeTab)] : []));
