@@ -1390,7 +1390,7 @@ def run_instance(
                                     )
                                     raise RuntimeError(error_code) from None
                                 raise HttpsNavigationError(
-                                    f"HTTPS não concluído: {destination_hostname}, "
+                                    f"Não foi possível abrir {destination_hostname} por HTTPS: "
                                     f"{error_code} ({error_message}). "
                                     "Não será ignorada a validação de certificado."
                                 ) from None
