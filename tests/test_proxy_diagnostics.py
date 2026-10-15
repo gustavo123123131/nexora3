@@ -176,9 +176,19 @@ def test_compare_cert_failure_does_not_disable_tls_or_print_secrets(monkeypatch)
     monkeypatch.setattr(diag, "_diagnose_trusted_tls_via_local",
                         lambda *args: (_ for _ in ()).throw(err))
     results = diag.compare_certificates(
-        object(), object(), "good.example.test?password=secret",
+        object(), object(), "good.example.test",
         seen.append, "[#1]",
     )
     assert results["provedor"] == "cert_verify_62"
     assert all("password" not in line for line in seen)
     assert all("SAN=indisponível" in line for line in seen if "certificado=recusado" in line)
+
+
+def test_compare_certificate_rejects_untrusted_host_without_logging_secret():
+    from Settings import proxy_diagnostics as diag
+    lines = []
+    result = diag.compare_certificates(
+        object(), object(), "good.test?password=secret", lines.append, "[#1]"
+    )
+    assert result == {}
+    assert lines and all("password" not in line for line in lines)
