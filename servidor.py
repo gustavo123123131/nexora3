@@ -169,9 +169,13 @@ def _active_browser_workers():
     pending = [_GUI]
     while pending:
         current = pending.pop()
-        worker = getattr(current, "worker_thread", None)
-        if worker is not None and worker.is_alive():
-            count += 1
+        jobs = getattr(current, "_browser_jobs", None)
+        if jobs is not None:
+            count += sum(1 for thread, _ in list(jobs) if thread.is_alive())
+        else:
+            worker = getattr(current, "worker_thread", None)
+            if worker is not None and worker.is_alive():
+                count += 1
         pending.extend(getattr(current, "children", ()))
     return count
 
