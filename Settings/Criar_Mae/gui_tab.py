@@ -1192,7 +1192,11 @@ def run_instance(
                         if exc.code == "browser_proxy_bypassed":
                             log(f"[#{idx}] [Proxy] BLOQUEADO: navegador acessou o verificador de IP sem passar pelo gateway. Possível interferência de configuração/extensão.")
                         else:
-                            log(f"[#{idx}] [Proxy] BLOQUEADO: não foi possível confirmar o IP através do Chromium e do gateway (verificadores indisponíveis ou erro de rede).")
+                            log(
+                                f"[#{idx}] [Proxy] BLOQUEADO: IP e HTTPS não confirmados "
+                                f"pelo Chromium e gateway. Diagnóstico: "
+                                f"{exc.detail or 'IP_CHECK_UNAVAILABLE'}."
+                            )
                         raise HttpsNavigationError(
                             "Proxy não verificada no Chromium; a navegação externa foi cancelada."
                         ) from exc
