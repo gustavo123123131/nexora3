@@ -180,3 +180,40 @@ def test_accounts_ui_displays_only_profiles_and_remains_visible_after_refresh(tm
                 page.close()
         finally:
             browser.close()
+
+
+
+def test_real_site_layout_preview_fills_only_nonidentity_credentials(tmp_path):
+    """Mock HTTPS document locally: NO outbound site call or registration."""
+    url = "https://registration.preview.example.org/register"
+    repo = AccountsRepository(tmp_path / "accounts.json")
+    plan = repo.create_launch_profiles(
+        "mae", "desktop", [url], 1, tmp_path / "profiles"
+    )[0]
+    data = repo.account(plan["profile_record_id"])["profileData"]
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        try:
+            context = browser.new_context()
+            context.route(
+                "https://registration.preview.example.org/**",
+                lambda route: route.fulfill(
+                    status=200, content_type="text/html; charset=utf-8",
+                    body=HTML
+                ),
+            )
+            page = context.new_page()
+            page.goto(url, wait_until="domcontentloaded")
+            result = autofill_existing_registration(page, plan, repo)
+            assert result["status"] == "credentials-filled"
+            assert result["fieldCount"] == 3
+            assert page.locator("input[data-input-name='account']").input_value() == data["username"]
+            assert page.locator("input[data-input-name='userpass']").input_value() == data["password"]
+            assert page.locator("input[data-input-name='confirmPassword']").input_value() == data["password"]
+            assert page.locator("input[data-input-name='realName']").input_value() == ""
+            assert page.locator("#insideRegisterSubmitClick").is_visible()
+            assert repo.account(plan["profile_record_id"])["stage"] == "credentials-prefilled"
+            assert repo.account(plan["profile_record_id"])["status"] == "local"
+            context.close()
+        finally:
+            browser.close()
