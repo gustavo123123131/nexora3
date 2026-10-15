@@ -4,6 +4,8 @@ Runs a local no-reload server on a test-only port. Never starts real browsers
 from the multi-login controls or sends credentials to external websites.
 """
 from pathlib import Path
+import json
+import uuid
 import os
 import signal
 import subprocess
@@ -168,6 +170,76 @@ def test_nexora_visual_and_existing_controls(tmp_path):
                 expect(page.get_by_role("heading", name="02 · Adicionar conta")).to_be_hidden()
                 expect(page.get_by_role("heading", name="03 · Suas contas")).to_be_hidden()
                 page.screenshot(path=str(screenshot_dir / "nexora-contas.png"), full_page=True)
+
+                # Browser-level integration test; mock Supabase, never create real users/accounts.
+                fake_sites, fake_accounts, fake_jobs = [], [], []
+                def fake_supabase(route):
+                    req = route.request
+                    path = req.url.split(".supabase.co", 1)[1].split("?", 1)[0]
+                    method = req.method
+                    data = req.post_data_json if method in ("POST", "PATCH") else {}
+                    result = []
+                    if method == "OPTIONS":
+                        route.fulfill(status=204, headers={
+                            "access-control-allow-origin": "*",
+                            "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS",
+                            "access-control-allow-headers": "authorization,apikey,content-type,prefer",
+                        })
+                        return
+                    if path == "/auth/v1/token":
+                        result = {"access_token": "jwt-falso-do-teste", "refresh_token": "fake-refresh",
+                                  "expires_in": 3600, "user": {"email": "teste@nexora.test"}}
+                    elif path == "/rest/v1/nexora_sites":
+                        if method == "POST":
+                            data.update({"id": str(uuid.uuid4()), "authorized": data.get("authorized", False)})
+                            fake_sites.append(data)
+                            result = [data]
+                        else:
+                            result = fake_sites
+                    elif path == "/rest/v1/nexora_accounts":
+                        if method == "POST":
+                            data.update({"id": str(uuid.uuid4()), "status": "local",
+                                         "stage": "saved", "created_at": "2026-10-14T12:00:00Z",
+                                         "updated_at": "2026-10-14T12:00:00Z"})
+                            fake_accounts.append(data)
+                            result = [data]
+                        else:
+                            result = fake_accounts
+                    elif path == "/rest/v1/nexora_registration_jobs":
+                        if method == "POST":
+                            data.update({"id": str(uuid.uuid4())})
+                            fake_jobs.append(data)
+                            result = [data]
+                        else:
+                            result = fake_jobs
+                    else:
+                        route.fulfill(status=404, body="Rota falsa desconhecida: " + path)
+                        return
+                    route.fulfill(status=200, content_type="application/json",
+                                  body=json.dumps(result), headers={"access-control-allow-origin": "*"})
+
+                page.route("https://uulixxwsniibnpywxlov.supabase.co/**", fake_supabase)
+                page.locator(".cloud-auth-form [name=email]").fill("teste@nexora.test")
+                page.locator(".cloud-auth-form [name=password]").fill("SenhaFicticiaTeste2026")
+                page.get_by_role("button", name="Entrar no Supabase").click()
+                expect(page.locator(".cloud-auth-email")).to_contain_text("teste@nexora.test")
+                expect(page.get_by_role("heading", name="01 · Configurar site")).to_be_visible()
+                site_form = page.locator("#nexora-site-form")
+                site_form.locator("[name=id]").fill("site_fake")
+                site_form.locator("[name=displayName]").fill("Site Fake")
+                site_form.locator("[name=baseUrl]").fill("https://example.com")
+                site_form.locator("button[type=submit]").click()
+                expect(page.locator("#nexora-account-form [name=siteId] option")).to_have_count(1)
+                acct_form = page.locator("#nexora-account-form")
+                acct_form.locator("[name=displayName]").fill("Conta Cloud Fake")
+                acct_form.locator("[name=profileIndex]").fill("13")
+                acct_form.locator("button[type=submit]").click()
+                expect(page.locator(".accounts-list tr")).to_have_count(1)
+                expect(page.locator(".accounts-list")).to_contain_text("Conta Cloud Fake")
+                assert len(fake_sites) == len(fake_accounts) == len(fake_jobs) == 1
+                assert fake_accounts[0]["profile_index"] == 13
+                assert "password" not in str(fake_accounts) + str(fake_sites)
+
                 page.get_by_role("button", name="Criar Mãe").click()
                 expect(page.get_by_role("button", name="Abrir Conta")).to_be_visible()
                 page.get_by_role("button", name="Criar Filha").click()
