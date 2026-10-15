@@ -11,7 +11,9 @@ from contextlib import contextmanager
 from playwright.sync_api import sync_playwright
 
 from nexora_accounts.registration_autofill import autofill_existing_registration
-from nexora_accounts.registration_submit import RegistrationWatcher, request_demo_submit
+from nexora_accounts.registration_submit import (
+    RegistrationWatcher, request_demo_submit, request_confirmed_auto_submit
+)
 from nexora_accounts.service import AccountsRepository
 from nexora_accounts.registration_trace import trace_registration
 
@@ -400,6 +402,74 @@ def test_form_name_fills_when_profile_owner_is_confirmed_in_mock_https(tmp_path)
             assert page.locator('input[data-input-name="userpass"]').input_value() == profile["password"]
             assert network_posts == []
             assert repo.account(key)["stage"] == "review"
+            context.close()
+        finally:
+            browser.close()
+
+
+def test_confirmed_profile_clicks_registro_once_in_mocked_https_chromium(
+        tmp_path, monkeypatch):
+    """One-click Abrir Conta on a verified profile, with ALL HTTPS mocked.
+
+    Exercises the actual Chromium button click and provider response watcher.
+    No actual website is contacted or registration created.
+    """
+    monkeypatch.setenv("NEXORA_REGISTRATION_OWNER_NAME", "Silva")
+    url = "https://registration.preview.example.org/register"
+    repo = AccountsRepository(tmp_path / "accounts.json")
+    plan = repo.create_launch_profiles(
+        "mae", "desktop", [url], 1, tmp_path / "profiles"
+    )[0]
+    key = plan["profile_record_id"]
+    state = json.loads(repo.path.read_text(encoding="utf-8"))
+    owner = next(row for row in state["accounts"] if row["id"] == key)
+    owner["profileData"].update({
+        "fullName": "Titular Confirmado",
+        "email": "titular@dominio-valido.dev",
+        "isTestData": False,
+        "ownerConfirmed": True,
+    })
+    repo.path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    network_posts = []
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        try:
+            context = browser.new_context()
+            def mock_registration(route):
+                if route.request.method.upper() == "POST":
+                    network_posts.append(route.request.url)
+                    route.fulfill(
+                        status=200, content_type="application/json",
+                        body='{"code":0}'
+                    )
+                else:
+                    route.fulfill(
+                        status=200, content_type="text/html; charset=utf-8",
+                        body=HTML
+                    )
+            context.route("https://registration.preview.example.org/**", mock_registration)
+            page = context.new_page()
+            page.goto(url, wait_until="domcontentloaded")
+            result = autofill_existing_registration(page, plan, repo)
+            assert result["status"] == "filled"
+            assert page.locator('input[data-input-name="realName"]').input_value() == "Titular Confirmado"
+            watcher = RegistrationWatcher(
+                page, plan, repository=repo,
+                success_selector="#demo-registration-success"
+            )
+            assert request_confirmed_auto_submit(key, repo) is True
+            watcher.tick()  # Browser-owning thread does the real click.
+            page.locator("#demo-registration-success").wait_for(
+                state="visible", timeout=5000
+            )
+            for _ in range(15):
+                watcher.tick()
+                if repo.account(key)["status"] == "completed":
+                    break
+                page.wait_for_timeout(150)
+            assert len(network_posts) == 1
+            assert repo.account(key)["status"] == "completed"
+            assert repo.account(key)["stage"] == "provider-confirmed"
             context.close()
         finally:
             browser.close()
