@@ -134,3 +134,61 @@ def test_cloud_posts_blocked_on_registration(monkeypatch):
     with TestClient(servidor.app, base_url="https://branch-test-987-8765.app.github.dev") as client:
         assert client.post("/api/registration/accounts", json={}).status_code == 403
         assert client.post("/api/registration/sites", json={}).status_code == 403
+
+
+def test_cloud_metadata_sync_is_idempotent_and_keeps_secrets_off_disk(tmp_path):
+    """Supabase IDs map to existing local profiles without storing credentials."""
+    import uuid
+    path = tmp_path / "cloud_mirror.sqlite"
+    repo = AccountsRepository(path)
+    mother_id, daughter_id = str(uuid.uuid4()), str(uuid.uuid4())
+    cfg = site_config(authorized=True)
+    payload = {
+        "sites": [cfg],
+        "accounts": [
+            {
+                "id": mother_id, "siteId": cfg["id"], "displayName": "Mãe Supabase",
+                "profileScope": "mae", "profileMode": "desktop",
+                "profileIndex": 30, "password": "SEGREDO-IGNORADO",
+            },
+            {
+                "id": daughter_id, "siteId": cfg["id"], "displayName": "Filha Supabase",
+                "parentId": mother_id, "profileScope": "filha",
+                "profileMode": "android", "profileIndex": 31,
+                "cpf": "CPF-NAO-ARMAZENADO",
+            },
+        ],
+    }
+    assert repo.sync_cloud_records(payload) == {"sites": 1, "accounts": 2}
+    assert repo.sync_cloud_records(payload) == {"sites": 1, "accounts": 2}
+    assert len(repo.accounts()) == 2
+    assert repo.account(daughter_id)["parentId"] == mother_id
+    assert repo.account(mother_id)["profileIndex"] == 30
+    saved = path.read_bytes()
+    assert b"SEGREDO-IGNORADO" not in saved
+    assert b"CPF-NAO-ARMAZENADO" not in saved
+    with pytest.raises(AccountError):
+        repo.sync_cloud_account({**payload["accounts"][0], "id": "nao-uuid"})
+    with pytest.raises(AccountError):
+        repo.sync_cloud_records({"sites": [], "accounts": [{}] * 101})
+
+
+def test_cloud_sync_api_respects_csrf(tmp_path, monkeypatch):
+    import uuid
+    monkeypatch.setattr(servidor, "_accounts_service",
+                        AccountsService(tmp_path / "cloud_api.sqlite", start_browser=False))
+    site = site_config()
+    account_id = str(uuid.uuid4())
+    request = {"sites": [site], "accounts": [{
+        "id": account_id, "siteId": site["id"], "displayName": "Conta remota",
+        "profileScope": "mae", "profileMode": "iphone", "profileIndex": 7,
+    }]}
+    with TestClient(servidor.app) as client:
+        assert client.post("/api/registration/cloud/sync", json=request).status_code == 403
+        csrf = client.get("/api/state").json()["csrf_token"]
+        response = client.post("/api/registration/cloud/sync",
+                               headers={"X-LixoCPA-CSRF": csrf}, json=request)
+        assert response.status_code == 200, response.text
+        assert response.json() == {"sites": 1, "accounts": 1}
+        accounts = client.get("/api/registration/accounts").json()["accounts"]
+        assert len(accounts) == 1 and accounts[0]["id"] == account_id
