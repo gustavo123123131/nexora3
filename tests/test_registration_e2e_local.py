@@ -20,17 +20,16 @@ HTML = r"""<!doctype html>
 <body>
 <form id="demo-registration-form">
   <input name="account" data-input-name="account" type="text">
-  <input name="userpass" data-input-name="userpass" type="password">
-  <input name="confirmPassword" data-input-name="confirmPassword" type="password">
-  <input name="realName" data-input-name="realName" type="text">
+  <input name="userpass" maxlength="16" dir="ltr" autocomplete="new-password" data-input-name="userpass" type="text" placeholder="Insira a senha">
+  <input name="confirmPassword" maxlength="16" dir="ltr" autocomplete="new-password" data-input-name="confirmPassword" type="text" placeholder="Confirmar senha">
+  <input name="realName" data-input-name="realName" type="text" placeholder="Introduza o seu nome real">
   <input name="email" data-input-name="email" type="email">
-  <button type="submit" id="insideRegisterSubmitClick">Registro</button>
+  <button type="button" class="ui-button ui-button--primary ui-button--normal ui-button--block" id="insideRegisterSubmitClick"><span class="ui-button__text">Registro</span></button>
 </form>
 <div id="demo-registration-success" hidden>Cadastro concluído pelo servidor de teste</div>
 <script>
-document.querySelector("form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const body = Object.fromEntries(new FormData(event.currentTarget).entries());
+document.querySelector("#insideRegisterSubmitClick").addEventListener("click", async () => {
+  const body = Object.fromEntries(new FormData(document.querySelector("form")).entries());
   const response = await fetch("/hall/api/member/register", {
     method: "POST", headers: {"Content-Type": "application/json"},
     body: JSON.stringify(body)
@@ -102,6 +101,13 @@ def test_chromium_real_page_and_local_http_submit_and_status(tmp_path):
                 result = autofill_existing_registration(page, plans[0], repo)
                 assert result["status"] == "filled"
                 assert repo.account(key)["status"] == "pending"
+                assert page.locator("input[data-input-name='userpass']").input_value() == (
+                    repo.account(key)["profileData"]["password"]
+                )
+                assert page.locator("input[data-input-name='confirmPassword']").input_value() == (
+                    repo.account(key)["profileData"]["password"]
+                )
+                assert len(repo.account(key)["profileData"]["password"]) == 9
                 watcher = RegistrationWatcher(
                     page, plans[0], repository=repo, log=events.append,
                     success_selector="#demo-registration-success"
