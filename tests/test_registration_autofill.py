@@ -43,8 +43,10 @@ class Repo:
 
 
 def elements():
-    return {f"input[data-input-name='{key}']": Field()
-            for key in ("account", "userpass", "confirmPassword", "realName")}
+    fields = {f"input[data-input-name='{key}']": Field()
+              for key in ("account", "userpass", "confirmPassword", "realName")}
+    fields["#insideRegisterSubmitClick"] = Field()
+    return fields
 
 
 def profile(**extra):
