@@ -26,6 +26,7 @@
     'submit-button-missing':'Botão de registro ausente',
     'test-data-blocked':'Dados fictícios: cadastro real bloqueado',
     'form-not-found':'Formulário não encontrado', 'origin-changed':'Domínio mudou',
+    'review-real-data':'Dados legítimos preenchidos para envio',
     'browser-closed-unverified':'Navegador fechado antes da confirmação',
   };
   const stageLabel = key => stageNames[key] || text(key);
@@ -160,7 +161,63 @@
         actions.append(send);
       } else if (data.isTestData) {
         actions.append(make('p','accounts-action-hint',
-          'Identidade fictícia de teste: o cadastro real não será enviado.'));
+          'O perfil possui dados fictícios. Para cadastrar no site real, forneça seus dados legítimos.'));
+        const openForm=make('button','accounts-submit-button','Cadastrar com meus dados');
+        openForm.type='button';
+        const form=make('form','accounts-real-form');
+        form.hidden=true;
+        const entries={};
+        for (const [key,label,type,required] of [
+          ['fullName','Nome completo','text',true],
+          ['username','Usuário','text',true],
+          ['email','E-mail (se disponível)','email',false],
+          ['phone','Telefone (se disponível)','tel',false],
+          ['password','Senha','password',true],
+          ['confirmPassword','Confirmar senha','password',true]
+        ]) {
+          const wrapper=make('label','accounts-real-field');
+          wrapper.append(make('span','',label));
+          const field=make('input','accounts-real-input');
+          field.type=type; field.required=required;
+          field.autocomplete='off'; field.maxLength=160;
+          wrapper.append(field); form.append(wrapper);
+          entries[key]=field;
+        }
+        const confirmLabel=make('label','accounts-consent-label');
+        const own=make('input');own.type='checkbox';own.required=true;
+        confirmLabel.append(own,make('span','',
+          'Confirmo que estes são meus dados legítimos e autorizo o cadastro no site selecionado.'));
+        form.append(confirmLabel);
+        const send=make('button','accounts-submit-button','Confirmar e enviar cadastro');
+        send.type='submit';form.append(send);
+        openForm.addEventListener('click',()=>{
+          form.hidden=!form.hidden;openForm.textContent=form.hidden?
+            'Cadastrar com meus dados':'Ocultar formulário';
+        });
+        form.addEventListener('submit',async event=>{
+          event.preventDefault();
+          if (!own.checked) { inform('Confirme que os dados são seus.',true); return; }
+          if (entries.password.value!==entries.confirmPassword.value) {
+            inform('A confirmação da senha não coincide.',true);return;
+          }
+          if (!entries.email.value.trim() && !entries.phone.value.trim()) {
+            inform('Informe seu e-mail ou telefone verdadeiro.',true);return;
+          }
+          if (!window.confirm('Autoriza enviar estes dados para criar a conta no site aberto? '+
+                              'Leia e aceite os termos exigidos no próprio site.')) return;
+          send.disabled=true;
+          try {
+            const values=Object.fromEntries(Object.entries(entries).map(([k,v])=>[k,v.value]));
+            await post('/api/registration/accounts/submit-existing',
+                       {accountId:acc.id,userConfirmed:true,values});
+            form.reset();form.hidden=true;
+            inform('Cadastro solicitado no navegador. Veja o histórico para acompanhar a resposta.');
+            await refresh();
+          } catch(err) {
+            inform('Cadastro não enviado: '+(err.message||err),true);
+          } finally {send.disabled=false;}
+        });
+        actions.append(openForm,form);
       }
       const events=Array.isArray(acc.registrationLog)?acc.registrationLog.slice(-15).reverse():[];
       const logPanel=make('section','accounts-registration-log');
