@@ -129,3 +129,32 @@ Para confirmar um cadastro em sites externos, é necessário:
 O endpoint `/hall/api/member/register` foi observado no material
 de pesquisa, mas o payload e autenticação oficiais para acesso
 direto não foram comprovados. Não se deve fabricar esses contratos.
+
+## Estado mais recente confirmado pelo usuário — 15/10/2026
+
+No teste do agente Windows + Codespaces em uma plataforma externa,
+o usuário confirmou que o sistema já preenche:
+- `input[data-input-name="account"]` — username;
+- `input[data-input-name="userpass"]` — senha do perfil;
+- `input[data-input-name="confirmPassword"]` — confirmação da senha.
+
+Relatou ainda que não preenchia o campo `realName`, não acionava o
+`#insideRegisterSubmitClick` e **não conseguia visualizar os logs**.
+
+O código desta branch recebeu os ajustes:
+- Cada etapa de preenchimento agora emite log seguro no terminal Windows,
+  na GUI e em `registrationLog` (sem salvar valores dos campos).
+- A aba Contas apresenta logs **diretamente no cartão**, consulta mudanças
+  a cada dois segundos e mantém `Ver detalhes` aberto no recarregamento.
+- O navegador registra a presença/ausência do campo de nome e do botão
+  Registro; se não pode enviar, registra `real-name-required` e
+  `submit-not-sent` explicitamente.
+- Em ambientes locais autorizados, o Chromium de teste preenche o nome
+  sintético e aciona Registro. Em plataforma externa, **não preenche nome
+  civil inventado nem envia cadastro fictício**; a titularidade não é
+  comprovada por geradores de nomes e CPF.
+- Senhas novas são geradas com nove caracteres (faixa pedida: 7–9).
+
+**Ponto ainda não validado:** nenhum cadastro real concluído na plataforma
+externa foi confirmado. Não tratar botão disponível, nome fictício,
+HTTP 200 isolado ou abertura de Chromium como confirmação de conta.
