@@ -71,6 +71,12 @@ class AccountLauncher:
         mode = resolve_mode(device)
         if mode == "mixed":
             raise ValueError("Dispositivo desta conta não é individual.")
+        runtime = profile.get("runtimeConfig")
+        if not isinstance(runtime, dict) or runtime.get("mode") != mode:
+            raise ValueError(
+                "Esta conta não possui o perfil técnico original registrado. "
+                "Não é seguro recriar seu user-agent ou dispositivo automaticamente."
+            )
         url = str(profile.get("startUrl") or "").strip()
         if url and not url.startswith(("https://", "http://")):
             raise ValueError("URL salva na conta é inválida.")
@@ -97,15 +103,15 @@ class AccountLauncher:
                 session_proxy = None
                 session_proxy_id = None
                 label = ""
-                if managed:
-                    if not listing:
-                        log(f"[Contas] {profile['label']}: não há proxies salvas; abertura bloqueada.")
+                bindings = store.profile_bindings()
+                assigned_id = bindings.get(str(profile_id))
+                if assigned_id:
+                    # A reopened account must NEVER use round-robin fallback.
+                    # Deleted/missing bound proxy means a hard failure.
+                    selected = next((p for p in listing if p["id"] == assigned_id), None)
+                    if selected is None:
+                        log(f"[Contas] {profile['label']}: proxy original não disponível; abertura bloqueada.")
                         return
-                    allocated = store.assign(1, profile_id=profile_id)
-                    if not allocated:
-                        log(f"[Contas] {profile['label']}: proxy indisponível.")
-                        return
-                    selected = allocated[0]
                     result = store.test_authenticated(selected["id"])
                     if not result.get("reachable"):
                         deferred_browser_check = (
@@ -115,15 +121,9 @@ class AccountLauncher:
                             and result.get("browserVerificationRequired") is True
                         )
                         if not deferred_browser_check:
-                            log(
-                                f"[Contas] {profile['label']}: proxy não validada "
-                                f"({result.get('status', 'erro')}); navegador não iniciado."
-                            )
+                            log(f"[Contas] {profile['label']}: proxy original inválida ou indisponível ({result.get('status', 'erro')}).")
                             return
-                        log(
-                            f"[Contas] {profile['label']}: CONNECT aceito, TLS Python inconclusivo; "
-                            "o Chromium deverá verificar HTTPS e IP pela proxy antes de navegar."
-                        )
+                        log(f"[Contas] {profile['label']}: CONNECT aceito; HTTPS e IP serão verificados no Chromium.")
                     session_proxy = ProxyConfig(
                         server=f"{selected['protocol']}://{selected['host']}:{selected['port']}",
                         username=selected.get("username") or None,
@@ -131,15 +131,14 @@ class AccountLauncher:
                     )
                     session_proxy_id = selected["id"]
                     label = f"{selected['protocol'].upper()} {selected['host']}:{selected['port']}"
-                    if not store.profile_bindings().get(str(profile_id)):
-                        store.bind_profile(profile_id, session_proxy_id)
-                else:
-                    # If the local proxy workspace has never been configured,
-                    # retain the original legacy proxy behavior on this tab.
-                    session_proxy = tab._validate_proxy()
-                    if str(tab.proxy_var.get() or "").strip() and session_proxy is None:
-                        log(f"[Contas] {profile['label']}: configuração de proxy inválida; abertura cancelada.")
-                        return
+                elif managed:
+                    log(
+                        f"[Contas] {profile['label']}: não há vínculo de proxy original; "
+                        "não será atribuída outra proxy automaticamente."
+                    )
+                    return
+                # When the account was created without managed proxies, do not
+                # silently inherit a newly entered proxy from Mãe/Filha.
 
                 plan = {
                     "idx": instance_idx,
