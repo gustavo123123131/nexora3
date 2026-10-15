@@ -195,10 +195,10 @@ def test_json_events_are_bounded_and_exclude_credentials(tmp_path):
         "mae", "desktop", ["https://example.org/register"], 1, tmp_path / "profiles"
     )[0]
     key = plan["profile_record_id"]
-    for _ in range(40):
+    for _ in range(110):
         repo.set_stage(key, "pending", "provider-response-unverified", http_status=200)
     row = repo.account(key)
-    assert len(row["registrationLog"]) == 30
+    assert len(row["registrationLog"]) == 100
     assert all(event == {"at": event["at"], "stage": "provider-response-unverified",
                          "httpStatus": 200} for event in row["registrationLog"])
 
