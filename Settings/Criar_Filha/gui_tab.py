@@ -29,7 +29,7 @@ from Settings.Criar_Filha.settings.browser import (
     ProxyConfig,
 )
 from Settings.Criar_Filha.settings.withdrawal import verify_phone_now
-from Settings.Criar_Filha.settings.actions import run_automations, run_saved_account_automation, load_saved_accounts
+from Settings.Criar_Filha.settings.actions import run_automations, run_saved_account_automation, run_registration_only, load_saved_accounts
 from Settings.Criar_Filha.settings.withdrawal import start_withdrawal
 from Settings.withdraw_controller import WithdrawController
 from Settings.Criar_Filha.settings.games import search_and_open_game
@@ -2391,7 +2391,7 @@ class FilhaTab(ctk.CTkFrame):
         self._start(True)
 
     def start_without_automation(self):
-        self._start(False)
+        self._start(True)
     def open_reopen_guides_selector(self):
         accounts = load_saved_accounts()
         if not accounts:
@@ -2676,6 +2676,7 @@ class FilhaTab(ctk.CTkFrame):
                     delay_seconds=delay_seconds,
                     use_same_identity=use_same_identity,
                     instance_target_controller=self.instance_target_controller,
+                    automation_callback=run_registration_only if run_auto else None,
                 )
             except Exception as e:
                 log_threadsafe(f"[ERRO] Worker: {e}")
