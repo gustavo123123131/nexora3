@@ -3,6 +3,7 @@
 This module never sends a registration, invokes a private HTTP API, confirms a
 real account or solves CAPTCHA. The site owns its final submission.
 """
+import os
 import time
 from urllib.parse import urlparse
 from nexora_accounts.service import AccountsRepository
@@ -40,6 +41,33 @@ def _same_site(expected, current):
 def _demo(url):
     host = (urlparse(url).hostname or "").lower()
     return host in ("localhost", "127.0.0.1", "::1") or host.endswith(".test")
+
+
+
+def _owned_test_origin(url):
+    """Opt-in exact HTTPS origin for a site controlled by this project's owner.
+
+    NEXORA_OWNED_TEST_ORIGINS accepts comma-separated full HTTPS origins.
+    No wildcard domains, paths, redirects or implicit third-party permissions.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or not parsed.hostname:
+        return False
+    try:
+        port = parsed.port or 443
+        for token in os.environ.get("NEXORA_OWNED_TEST_ORIGINS", "").split(","):
+            allowed = urlparse(token.strip())
+            if (allowed.scheme != "https" or not allowed.hostname
+                    or allowed.username or allowed.password or allowed.path not in ("", "/")
+                    or allowed.query or allowed.fragment):
+                continue
+            if (parsed.hostname.lower() == allowed.hostname.lower()
+                    and port == (allowed.port or 443)):
+                return True
+    except ValueError:
+        return False
+    return False
+
 
 
 def _wait_for_registration(page, seconds=12):
@@ -86,8 +114,10 @@ def autofill_existing_registration(page, instance_plan, repository=None):
     demo = _demo(target)
     if demo and not _demo(page.url):
         return {"status": "blocked", "message": "Página de teste redirecionou para site externo."}
-    if not demo and (data.get("isTestData") is not False or
-                     data.get("ownerConfirmed") is not True):
+    owned_test = _owned_test_origin(target) and _owned_test_origin(page.url)
+    if not demo and not owned_test and (
+            data.get("isTestData") is not False or
+            data.get("ownerConfirmed") is not True):
         repo.set_stage(key, "local", "test-data-blocked")
         return {"status": "blocked",
                 "message": "Dados fictícios não usados no cadastro real. Informe dados legítimos."}
