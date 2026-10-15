@@ -209,3 +209,50 @@ def test_json_batch_api_with_csrf(tmp_path, monkeypatch):
         assert result.json()["quantity"] == 3
         assert len(client.get("/api/registration/accounts").json()["accounts"]) == 3
         assert client.post("/api/registration/cloud/sync", headers=headers, json={}).status_code == 404
+
+
+def test_new_profiles_have_unique_test_data_valid_cpf_and_persistent_folders(tmp_path):
+    """No remote API calls; each profile has its own JSON identity and Chromium directory."""
+    from Settings.device_modes import profile_directory
+    from nexora_accounts.profile_data import valid_cpf_digits
+    folder = tmp_path / "profiles"
+    repo = AccountsRepository(tmp_path / "accounts.json")
+    first = repo.create_launch_profiles("mae", "desktop",
+                                        ["https://example.test", "https://site.example.test"],
+                                        3, folder)
+    second = repo.create_launch_profiles("mae", "desktop", [], 2, folder)
+    child = repo.create_launch_profiles("filha", "android", [], 2,
+                                        tmp_path / "daughter_profiles")
+    assert len(first) == 6 and len(second) == 2 and len(child) == 2
+    assert [p["idx"] for p in first] == list(range(1, 7))
+    assert [p["idx"] for p in second] == [7, 8]
+    assert [p["url"] for p in first] == ["https://example.test"] * 3 + ["https://site.example.test"] * 3
+    assert all(profile_directory(folder, "desktop", p["idx"]).is_dir() for p in first + second)
+    accounts = repo.accounts()
+    assert len(accounts) == 10
+    assert len({a["id"] for a in accounts}) == 10
+    assert len({a["profileData"]["username"] for a in accounts}) == 10
+    assert len({a["profileData"]["password"] for a in accounts}) == 10
+    assert len({a["profileData"]["email"] for a in accounts}) == 10
+    for acc in accounts:
+        d = acc["profileData"]
+        cpf = "".join(c for c in d["cpf"] if c.isdigit())
+        assert valid_cpf_digits(cpf[:9]) == cpf
+        assert d["isTestData"] is True and d["cpfVerified"] is False
+        assert d["email"].endswith("@example.test")
+        assert d["fullName"].startswith("Pessoa Teste ")
+        assert len(d["password"]) >= 20
+    assert len(AccountsRepository(tmp_path / "accounts.json").accounts()) == 10
+    assert any(a["profileScope"] == "filha" for a in accounts)
+
+
+def test_profile_creation_does_not_claim_external_registration(tmp_path):
+    repo = AccountsRepository(tmp_path / "accounts.json")
+    profiles = repo.create_launch_profiles("mae", "desktop", [], 1, tmp_path / "profiles")
+    assert profiles[0]["url"] == ""
+    account = repo.accounts()[0]
+    assert account["status"] == "local"
+    assert account["stage"] == "profile-created"
+    assert "registrationUrl" not in account
+    state = json.loads((tmp_path / "accounts.json").read_text(encoding="utf-8"))
+    assert state["batches"] == [] and state["jobs"] == []
