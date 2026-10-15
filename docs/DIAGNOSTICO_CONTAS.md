@@ -204,43 +204,32 @@ O código desta branch recebeu os ajustes:
 externa foi confirmado. Não tratar botão disponível, nome fictício,
 HTTP 200 isolado ou abertura de Chromium como confirmação de conta.
 
-## Nome real do titular — opção local para preencher realName
+## Diagnóstico confirmado — variável global Silva
 
-O log do usuário confirmou `real-name-field-found` (elemento encontrado),
-mas o nome sintético de `profileData.fullName` não deve ser usado em
-registros externos.
+Em 15/10/2026 o usuário verificou no Windows que a variável
+`NEXORA_REGISTRATION_OWNER_NAME` devolvia **Silva**, enquanto o perfil
+`profileData.fullName` podia conter, por exemplo, **Felipe Nogueira**.
 
-O agente Windows agora suporta a variável de ambiente **local**
-`NEXORA_REGISTRATION_OWNER_NAME`. Quando definida com o nome legítimo
-do titular, ela preenche:
+**Causa exata:** o ramo de prefill para perfis de teste em sites
+externos lia a variável de ambiente global e a usava para preencher
+`input[data-input-name="realName"]`, em vez do valor específico
+do perfil. Isso explica o log `real-name-filled` com valor diferente
+do nome exibido no cartão. Não era erro de seletor.
 
-```text
-input[data-input-name="realName"]
-```
+**Correção pontual:** o ramo externo não lê mais a variável global.
+Perfis sintéticos mantêm o campo de identificação civil a ser
+preenchido pelo usuário no navegador; nome gerado de teste também
+não é enviado automaticamente a sites externos. O caminho de
+demonstração local preenche `profileData.fullName` e o caminho
+de titularidade confirmada (`isTestData=False` e
+`ownerConfirmed=True`) continua usando os dados desse perfil.
 
-O valor **não é gravado em `accounts.json` nem nos logs**. Eventos
-persistidos são `real-name-filled`, `submit-button-found` e
-`submit-not-sent`, com ID e duração. O sistema nunca substitui o
-valor por um nome civil inventado se essa configuração estiver ausente.
-
-Para configurar no Windows em um PowerShell de sua confiança,
-**sem salvar o nome no repositório**, use:
-
-```powershell
-setx NEXORA_REGISTRATION_OWNER_NAME "NOME COMPLETO DO TITULAR"
-```
-
-Substitua pelo nome verdadeiro do titular e feche/reabra o terminal ou
-programa para atualizar o ambiente. Execute novamente
-`iniciar-agente-desenvolvimento.cmd`. Se não desejar persistir o nome no
-ambiente do Windows, configure somente no processo que inicia o agente.
-
-Mesmo com o nome preenchido, clicar em **Registro** em plataforma
-externa depende das verificações, consentimento e política do serviço;
-o sistema não envia cadastro usando CPF/e-mail/telefone sintéticos.
-A aba Contas e o terminal registram `submit-not-sent` em vez de
-declarar sucesso. Nos testes locais, o envio é automatizado usando
-o botão real `#insideRegisterSubmitClick` de um formulário simulado.
+**Teste de regressão:** variável global simulada como `Silva`,
+perfil simulado com nome `Felipe Nogueira`, Chromium local com
+HTTPS interceptado; verificado que `Silva` não é inserido
+no formulário de outro perfil e não há POST para o site externo.
+Os dados legítimos por perfil foram testados em um segundo
+cenário independente. Nenhum cadastro real foi efetuado.
 
 ## Atualização: preenchimento direto no navegador e log do clique — 15/10/2026
 
@@ -257,11 +246,10 @@ O agente registra **apenas a ação**, sem gravar nome/senha/valores digitados:
 - `provider-http-error`, `provider-response-unverified`,
   `provider-confirmed` — estados baseados em evidências distintas.
 
-A variável antiga `NEXORA_REGISTRATION_OWNER_NAME` continua **opcional**
-para quem já a configurou com seu próprio nome; não é pré-requisito
-para concluir o formulário manualmente no Chromium. Não preencher
-`profileData.fullName` fictício em sites externos nem clicar
-automaticamente para criar identidade não verificada.
+A variável antiga `NEXORA_REGISTRATION_OWNER_NAME` deixou de ser
+consultada pelo fluxo do Nexora. Não preencher `profileData.fullName`
+fictício em sites externos nem clicar automaticamente para criar
+identidade não verificada.
 
 **Teste realizado:** Chromium + servidor HTTP de demonstração local,
 formulário com os seletores enviados pelo usuário, preenchimento do nome
