@@ -49,7 +49,7 @@
     const cards=make('div','accounts-list');
     directory.append(toolbar,caption,cards);
     root.append(heading,message,directory);
-    let profiles = [], busy=false;
+    let profiles = [], busy=false, lastSnapshot=null, lastReadAt=0;
     function inform(msg,error=false) {
       message.hidden=!msg;
       message.textContent=msg||'';
@@ -147,11 +147,16 @@
     }
     async function refresh() {
       if(busy) return;
-      busy=true;refreshButton.disabled=true;inform('');
+      busy=true;refreshButton.disabled=true;lastReadAt=Date.now();inform('');
       try {
         const response=await get('/api/registration/accounts');
-        profiles=Array.isArray(response.accounts)?response.accounts:[];
-        render();
+        const next=Array.isArray(response.accounts)?response.accounts:[];
+        const snapshot=JSON.stringify(next);
+        if(snapshot!==lastSnapshot) {
+          profiles=next;
+          lastSnapshot=snapshot;
+          render();
+        }
       } catch(err) {
         inform('Não foi possível consultar o JSON do agente Windows: '+(err.message||err),true);
       } finally {busy=false;refreshButton.disabled=false;}
@@ -159,7 +164,10 @@
     search.addEventListener('input',render);
     filter.addEventListener('change',render);
     refreshButton.addEventListener('click',()=>{void refresh();});
-    return {node:root,onShow(){void refresh();}};
+    return {node:root,onShow(){
+      // The outer workspace polls frequently; don't collapse open details on polls.
+      if(Date.now()-lastReadAt>2200) void refresh();
+    }};
   }
   Object.defineProperty(window,'NexoraAccountsView',{
     value:Object.freeze({create}),configurable:false,writable:false,
