@@ -15,11 +15,7 @@ from nexora_accounts.service import AccountsRepository, AccountError
 
 _QUEUED = {}  # account ID -> {values: approved data or None}, memory only
 _QUEUE_LOCK = threading.Lock()
-_SUBMIT_SELECTORS = (
-    "#insideRegisterSubmitClick",
-    "button.ui-button--primary:has-text('Registro')",
-    "button.ui-button--primary:has-text('Cadastrar')",
-)
+_SUBMIT_SELECTOR = "#insideRegisterSubmitClick"
 
 # Observe a person's own interaction in the already-open Chromium page.
 # This only records Boolean activity, never field values or credentials.
@@ -345,13 +341,16 @@ class RegistrationWatcher:
                                 return
                             element.fill(value, timeout=6000)
                     self._stage("pending", "review-real-data")
-                button = next((btn for selector in _SUBMIT_SELECTORS
-                               if (btn := self.page.locator(selector).first).is_visible()), None)
-                if button is None:
+                # Wait for the exact Registro button in the opened form.
+                # Never fall back to another similarly named element.
+                button = self.page.locator(_SUBMIT_SELECTOR).first
+                try:
+                    button.wait_for(state="visible", timeout=5000)
+                except Exception:
                     self._stage("pending", "submit-button-missing",
                                 error_code="selector-not-found")
                     return
-                # Never manipulate terms/CAPTCHA; real website validation remains in place.
+                # One click only, without bypassing site validation.
                 self.started_at = self.clock()
                 self._stage("pending", "submitting")
                 button.click(timeout=8000)
