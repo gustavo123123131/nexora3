@@ -1050,6 +1050,8 @@ def run_instance(
         # Legacy ad-hoc HTTP proxies keep their existing local gateway.
         session_proxy = (instance_plan or {}).get("proxy_config") is not None
         if session_proxy:
+            if account_profile:
+                log(f"[#{idx}] [Proxy] {account_profile['label']}: configuração carregada; associação preservada.")
             # The browser talks only to an ephemeral loopback port. Its
             # upstream authentication is handled by a per-session gateway;
             # no proxy credentials are sent into Chromium.
@@ -1157,9 +1159,16 @@ def run_instance(
         try:
             if session_proxy:
                 from Settings.session_proxy_gateway import SessionProxyGateway
-                session_gateway = SessionProxyGateway(proxy).start()
+                logged_hosts = set()
+                def _upstream_connect_logged(host, port, code):
+                    if host.lower() not in logged_hosts and len(logged_hosts) < 8:
+                        logged_hosts.add(host.lower())
+                        log(f"[#{idx}] [Proxy] Autenticação/CONNECT: {code} para {host}:{port} via proxy externa.")
+                session_gateway = SessionProxyGateway(
+                    proxy, on_connect=_upstream_connect_logged
+                ).start()
                 proxy_dict = session_gateway.playwright_proxy()
-                log(f"[#{idx}] [Proxy] Gateway isolado iniciado; autenticação externa protegida.")
+                log(f"[#{idx}] [Proxy] Gateway local isolado iniciado.")
             with sync_playwright() as p:
                 context = p.chromium.launch_persistent_context(
                     user_data_dir=str(user_data_dir),
@@ -1212,6 +1221,7 @@ def run_instance(
                     try:
                         browser_exit_ip = verify_browser_exit_ip(page, session_gateway)
                         log(f"[#{idx}] [Proxy] IP público verificado no Chromium: {browser_exit_ip}.")
+                        log(f"[#{idx}] [Proxy] Chromium: sessão pronta; HTTPS verificado pelo navegador.")
                     except ProxyConnectionError as exc:
                         if exc.code == "browser_proxy_bypassed":
                             log(f"[#{idx}] [Proxy] BLOQUEADO: navegador acessou o verificador de IP sem passar pelo gateway. Possível interferência de configuração/extensão.")
@@ -1347,18 +1357,44 @@ def run_instance(
 
                 try:
                     if auto_goto:
+                        from Settings.proxy_diagnostics import (
+                            classify_error, hostname_from_url, compare_certificates,
+                        )
+                        destination_hostname = hostname_from_url(url)
                         try:
+                            log(f"[#{idx}] [Navegação] HTTPS: solicitando {destination_hostname or '(host inválido)'}.")
                             page.goto(url, wait_until="domcontentloaded", timeout=15000)
+                            log(f"[#{idx}] [Navegação] HTTPS: carregamento concluído para {destination_hostname}.")
                         except Exception as exc:
+                            error_code, error_stage, error_message, transient = classify_error(exc)
+                            log(
+                                f"[#{idx}] [Navegação] Falha: etapa={error_stage}; "
+                                f"host={destination_hostname or '(indisponível)'}; "
+                                f"código={error_code}; {error_message}"
+                            )
+                            if (
+                                session_proxy and error_code in (
+                                    "ERR_CERT_COMMON_NAME_INVALID",
+                                    "ERR_CERT_AUTHORITY_INVALID",
+                                )
+                            ):
+                                compare_certificates(
+                                    proxy, session_gateway, destination_hostname, log,
+                                    f"[#{idx}]",
+                                )
                             if is_https_url(url):
+                                if transient and attempt < MAX_BROWSER_RESTARTS:
+                                    log(
+                                        f"[#{idx}] [Navegação] Erro transitório; "
+                                        "nova tentativa limitada mantendo a mesma conta e proxy."
+                                    )
+                                    raise RuntimeError(error_code) from None
                                 raise HttpsNavigationError(
-                                    f"Não foi possível abrir '{url}' por HTTPS. "
-                                    "O site pode não oferecer HTTPS ou a conexão pode estar "
-                                    "indisponível (certificado, DNS, proxy ou rede). "
-                                    "Verifique o endereço e tente novamente. "
-                                    f"Detalhes: {exc}"
-                                ) from exc
-                            raise
+                                    f"HTTPS não concluído: {destination_hostname}, "
+                                    f"{error_code} ({error_message}). "
+                                    "Não será ignorada a validação de certificado."
+                                ) from None
+                            raise RuntimeError(error_code) from None
 
                         try:
                             vw = int((cfg.viewport or {}).get("width", 420))
