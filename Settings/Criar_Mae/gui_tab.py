@@ -1346,7 +1346,9 @@ def run_instance(
                                 try:
                                     from nexora_accounts.registration_autofill import autofill_existing_registration
                                     _registration_stage("form-scanning")
-                                    prefill_result = autofill_existing_registration(page, instance_plan)
+                                    prefill_result = autofill_existing_registration(
+                                        page, instance_plan, progress=_registration_stage
+                                    )
                                     log(
                                         f"[#{idx} ID={registration_id[:8]}] Cadastro: "
                                         f"{prefill_result['status']} "
