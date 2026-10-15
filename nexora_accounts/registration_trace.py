@@ -40,6 +40,7 @@ def trace_registration(account_id, profile_index, stage, status="local",
         error=" erro=" + error_code if error_code else "",
     )
     logging.getLogger("nexora.registration").info(line)
+    print(line, flush=True)  # Windows-agent terminal / supervisor logs
     if ui_log:
         ui_log(line)
     return line
