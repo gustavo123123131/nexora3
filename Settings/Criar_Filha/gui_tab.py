@@ -1321,9 +1321,10 @@ def run_instance(
                                     from nexora_accounts.registration_autofill import autofill_existing_registration
                                     prefill_result = autofill_existing_registration(page, instance_plan)
                                     log(f"[#{idx}] Cadastro: {prefill_result['message']}")
-                                    if prefill_result["status"] == "filled":
-                                        from nexora_accounts.registration_submit import RegistrationWatcher
-                                        registration_watcher = RegistrationWatcher(page, instance_plan, log=log)
+                                    # Even a test-data-blocked profile needs a watcher:
+                                    # the user can supply legitimate values transiently in Contas.
+                                    from nexora_accounts.registration_submit import RegistrationWatcher
+                                    registration_watcher = RegistrationWatcher(page, instance_plan, log=log)
                                 except Exception:
                                     log(f"[#{idx}] Cadastro: preenchimento indisponível; verifique o formulário.")
                             log(f"[#{idx}] ✋ MODO MANUAL pronto em {url}.")
