@@ -2395,7 +2395,7 @@ class MaeTab(ctk.CTkFrame):
 
     def _start(self, run_auto: bool):
         # Legacy callers cannot reactivate the deleted registration automation.
-        if run_auto or (self.worker_thread and self.worker_thread.is_alive()):
+        if run_auto:
             return
 
         try:
@@ -2523,7 +2523,11 @@ class MaeTab(ctk.CTkFrame):
                 modos.append("AutoChave")
             self._log(f"[Área Pix] {' + '.join(modos)} ativo(s) para {autopix_bank} no escopo '{AREA_PIX_SCOPE}'.")
 
-        self.stop_event.clear()
+        # Independent stop events: starting a new browser must not recycle
+        # or stop an already-running Chromium session from the same tab.
+        session_stop_event = threading.Event()
+        if not hasattr(self, "_browser_jobs"):
+            self._browser_jobs = []
         self._set_running_state(True)
         self._set_status("Executando...")
 
@@ -2538,12 +2542,17 @@ class MaeTab(ctk.CTkFrame):
         except Exception:
             pass
 
+        # Capture mutable form values before launching the background job.
+        launch_delay_seconds = self._get_float(
+            self.delay_var, default=1.0, min_v=0.0, max_v=9999.0
+        )
+
         def log_threadsafe(m: str):
-            self.after(0, lambda: self._log(m))
+            self.after(0, lambda message=m: self._log(message))
 
         def worker():
             try:
-                delay_seconds = self._get_float(self.delay_var, default=1.0, min_v=0.0, max_v=9999.0)
+                delay_seconds = launch_delay_seconds
 
                 if autopix_enabled or autochave_enabled:
                     log_threadsafe(f"[Área Pix] Garantindo sessão compartilhada de {autopix_bank} para o escopo '{AREA_PIX_SCOPE}'...")
@@ -2570,7 +2579,7 @@ class MaeTab(ctk.CTkFrame):
                     start_game_enabled=start_game_enabled,
                     start_game_name=start_game_name,
                     start_game_id=start_game_id,
-                    stop_event=self.stop_event,
+                    stop_event=session_stop_event,
                     winpos_controller=self.winpos_controller,
                     speed_controller=self.speed_controller,
                     verify_phone_controller=self.verify_phone_controller,
@@ -2587,18 +2596,39 @@ class MaeTab(ctk.CTkFrame):
             except Exception as e:
                 log_threadsafe(f"[ERRO] Worker: {e}")
             finally:
-                self.after(0, lambda: self._set_running_state(False))
-                self.after(0, lambda: self._set_status("Pronto."))
+                self._browser_jobs = [
+                    pair for pair in self._browser_jobs
+                    if pair[0] is not threading.current_thread()
+                ]
+                def update_finished():
+                    self._set_running_state(False)
+                    if self._browser_jobs:
+                        self.btn_stop.configure(state="normal")
+                        self._set_status("Navegadores em execução.")
+                    else:
+                        self._set_status("Pronto.")
+                self.after(0, update_finished)
 
         self.worker_thread = threading.Thread(target=worker, daemon=True)
+        self._browser_jobs.append((self.worker_thread, session_stop_event))
         self.worker_thread.start()
+        # Browser windows run independently. Keep the launch configuration
+        # editable and the button available for the next clean session.
+        self._set_running_state(False)
+        self.btn_stop.configure(state="normal")
 
     def stop_run(self):
-        if not (self.worker_thread and self.worker_thread.is_alive()):
+        active = [
+            (thread, stop) for thread, stop in getattr(self, "_browser_jobs", [])
+            if thread.is_alive()
+        ]
+        if not active:
             return
+        for _, stop in active:
+            stop.set()
         self.stop_event.set()
         self._set_status("Parando...")
-        self._log("[UI] ⏹️ Parada solicitada.")
+        self._log("[UI] ⏹️ Parada solicitada para as sessões desta aba.")
 
 
 def run_standalone():
