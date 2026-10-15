@@ -2102,27 +2102,12 @@ class FilhaTab(ctk.CTkFrame):
 
         ctk.CTkLabel(right, text="Ações", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=16, pady=(16, 12))
 
-        self.btn_start_auto = ctk.CTkButton(
-            right, text="Iniciar (COM automação)", height=42, corner_radius=14,
-            command=self.start_with_automation
-        )
-        self.btn_start_auto.pack(fill="x", padx=16, pady=(0, 10))
-        self.btn_start_auto.pack_forget()
-
         self.btn_start_manual = ctk.CTkButton(
-            right, text="Abrir Conta", height=42, corner_radius=14,
+            right, text="Abrir Navegadores", height=42, corner_radius=14,
             fg_color="#111827", hover_color="#1F2937",
-            command=self.start_without_automation
+            command=self.start_browsers
         )
         self.btn_start_manual.pack(fill="x", padx=16, pady=(0, 10))
-
-        self.btn_reopen_guides = ctk.CTkButton(
-            right, text="Reabrir guias", height=42, corner_radius=14,
-            fg_color="#0F766E", hover_color="#115E59",
-            command=self.open_reopen_guides_selector
-        )
-        self.btn_reopen_guides.pack(fill="x", padx=16, pady=(0, 10))
-        self.btn_reopen_guides.pack_forget()
 
         self.btn_withdraw = ctk.CTkButton(
             right, text="Iniciar saque", height=42, corner_radius=14,
@@ -2342,185 +2327,13 @@ class FilhaTab(ctk.CTkFrame):
         for btn in self.quick_game_buttons:
             btn.configure(state="normal")
         
-    def start_with_automation(self):
-        self._start(True)
-
-    def start_without_automation(self):
-        # Local profile generation only; no real site registration.
+    def start_browsers(self):
+        """Launch isolated Chromium windows without creating accounts."""
         self._start(False)
-    def open_reopen_guides_selector(self):
-        accounts = load_saved_accounts()
-        if not accounts:
-            self._set_status("Nenhuma conta salva encontrada.")
-            self._log("[UI] ⚠️ Nenhuma conta encontrada em registros.json.")
-            tkmb.showwarning("Reabrir guias", "Nenhuma conta salva foi encontrada em registros.json.")
-            return
-
-        top = ctk.CTkToplevel(self)
-        top.title("Reabrir guias")
-        top.geometry("620x520")
-        top.transient(self.winfo_toplevel())
-        top.grab_set()
-
-        wrapper = ctk.CTkFrame(top, corner_radius=16)
-        wrapper.pack(fill="both", expand=True, padx=14, pady=14)
-
-        ctk.CTkLabel(wrapper, text="Selecione as contas para abrir", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=12, pady=(12, 4))
-        ctk.CTkLabel(wrapper, text="Cada item abre uma guia e faz login com a conta salva.", text_color="#9CA3AF").pack(anchor="w", padx=12, pady=(0, 10))
-
-        scroll = ctk.CTkScrollableFrame(wrapper, corner_radius=12)
-        scroll.pack(fill="both", expand=True, padx=12, pady=(0, 12))
-
-        item_vars: list[tuple[dict, ctk.BooleanVar]] = []
-        for account in accounts:
-            var = ctk.BooleanVar(value=False)
-            label = f"{account.get('dominio', '')} | {account.get('login', '')}"
-            subtitle = account.get("data") or ""
-
-            row = ctk.CTkFrame(scroll, fg_color="transparent")
-            row.pack(fill="x", padx=4, pady=4)
-
-            ctk.CTkCheckBox(row, text=label, variable=var).pack(anchor="w")
-            if subtitle:
-                ctk.CTkLabel(row, text=subtitle, text_color="#9CA3AF").pack(anchor="w", padx=28)
-
-            item_vars.append((account, var))
-
-        def _start_selected_accounts():
-            selected_accounts = [account for account, var in item_vars if bool(var.get())]
-            if not selected_accounts:
-                tkmb.showwarning("Reabrir guias", "Selecione pelo menos uma conta para abrir.")
-                return
-
-            top.destroy()
-            self.start_reopen_guides(selected_accounts)
-
-        actions = ctk.CTkFrame(wrapper, fg_color="transparent")
-        actions.pack(fill="x", padx=12, pady=(0, 12))
-
-        ctk.CTkButton(actions, text="Iniciar", command=_start_selected_accounts).pack(side="left", expand=True, fill="x", padx=(0, 6))
-        ctk.CTkButton(actions, text="Cancelar", command=top.destroy, fg_color="#374151", hover_color="#1F2937").pack(side="left", expand=True, fill="x", padx=(6, 0))
-
-    def _build_saved_account_instance_plans(self, selected_accounts: List[dict]) -> List[dict]:
-        plans: List[dict] = []
-
-        for idx, account in enumerate(selected_accounts, start=1):
-            if not isinstance(account, dict):
-                continue
-
-            domain = str(account.get("dominio") or "").strip()
-            login = str(account.get("login") or "").strip()
-            password = str(account.get("senha") or "").strip()
-            created_at = str(account.get("data") or "").strip()
-            if not domain or not login or not password:
-                continue
-
-            url = domain if domain.startswith(("http://", "https://")) else f"https://{domain}"
-            site_key = _normalize_site_key(url) or domain.lower()
-
-            plans.append({
-                "idx": idx,
-                "url": url,
-                "site_key": site_key,
-                "site_occurrence": 1,
-                "shared_identity_key": "",
-                "shared_identity_owner": False,
-                "should_autochave": False,
-                "saved_account": {
-                    "login": login,
-                    "senha": password,
-                    "dominio": domain,
-                    "data": created_at,
-                },
-            })
-
-        return plans
-
-    def start_reopen_guides(self, selected_accounts: List[dict]):
-        if self.worker_thread and self.worker_thread.is_alive():
-            return
-
-        instance_plans = self._build_saved_account_instance_plans(selected_accounts)
-        if not instance_plans:
-            self._set_status("Nenhuma conta válida foi selecionada.")
-            self._log("[UI] ⚠️ Nenhuma conta válida para reabrir.")
-            return
-
-        self.available_instance_ids = list(range(1, len(instance_plans) + 1))
-        self._update_instance_target_label()
-
-        try:
-            mode = self._device_mode_for_launch()
-        except ValueError as exc:
-            self._set_status(str(exc))
-            self._log(f"[UI] {exc}")
-            return
-        headless = bool(self.headless_var.get())
-        keep_profiles = bool(self.keep_profiles_var.get())
-
-        proxy = self._validate_proxy()
-        if self.proxy_var.get().strip() and proxy is None:
-            return
-
-        self.save_settings()
-        self.stop_event.clear()
-        self._set_running_state(True)
-        self._set_status("Reabrindo guias...")
-        self._log(f"[UI] 🔁 Reabrindo {len(instance_plans)} guia(s) com contas salvas.")
-
-        try:
-            self.winpos_controller.reset()
-        except Exception:
-            pass
-
-        try:
-            self.verify_phone_controller.reset()
-        except Exception:
-            pass
-
-        def log_threadsafe(m: str):
-            self.after(0, lambda: self._log(m))
-
-        def worker():
-            try:
-                delay_seconds = self._get_float(self.delay_var, default=1.0, min_v=0.0, max_v=9999.0)
-                run_all(
-                    urls_string="",
-                    mode=mode,
-                    count_per_url=1,
-                    headless=headless,
-                    proxy=proxy,
-                    auto_goto=True,
-                    keep_profiles=keep_profiles,
-                    run_auto=True,
-                    start_game_enabled=False,
-                    start_game_name="",
-                    start_game_id="",
-                    stop_event=self.stop_event,
-                    winpos_controller=self.winpos_controller,
-                    speed_controller=self.speed_controller,
-                    verify_phone_controller=self.verify_phone_controller,
-                    mirror=self.mirror,
-                    withdraw_controller=self.withdraw_controller,
-                    game_launch_controller=self.game_launch_controller,
-                    log=log_threadsafe,
-                    delay_seconds=delay_seconds,
-                    use_same_identity=False,
-                    instance_target_controller=self.instance_target_controller,
-                    instance_plans=instance_plans,
-                    automation_callback=run_saved_account_automation,
-                )
-            except Exception as e:
-                log_threadsafe(f"[ERRO] Worker: {e}")
-            finally:
-                self.after(0, lambda: self._set_running_state(False))
-                self.after(0, lambda: self._set_status("Pronto."))
-
-        self.worker_thread = threading.Thread(target=worker, daemon=True)
-        self.worker_thread.start()
 
     def _start(self, run_auto: bool):
-        if self.worker_thread and self.worker_thread.is_alive():
+        # Legacy callers cannot re-enable the removed account automation.
+        if run_auto or (self.worker_thread and self.worker_thread.is_alive()):
             return
 
         try:
@@ -2538,13 +2351,8 @@ class FilhaTab(ctk.CTkFrame):
             self._log(f"[UI] {exc}")
             return
         count = self._get_int(self.count_var, default=1, min_v=1, max_v=50)
-        if not run_auto:
-            from datetime import datetime, timezone
-            started = datetime.now(timezone.utc).isoformat(timespec="seconds")
-            self._log(
-                f"[{started}] [Abrir Conta] Tipo=Filha; "
-                f"{count} perfil(is) por link, {len(normalized_urls)} link(s)."
-            )
+        self._log(f"[Abrir Navegadores] Filha: {count} janela(s) por link; "
+                  f"{len(normalized_urls)} link(s).")
 
         url_list = [u.strip() for u in urls.split(",") if u.strip()]
         total_urls = len(url_list) if url_list else 1
@@ -2562,23 +2370,8 @@ class FilhaTab(ctk.CTkFrame):
         if self.proxy_var.get().strip() and proxy is None:
             return
 
-        # Abrir Conta: allocate NEW disk profiles and independent fictional
-        # identities before launching Chromium. Never infer a site registration.
+        # Launches only browsers, without JSON accounts or generated identities.
         launch_plans = None
-        if not run_auto:
-            from nexora_accounts.service import AccountsRepository, AccountError
-            try:
-                launch_plans = AccountsRepository().create_launch_profiles(
-                    "filha", mode, url_list, count, PROFILES_DIR
-                )
-            except (AccountError, OSError, ValueError) as exc:
-                self._set_status("Erro ao criar perfis locais.")
-                self._log(f"[UI] Falha ao criar perfis locais: {exc}")
-                return
-            self.available_instance_ids = [plan["idx"] for plan in launch_plans]
-            self._update_instance_target_label()
-            self._log(f"[UI] {len(launch_plans)} perfil(is) local(is) novo(s) salvo(s) em accounts.json.")
-            self._set_status(f"{len(launch_plans)} perfil(is) criado(s) localmente.")
 
         self.save_settings()
 
@@ -2641,7 +2434,7 @@ class FilhaTab(ctk.CTkFrame):
                     headless=headless,
                     proxy=proxy,
                     auto_goto=bool(url_list),
-                    keep_profiles=True if launch_plans else keep_profiles,
+                    keep_profiles=True,
                     run_auto=run_auto,
                     start_game_enabled=start_game_enabled,
                     start_game_name=start_game_name,
@@ -2657,7 +2450,7 @@ class FilhaTab(ctk.CTkFrame):
                     delay_seconds=delay_seconds,
                     use_same_identity=use_same_identity,
                     instance_target_controller=self.instance_target_controller,
-                    automation_callback=run_registration_only if run_auto else None,
+                    automation_callback=None,
                     instance_plans=launch_plans,
                 )
             except Exception as e:
