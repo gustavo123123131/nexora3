@@ -222,18 +222,19 @@ def autofill_existing_registration(page, instance_plan, repository=None, progres
             report("submit-button-found" if submit_button is not None
                    else "submit-button-missing")
             if real_name is not None and filled != 4:
-                report("real-name-required")
+                report("name-entry-pending")
             report("submit-not-sent")
             return {
                 "status": "owner-name-filled" if filled == 4 else "credentials-filled",
                 "fieldCount": filled,
                 "message": (
-                    "Username, senha, confirmação e nome legítimo preenchidos. "
-                    "Confira os dados e as verificações; envio externo não realizado."
+                    "Username, senha, confirmação e nome preenchidos. "
+                    "Confira o formulário e clique em Registro quando estiver pronto; "
+                    "o Nexora acompanhará o retorno."
                     if filled == 4 else
-                    "Username, senha e confirmação preenchidos. "
-                    "Configure NEXORA_REGISTRATION_OWNER_NAME com o nome do titular "
-                    "para preencher realName; envio externo não realizado."
+                    "Username e senhas preenchidos. Complete o campo Nome "
+                    "diretamente no navegador e clique em Registro após conferir "
+                    "os dados. O Nexora registrará o clique e a resposta do site."
                 ),
             }
         return {
