@@ -29,7 +29,7 @@ from Settings.Criar_Filha.settings.browser import (
     ProxyConfig,
 )
 from Settings.Criar_Filha.settings.withdrawal import verify_phone_now
-from Settings.Criar_Filha.settings.actions import run_automations, run_saved_account_automation, run_registration_only, load_saved_accounts
+from Settings.Criar_Filha.settings.actions import run_automations, run_saved_account_automation, run_registration_only, RegistrationUnverified, load_saved_accounts
 from Settings.Criar_Filha.settings.withdrawal import start_withdrawal
 from Settings.withdraw_controller import WithdrawController
 from Settings.Criar_Filha.settings.games import search_and_open_game
@@ -1339,6 +1339,9 @@ def run_instance(
                             shared_phone_key=shared_phone_key,
                         )
 
+                except RegistrationUnverified:
+                    # The site may already have received a POST; never resubmit blindly.
+                    raise
                 except HttpsNavigationError:
                     # Fall through the context cleanup and stop the retry
                     # loop. Do not silently downgrade HTTPS to HTTP.
@@ -1364,6 +1367,9 @@ def run_instance(
                     except Exception:
                         pass
 
+        except RegistrationUnverified as e:
+            log(f"[#{idx}] ⚠️ {e}")
+            return
         except HttpsNavigationError as e:
             log(f"[#{idx}] ⚠️ {e}")
             log(f"[#{idx}] Navegação HTTPS interrompida sem novas tentativas.")
