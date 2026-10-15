@@ -2088,6 +2088,12 @@ class FilhaTab(ctk.CTkFrame):
 
         ctk.CTkLabel(right, text="Ações", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w", padx=16, pady=(16, 12))
 
+        self.btn_create_local = ctk.CTkButton(
+            right, text="Abrir Conta", height=42, corner_radius=14,
+            command=self.create_local_profile,
+        )
+        self.btn_create_local.pack(fill="x", padx=16, pady=(0, 10))
+
         self.btn_start_manual = ctk.CTkButton(
             right, text="Abrir Navegadores", height=42, corner_radius=14,
             fg_color="#111827", hover_color="#1F2937",
