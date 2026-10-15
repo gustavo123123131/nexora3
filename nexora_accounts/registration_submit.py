@@ -14,11 +14,8 @@ from nexora_accounts.service import AccountsRepository, AccountError
 
 _QUEUED = {}  # account ID -> {values: approved data or None}, memory only
 _QUEUE_LOCK = threading.Lock()
-_SUBMIT_SELECTORS = (
-    "#insideRegisterSubmitClick",
-    "button.ui-button--primary:has-text('Registro')",
-    "button.ui-button--primary:has-text('Cadastrar')",
-)
+# The supplied form's real submit button; never click a similarly named button.
+_SUBMIT_SELECTOR = "#insideRegisterSubmitClick"
 
 
 def _real_values(values, generated=None):
@@ -217,12 +214,16 @@ class RegistrationWatcher:
                                 return
                             element.fill(value, timeout=6000)
                     self._stage("pending", "review-real-data")
-                button = next((btn for selector in _SUBMIT_SELECTORS
-                               if (btn := self.page.locator(selector).first).is_visible()), None)
-                if button is None:
+                # Playwright waits for this exact button to appear after filling.
+                # Do not fall back to another "Registro" button elsewhere on the page.
+                button = self.page.locator(_SUBMIT_SELECTOR).first
+                try:
+                    button.wait_for(state="visible", timeout=5000)
+                except Exception:
                     self._stage("pending", "submit-button-missing")
                     return
-                # Never manipulate terms/CAPTCHA; real website validation remains in place.
+                # One click only, on the already-open profile; site validation
+                # (terms, CAPTCHA and other requirements) remains untouched.
                 self.started_at = self.clock()
                 self._stage("pending", "submitting")
                 button.click(timeout=8000)
