@@ -81,12 +81,14 @@ def _username(full_name: str, existing: set[str]) -> str:
     normalized = unicodedata.normalize("NFKD", full_name)
     normalized = "".join(c for c in normalized if not unicodedata.combining(c)).lower()
     pieces = ["".join(c for c in p if c in string.ascii_lowercase) for p in normalized.split()]
-    stem = ((pieces[0] if pieces else "usuario") + (pieces[-1] if pieces else ""))[:8]
-    if len(stem) < 5:
-        stem = (stem + "perfil")[:8]
+    first = (pieces[0] if pieces else "user")[:4]
+    last = (pieces[-1] if pieces else "perfil")[:2]
+    stem = (first + last).ljust(6, "x")[:6]
     for _ in range(1000):
-        name = stem + _digits(2)
-        if 7 <= len(name) <= 10 and name not in existing:
+        # Eight million-plus possible combinations for each name stem.
+        suffix = "".join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(4))
+        name = stem + suffix
+        if name not in existing:
             return name
     raise LocalProfileError("Não foi possível criar um username exclusivo.")
 
@@ -140,6 +142,31 @@ class LocalProfileStore:
     def list(self) -> list[dict]:
         with _LOCK:
             return [p.copy() for p in self._read()["profiles"]]
+
+    def selected_id(self) -> int | None:
+        with _LOCK:
+            value = self._read().get("selectedProfileId")
+            return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+    def selected(self) -> dict | None:
+        with _LOCK:
+            data = self._read()
+            for p in data["profiles"]:
+                if p["id"] == data.get("selectedProfileId"):
+                    return p.copy()
+            return None
+
+    def select(self, profile_id: int | None) -> int | None:
+        with _LOCK:
+            data = self._read()
+            if profile_id is not None:
+                if isinstance(profile_id, bool) or not isinstance(profile_id, int):
+                    raise LocalProfileError("ID da conta inválido.")
+                if not any(p["id"] == profile_id for p in data["profiles"]):
+                    raise LocalProfileError("Conta não encontrada.")
+            data["selectedProfileId"] = profile_id
+            self._write(data)
+            return profile_id
 
     def create(self, origin: str) -> dict:
         if origin not in ("mae", "filha"):
