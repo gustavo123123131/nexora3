@@ -55,3 +55,14 @@ def profile_directory(base, mode: str, idx: int):
     if selected == "mixed":
         return base / "mixed" / name / f"profile_{idx}"
     return base / name / f"profile_{idx}"
+
+
+def account_profile_directory(base, origin: str, account_id: int):
+    """Private Chromium user-data directory, keyed by account, not window idx.
+
+    Old profile_1/profile_2 paths are intentionally not reused because they
+    contain browsing data from unrelated historic launches.
+    """
+    if origin not in ("mae", "filha") or type(account_id) is not int or account_id < 1:
+        raise ValueError("Identificador de conta inválido.")
+    return base / "accounts" / f"account_{account_id}"
