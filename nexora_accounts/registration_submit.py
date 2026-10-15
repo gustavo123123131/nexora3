@@ -21,6 +21,35 @@ _SUBMIT_SELECTORS = (
     "button.ui-button--primary:has-text('Cadastrar')",
 )
 
+# Observe a person's own interaction in the already-open Chromium page.
+# This only records Boolean activity, never field values or credentials.
+# Capture-phase listeners work even when the site's register dialog rerenders.
+_MANUAL_TRACKER_INSTALL = r"""() => {
+  if (window.__nexoraRegTrackerV1) return;
+  const tracker = {name: false, clicks: 0};
+  window.__nexoraRegTrackerV1 = tracker;
+  document.addEventListener('input', (event) => {
+    if (event.target && event.target.matches &&
+        event.target.matches('input[data-input-name="realName"]')) {
+      tracker.name = true;
+    }
+  }, true);
+  document.addEventListener('click', (event) => {
+    if (event.target && event.target.closest &&
+        event.target.closest('#insideRegisterSubmitClick')) {
+      tracker.clicks += 1;
+    }
+  }, true);
+}"""
+_MANUAL_TRACKER_DRAIN = r"""() => {
+  const tracker = window.__nexoraRegTrackerV1;
+  if (!tracker) return null;
+  const state = {name: tracker.name, clicks: tracker.clicks};
+  tracker.name = false;
+  tracker.clicks = 0;
+  return state;
+}"""
+
 
 def _real_values(values, generated=None):
     """Require legitimate owner/contact info but reuse the existing generated login.
@@ -144,7 +173,42 @@ class RegistrationWatcher:
         self.last_stage = "review"
         self.last_stage_at = self.clock()
         self.finished = False
+        self._manual_tracking = False
         self.page.on("response", self._on_response)
+        self._enable_manual_tracking()
+
+    def _enable_manual_tracking(self):
+        """Install readonly event counters in the existing page, when possible."""
+        try:
+            self.page.evaluate(_MANUAL_TRACKER_INSTALL)
+            self._manual_tracking = True
+        except Exception:
+            # Offline stubs and pages mid-navigation might not support evaluate.
+            self._manual_tracking = False
+
+    def _record_manual_activity(self):
+        """Observe in-browser typing and clicks without reading their values."""
+        if not self._manual_tracking:
+            self._enable_manual_tracking()
+        if not self._manual_tracking:
+            return
+        try:
+            activity = self.page.evaluate(_MANUAL_TRACKER_DRAIN)
+            if not isinstance(activity, dict):
+                self._manual_tracking = False
+                return
+            if activity.get("name"):
+                current = self.repo.account(self.key).get("status", "local")
+                self._stage(current, "name-entered-in-browser")
+            if activity.get("clicks") and self.started_at is None:
+                if self._valid_page():
+                    self.started_at = self.clock()
+                    self._stage("pending", "manual-submit-clicked")
+                else:
+                    self._stage("local", "origin-changed")
+        except Exception:
+            # A navigation can destroy the tracker. Reinstall on next tick.
+            self._manual_tracking = False
 
     def _on_response(self, response):
         """Record status and an OPTIONAL numeric provider code, never a response body."""
@@ -209,6 +273,10 @@ class RegistrationWatcher:
             self.finished = True
             return
 
+        # Capture the user's own click before processing any queued automation.
+        # Internal button.click() sets started_at before triggering its DOM event,
+        # so that later event is not incorrectly described as a manual click.
+        self._record_manual_activity()
         command = _take(self.key)
         if command is not None:
             if not self._valid_page():
