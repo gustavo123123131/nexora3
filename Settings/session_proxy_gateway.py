@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import re
 import secrets
 import socket
 import socketserver
@@ -22,9 +23,11 @@ from Settings.local_proxy_gateway import (
 
 
 class ProxyConnectionError(OSError):
-    def __init__(self, code: str):
+    def __init__(self, code: str, detail: str = ""):
         super().__init__(code)
         self.code = code
+        # Machine-readable, allowlisted diagnostic only; never a URL or password.
+        self.detail = detail
 
 
 def _read_exact(sock, length):
@@ -234,6 +237,7 @@ def verify_browser_exit_ip(page, gateway, *, timeout_ms=10000):
         ("api64.ipify.org", "https://api64.ipify.org?format=json"),
     )
     saw_direct_success = False
+    failures = []
     for host, url in targets:
         previous = gateway.connect_count(host)
         try:
@@ -243,22 +247,29 @@ def verify_browser_exit_ip(page, gateway, *, timeout_ms=10000):
                 wait_until="domcontentloaded", timeout=timeout_ms,
             )
             if response is None or response.status != 200:
+                failures.append("IP_CHECK_HTTP_FAILED")
                 continue
             raw = page.locator("body").inner_text(timeout=4000)
             ip_value = _validated_ip_from_text(raw)
             if not ip_value:
+                failures.append("IP_CHECK_INVALID_REPLY")
                 continue
             if gateway.connect_count(host) <= previous:
                 saw_direct_success = True
                 continue
             return ip_value
-        except Exception:
+        except Exception as exc:
+            # Extract only a known Chromium error code or exception class:
+            # page.goto exceptions include full URLs, which must not be logged.
+            match = re.search(r"\\b(ERR_[A-Z0-9_]+)\\b", str(exc))
+            failures.append(match.group(1) if match else type(exc).__name__)
             # Try another known endpoint, but never continue to the user's
             # destination without proof that Chromium used this gateway.
             continue
     if saw_direct_success:
         raise ProxyConnectionError("browser_proxy_bypassed")
-    raise ProxyConnectionError("browser_proxy_unverified")
+    codes = ",".join(dict.fromkeys(failures))[:180] or "IP_CHECK_UNAVAILABLE"
+    raise ProxyConnectionError("browser_proxy_unverified", codes)
 
 
 def refresh_browser_exit_ip(page, gateway, *, timeout_ms=6000):
