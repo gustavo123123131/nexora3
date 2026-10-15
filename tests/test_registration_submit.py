@@ -3,7 +3,9 @@ import uuid
 
 import pytest
 
-from nexora_accounts.registration_submit import RegistrationWatcher, request_submit
+from nexora_accounts.registration_submit import (
+    RegistrationWatcher, request_submit, request_confirmed_auto_submit
+)
 
 
 class Repo:
@@ -116,6 +118,28 @@ def test_request_needs_confirmation_and_blocks_test_identities():
     with pytest.raises(Exception):
         request_submit(account["id"], True, repo)
     assert not repo.events
+
+
+def test_autoclick_after_autofill_only_for_confirmed_owner():
+    account = valid_account()
+    account["profileData"].update({
+        "fullName": "Pessoa Autorizada",
+        "email": "pessoa@dominio-valido.dev",
+        "phone": "",
+    })
+    repo = Repo(account)
+    watcher = RegistrationWatcher(
+        Page(account["targetUrl"]), {"profile_record_id": account["id"]},
+        repository=repo, success_selector="",
+    )
+    assert request_confirmed_auto_submit(account["id"], repo) is True
+    watcher.tick()
+    assert watcher.page.button.clicks == 1
+    watcher.tick()
+    assert watcher.page.button.clicks == 1
+
+    account["profileData"]["isTestData"] = True
+    assert request_confirmed_auto_submit(account["id"], repo) is False
 
 
 def test_click_sent_once_and_http_200_not_mistaken_for_success():
