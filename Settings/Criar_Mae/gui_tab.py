@@ -2447,12 +2447,13 @@ class MaeTab(ctk.CTkFrame):
         for btn in self.quick_game_buttons:
             btn.configure(state="normal")
         
-    def create_local_profile(self, *, device_mode=None, start_url=None):
+    def create_local_profile(self, *, device_mode=None, start_url=None, connection_mode=None):
         """Create a NEW account for a fresh browser; never reuse selection."""
         try:
             from nexora_accounts.local_profiles import LocalProfileStore
             profile = LocalProfileStore().create(
                 AREA_PIX_SCOPE, device_mode=device_mode, start_url=start_url,
+                connection_mode=connection_mode,
             )
             self._log(f"[Contas] {profile['label']} criada e salva ({device_mode}).")
             return profile
@@ -2582,6 +2583,10 @@ class MaeTab(ctk.CTkFrame):
             new_profile = self.create_local_profile(
                 device_mode=device,
                 start_url=plan["url"] if normalized_urls else "",
+                connection_mode=(
+                    "managed" if plan.get("proxy_id") else
+                    "legacy" if proxy is not None else "direct"
+                ),
             )
             if not new_profile:
                 return
