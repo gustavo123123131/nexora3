@@ -38,3 +38,14 @@
 .accounts-empty{grid-column:1/-1;text-align:center;padding:48px 10px;color:#aabbd7}
 @media(max-width:1100px){.accounts-list{grid-template-columns:1fr}}
 @media(max-width:600px){.accounts-workspace{padding:18px 12px 28px}.accounts-heading{flex-direction:column}.accounts-directory{padding:12px}.accounts-directory-tools{flex-direction:column}.accounts-filter{width:100%}.accounts-summary,.accounts-details{grid-template-columns:1fr}.accounts-test-badge{white-space:nowrap}}
+
+.accounts-registration-actions{margin:-3px 0 14px}
+.accounts-submit-button{background:#31a576;color:#10291f;border:0;border-radius:8px;padding:10px 14px;font-weight:800;cursor:pointer}
+.accounts-submit-button:disabled{opacity:.55;cursor:wait}
+.accounts-action-hint{font-size:11px;line-height:1.5;color:#f5d5a0;margin:0}
+.accounts-registration-log{grid-column:1/-1;background:#132238;border:1px solid #334d70;border-radius:9px;padding:12px;min-width:0}
+.accounts-registration-log h4{font-size:12px;margin:0 0 10px;color:#dfeaff}
+.accounts-registration-log p{font-size:11px;color:#aabbd7}
+.accounts-log-row{display:grid;grid-template-columns:160px minmax(0,1fr);gap:8px;padding:7px 0;border-top:1px solid #2a3f5b;color:#d3e0f5;font-size:11px;overflow-wrap:anywhere}
+.accounts-log-row time{color:#93a9c9}
+@media(max-width:600px){.accounts-log-row{grid-template-columns:1fr;gap:2px}}
