@@ -2478,16 +2478,32 @@ class MaeTab(ctk.CTkFrame):
                     checked.add(entry["id"])
                     result = proxy_store.test_authenticated(entry["id"])
                     if not result["reachable"]:
-                        self._set_status("Falha de autenticação/conexão da proxy.")
+                        # Only a CONNECT-accepted / Python TLS-inconclusive
+                        # status can proceed, and ONLY to the mandatory
+                        # Chromium IP/HTTPS verification before site navigation.
+                        if not (
+                            result.get("status") == "tls_handshake_failed"
+                            and result.get("stage") == "tls_destination"
+                            and result.get("connectVerified") is True
+                            and result.get("browserVerificationRequired") is True
+                        ):
+                            self._set_status("Falha de autenticação/conexão da proxy.")
+                            self._log(
+                                f"[Proxy] {entry['host']}:{entry['port']}: "
+                                f"{result.get('status', 'falha')} "
+                                f"(etapa: {result.get('stage', 'não informada')}) — "
+                                f"{result.get('message', 'Teste não concluído')} "
+                                "Navegadores não iniciados."
+                            )
+                            return
                         self._log(
                             f"[Proxy] {entry['host']}:{entry['port']}: "
-                            f"{result.get('status', 'falha')} "
-                            f"(etapa: {result.get('stage', 'não informada')}) — "
-                            f"{result.get('message', 'Teste não concluído')} "
-                            "Navegadores não iniciados."
+                            "CONNECT aceito; TLS no teste Python inconclusivo. "
+                            "Verificação HTTPS e do IP obrigatória no Chromium; "
+                            "sem conexão direta."
                         )
-                        return
-                    self._log(f"[Proxy] {entry['host']}:{entry['port']}: HTTPS e CONNECT verificados.")
+                    else:
+                        self._log(f"[Proxy] {entry['host']}:{entry['port']}: HTTPS e CONNECT verificados.")
                     if result.get("exitIp"):
                         self._log(f"[Proxy] IP de saída observado no teste: {result['exitIp']} (pode mudar em proxy rotativa).")
                 for plan, entry in zip(launch_plans, assignments):
