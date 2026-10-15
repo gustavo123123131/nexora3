@@ -61,10 +61,12 @@ def _open_tunnel(proxy, host: str, port: int, timeout=8):
             if proxy.username:
                 headers.append(_proxy_auth_header(proxy.username, proxy.password or ""))
             sock.sendall(b"".join(headers) + b"Proxy-Connection: Keep-Alive\r\n\r\n")
-            response = _recv_headers(sock)
-            status_line = response.split(b"\r\n", 1)[0]
-            if b" 200 " not in status_line:
-                if b" 407 " in status_line:
+            # Read exactly the CONNECT response headers: do not swallow a
+            # single byte belonging to the encrypted TLS stream.
+            from Settings.proxy_diagnostics import _connect_response
+            status = _connect_response(sock)
+            if status != 200:
+                if status == 407:
                     raise ProxyConnectionError("auth_rejected")
                 raise ProxyConnectionError("connect_rejected")
         else:
@@ -316,10 +318,11 @@ def refresh_browser_exit_ip(page, gateway, *, timeout_ms=6000):
 class SessionProxyGateway:
     """One isolated HTTP local proxy per Chromium browser instance."""
 
-    def __init__(self, proxy):
+    def __init__(self, proxy, on_connect=None):
         if not proxy or not proxy.server:
             raise ProxyConnectionError("proxy_required")
         self.proxy = proxy
+        self.on_connect = on_connect
         self.server = None
         self.thread = None
         self._lock = threading.Lock()
@@ -337,6 +340,7 @@ class SessionProxyGateway:
             def handle(self):
                 client = self.request
                 client.settimeout(30)
+                tunnel_established = False
                 try:
                     packet = _recv_headers(client)
                     if not packet or len(packet) > 65536:
@@ -355,6 +359,12 @@ class SessionProxyGateway:
                             key = host.lower()
                             owner._upstream_connects[key] = owner._upstream_connects.get(key, 0) + 1
                         client.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                        tunnel_established = True
+                        if owner.on_connect is not None:
+                            try:
+                                owner.on_connect(host, int(port_raw), 200)
+                            except Exception:
+                                pass
                         if body:
                             upstream.sendall(body)
                         _pipe_bidirectional(client, upstream)
@@ -391,13 +401,16 @@ class SessionProxyGateway:
                             upstream.sendall(b"\r\n".join(lines) + body)
                         _pipe_bidirectional(client, upstream)
                 except (OSError, ValueError, ProxyConnectionError):
-                    try:
-                        client.sendall(
-                            b"HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n"
-                            b"Content-Length: 0\r\n\r\n"
-                        )
-                    except OSError:
-                        pass
+                    # Once 200 was sent the stream is TLS, not HTTP.
+                    # Never inject a plaintext 502 into an established tunnel.
+                    if not tunnel_established:
+                        try:
+                            client.sendall(
+                                b"HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n"
+                                b"Content-Length: 0\r\n\r\n"
+                            )
+                        except OSError:
+                            pass
 
         class Server(socketserver.ThreadingMixIn, socketserver.TCPServer):
             daemon_threads = True
