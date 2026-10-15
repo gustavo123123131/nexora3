@@ -1,4 +1,5 @@
 import threading
+from dataclasses import asdict
 from uuid import uuid4
 import shutil
 import time
@@ -1017,10 +1018,28 @@ def run_instance(
             return
 
         current_mode = (instance_plan or {}).get("device_mode", mode)
-        cfg = make_config(
-            current_mode,
-            None if (instance_plan or {}).get("account_profile") else idx,
-        )
+        account_profile = (instance_plan or {}).get("account_profile")
+        if account_profile:
+            from nexora_accounts.local_profiles import LocalProfileStore, LocalProfileError
+            from Settings.Criar_Mae.settings.browser import ModeConfig
+            try:
+                account_store = LocalProfileStore()
+                latest_profile = account_store.get(int(account_profile["id"]))
+                runtime = latest_profile.get("runtimeConfig")
+                if runtime is not None:
+                    if runtime.get("mode") != current_mode:
+                        raise LocalProfileError("Dispositivo salvo não corresponde à conta.")
+                    cfg = ModeConfig(**runtime)
+                elif (instance_plan or {}).get("initialize_runtime") is True:
+                    cfg = make_config(current_mode, None)
+                    account_store.set_runtime_config(int(account_profile["id"]), asdict(cfg))
+                else:
+                    raise LocalProfileError("Perfil técnico original não está salvo.")
+            except (LocalProfileError, TypeError, ValueError) as exc:
+                log(f"[#{idx}] [Contas] {account_profile['label']}: não é possível restaurar o dispositivo original ({type(exc).__name__}).")
+                return
+        else:
+            cfg = make_config(current_mode, idx)
         log(f"[#{idx}] Dispositivo selecionado: {cfg.mode} (navegador Chromium).")
         # Saved workspace proxies use a fixed endpoint per Chromium context.
         # Legacy ad-hoc HTTP proxies keep their existing local gateway.
@@ -1365,7 +1384,20 @@ def run_instance(
                         if profile:
                             from Settings.registration_autofill import fill_registration_form
                             log(f"[#{idx}] [Registro] Preparando {profile['label']}.")
-                            fill_registration_form(page, profile, log, stop_event)
+                            clicked = fill_registration_form(page, profile, log, stop_event)
+                            if not clicked and not stop_event.is_set():
+                                from nexora_accounts.local_profiles import LocalProfileStore
+                                LocalProfileStore().update_status(
+                                    int(profile["id"]), "error",
+                                    "Falha ao preencher ou enviar o formulário.",
+                                )
+                                log(f"[#{idx}] [Registro] {profile['label']}: status Erro.")
+                            elif clicked:
+                                log(
+                                    f"[#{idx}] [Registro] {profile['label']}: "
+                                    "status Pendente — clique enviado, "
+                                    "aguardando confirmação comprovada pelo site."
+                                )
                         else:
                             log(f"[#{idx}] Navegador pronto; nenhum perfil designado a esta janela.")
 
@@ -1435,6 +1467,13 @@ def run_instance(
                         pass
 
         except HttpsNavigationError as e:
+            initial_registration = (instance_plan or {}).get("registration_profile")
+            if initial_registration:
+                from nexora_accounts.local_profiles import LocalProfileStore
+                LocalProfileStore().update_status(
+                    int(initial_registration["id"]), "error",
+                    "Navegação HTTPS não concluída.",
+                )
             if (instance_plan or {}).get("proxy_config") is not None:
                 log(f"[#{idx}] [Proxy] Não foi possível navegar com a proxy atribuída; não haverá conexão direta.")
             log(f"[#{idx}] {e}")
@@ -1454,6 +1493,13 @@ def run_instance(
             time.sleep(2)
 
     if not success_finished and not stop_event.is_set():
+        initial_registration = (instance_plan or {}).get("registration_profile")
+        if initial_registration:
+            from nexora_accounts.local_profiles import LocalProfileStore
+            LocalProfileStore().update_status(
+                int(initial_registration["id"]), "error",
+                "O navegador não concluiu a abertura.",
+            )
         log(f"[#{idx}] ⛔ Falha total após {MAX_BROWSER_RESTARTS} tentativas.")
 
 
@@ -2541,6 +2587,7 @@ class MaeTab(ctk.CTkFrame):
                 return
             plan["account_profile"] = new_profile
             plan["device_mode"] = device
+            plan["initialize_runtime"] = True
             plan["registration_profile"] = new_profile
             if plan.get("proxy_id"):
                 try:
