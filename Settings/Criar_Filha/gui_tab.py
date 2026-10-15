@@ -1312,6 +1312,7 @@ def run_instance(
                         pass
 
         except HttpsNavigationError as e:
+            log(f"[#{idx}] {e}")
             log(f"[#{idx}] ⚠️ Navegação HTTPS indisponível; verifique conexão, proxy e certificado.")
             log(f"[#{idx}] Navegação HTTPS interrompida sem novas tentativas.")
             return
