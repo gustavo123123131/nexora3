@@ -1,83 +1,36 @@
 # Lixo CPA — servidor localhost
 
-## Diagnóstico do botão Abrir Conta — registro verificado
+## Aba Contas — apenas perfis locais
 
-Nas abas **Criar Mãe/Filha**, `Abrir Conta` usa a automação de
-**cadastro somente**, sem executar PIX, saque ou depósito. O código histórico
-abria Chromium em modo manual (`run_auto=False`), portanto não enviava
-o formulário. O código histórico também mostrava um falso sucesso antes de
-confirmar o retorno do site.
+Nesta etapa, a aba **Contas** é um diretório dos perfis criados pelos botões
+**Abrir Conta** nas abas Mãe e Filha. Não existem formulários de configuração
+de sites, rotas de cadastro ou criação manual de contas nessa aba.
 
-Para autorizar **um teste real de cadastro num site seu**, configure
-`NEXORA_REGISTRATION_SUCCESS_SELECTOR` **no processo do agente Windows**
-com um seletor CSS específico da plataforma que somente apareça depois de
-autenticação/registro confirmado (por exemplo, um identificador próprio da
-área logada, devidamente validado no site). Sem isso, o botão **não envia**
-o formulário: mostrará `CADASTRO NÃO EXECUTADO`, para evitar cadastros
-sem comprovação. Com esse seletor, o fluxo preenche e envia pelo navegador
-do Windows, aguarda o indicador, e registra um resultado apenas quando
-confirmado. Se o indicador não aparecer, mantém o caso como pendente e
-**não tenta um segundo POST automaticamente**.
+Ao clicar **Abrir Conta**, o agente Windows:
+- respeita a quantidade por link já selecionada e cria uma pasta Chromium
+  individual, sem reutilizar pastas existentes;
+- grava um registro por perfil em `%LOCALAPPDATA%\\Nexora\\accounts.json`;
+- gera nome de **teste**, username, senha individual aleatória, e-mail em
+  `example.test`, telefone de teste e CPF com formato/dígitos verificadores
+  válidos **não verificado nem associado a pessoa real**;
+- abre Chromium nos links configurados, sem submeter nenhum cadastro em sites;
+- disponibiliza os registros para consulta na aba **Contas**, com CPF e senha
+  mascarados por padrão e botão **Ver detalhes**.
 
-Não existe documentação comprovada do contrato interno
-`POST /hall/api/member/register`; a automação usa o próprio frontend do
-site. A mera recepção de HTTP 200, clique ou fechamento do modal **não
-comprova** cadastro. Ainda é necessário testar um domínio autorizado e
-validar o indicador com os logs de uma execução real. Evite usar a mesma
-regra de confirmação em sites com interfaces diferentes.
+O JSON é gravado por substituição atômica. Contas antigas do arquivo
+`accounts.sqlite` são importadas quando o `accounts.json` ainda não existe,
+sem alterar ou apagar a base antiga. Registros antigos sem dados de teste
+permanecem visíveis e seus campos indisponíveis são indicados como tal.
 
-## Armazenamento local em JSON
+**Segurança:** os dados gerados são exclusivamente fictícios; não os utilize
+para representar identidades reais. CPF formatado corretamente **não**
+comprova titularidade. A senha aleatória fica armazenada no JSON local
+**sem criptografia**, acessível ao usuário do Windows e ao agente pareado;
+não publique esse arquivo no GitHub nem o compartilhe.
 
-A aba **Contas** e o agente Windows usam exclusivamente o arquivo
-`%LOCALAPPDATA%\\Nexora\\accounts.json` para plataformas, contas mãe/filha,
-lotes, registros de trabalhos e histórico de status. Não há autenticação ou
-comunicação com serviços externos de banco de dados. O arquivo é salvo por
-substituição atômica para não ficar incompleto após falhas de gravação.
-
-Na primeira execução, se existir `accounts.sqlite` antigo e não existir
-`accounts.json`, o agente importa os registros e preserva o SQLite original.
-Senhas, CPF, cookies e tokens não entram no JSON. O JSON **não é criptografado**;
-proteja o acesso ao usuário do Windows e não o inclua em GitHub ou backups públicos.
-
-Em **Quantidade (1 a 100)**, cada conta ganha registro próprio; acima de 1,
-um lote com tarefas é criado localmente. A criação do registro **não envia**
-cadastros em sites externos. O formulário oficial continua exigindo revisão
-antes do envio e conclusão de verificações de segurança pelo próprio site.
-
-Para atualizar, execute `git pull origin main` no Codespaces e reinicie o
-agente Windows pelo instalador `iniciar-agente-windows.cmd`. Não precisa
-instalar ou configurar Supabase.
-
-## Nova área Contas — cadastro guiado integrado ao Windows
-
-O painel agora tem uma **quarta aba, Contas**, sem substituir Criar Mãe,
-Criar Filha ou Proxy. Os perfis existentes do Playwright continuam sendo
-abertos diretamente no Windows pelo agente local.
-
-- **Configurar site:** registre nome, URL oficial, caminhos de cadastro/login,
-  seletores CSS reais e autorização explícita. Sem autorização, fica disponível
-  apenas o registro local e abertura manual de perfil.
-- **Adicionar conta:** associe o site a um perfil já existente de Mãe/Filha,
-  com modo desktop/Android/iPhone/misto, número do perfil e conta mãe opcional.
-- **Abrir perfil:** usa o diretório de perfis do Nexora; não exporta cookies.
-  Não abra simultaneamente o mesmo perfil no multi-login e nesta aba.
-- **Preparar cadastro:** visita a página autorizada no Chromium do Windows e
-  identifica os campos configurados. Requer revisão e confirmação do usuário
-  antes de qualquer envio.
-- **Verificar:** mostra `pending` quando há CAPTCHA, SMS, e-mail ou resultado
-  inconclusivo. O estado `completed` exige um seletor de sucesso específico
-  configurado para o provedor; um simples HTTP 200 não confirma cadastro.
-- Os registros ficam em um arquivo JSON **privado do agente Windows**,
-  fora do GitHub e fora dos perfis. Não são gravadas senhas, cookies, tokens,
-  CPF ou telefone no banco de contas. Dados de preenchimento são transitórios.
-
-O pacote modular original, com os **18 arquivos enviados**, foi preservado
-em `proxybet_registration_bridge/`. Sua API Node.js é uma base/documentação
-de referência; a integração em execução é `nexora_accounts/service.py`,
-adaptada ao Python/Playwright já existente para não exigir Node no Windows.
-
-**Não há integração direta com API ProxyBet**, pois não foi fornecido contrato
-oficial autorizado. Não automatizamos CAPTCHA, MFA, KYC ou antifraude.
+O fluxo de registro automático em plataformas externas fica **desativado no
+botão Abrir Conta** nesta etapa. Nenhuma confirmação de cadastro externo é
+emitida por criar uma pasta ou um registro local.
 
 ### Atualizar a instalação atual (máximo três ações)
 
