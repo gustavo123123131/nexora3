@@ -149,11 +149,43 @@ def autofill_existing_registration(page, instance_plan, repository=None):
                 "status": "error", "fieldCount": 0,
                 "message": "Falha ao preencher o input account (verifique se está habilitado).",
             }
-        repo.set_stage(key, "local", "username-prefilled")
+        # The generated username/password are account credentials, not proof
+        # of a person's identity. Prefill both password inputs when available;
+        # never fill a synthetic legal name, phone, email or CPF on real sites.
+        filled = 1
+        password = data.get("password")
+        if isinstance(password, str) and 7 <= len(password) <= 16:
+            fields = _wait_for_registration(page, seconds=5)
+            if fields is not None:
+                for name in ("userpass", "confirmPassword"):
+                    if not _same_site(target, page.url):
+                        return {
+                            "status": "blocked", "fieldCount": filled,
+                            "message": "Domínio alterado durante o preenchimento.",
+                        }
+                    try:
+                        fields[name].fill(password, timeout=6000)
+                    except Exception:
+                        repo.set_stage(key, "local", "credentials-fill-error")
+                        return {
+                            "status": "error", "fieldCount": filled,
+                            "message": f"Falha ao preencher o campo {name}.",
+                        }
+                    filled += 1
+        stage = "credentials-prefilled" if filled == 3 else "username-prefilled"
+        repo.set_stage(key, "local", stage)
+        if filled == 3:
+            return {
+                "status": "credentials-filled", "fieldCount": filled,
+                "message": "Username, senha e confirmação preenchidos. "
+                           "Nome civil e verificações devem ser concluídos "
+                           "pelo titular antes de qualquer envio.",
+            }
         return {
             "status": "username-filled", "fieldCount": 1,
-            "message": "Username do perfil preenchido em input[data-input-name='account']. "
-                       "Cadastro externo ainda não enviado.",
+            "message": "Username preenchido. Campos de senha indisponíveis "
+                       "ou senha do perfil fora do intervalo 7-16; "
+                       "cadastro externo não enviado.",
         }
 
     fields = _wait_for_registration(page)
