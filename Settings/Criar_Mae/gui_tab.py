@@ -1046,6 +1046,17 @@ def run_instance(
     except Exception:
         shared_phone_key = ""
 
+    registration_id = str((instance_plan or {}).get("profile_record_id") or "")
+
+    def _registration_stage(stage, status="local", error_code=None):
+        if not registration_id:
+            return
+        try:
+            from nexora_accounts.registration_trace import trace_registration
+            trace_registration(registration_id, idx, stage, status, log, error_code)
+        except Exception:
+            log(f"[#{idx}] Cadastro: falha ao persistir etapa {stage}.")
+
     for attempt in range(1, MAX_BROWSER_RESTARTS + 1):
         if stop_event.is_set():
             log(f"[#{idx}] ⏹️ Parado antes de iniciar.")
@@ -1055,7 +1066,10 @@ def run_instance(
         log(f"[#{idx}] Dispositivo selecionado: {cfg.mode} (navegador Chromium).")
         proxy_dict = build_proxy_dict(proxy, idx=idx) if proxy else None
 
-        log(f"\n[#{idx}] 🔄 CICLO {attempt}/{MAX_BROWSER_RESTARTS}: Iniciando navegador no link: {url}")
+        if registration_id:
+            log(f"[#{idx} ID={registration_id[:8]}] Abrindo perfil (ciclo {attempt}/{MAX_BROWSER_RESTARTS}).")
+        else:
+            log(f"\n[#{idx}] 🔄 CICLO {attempt}/{MAX_BROWSER_RESTARTS}: Iniciando navegador.")
 
         user_data_dir = profile_directory(PROFILES_DIR, mode, idx)
         ensure_clean_profile_dir(user_data_dir, keep=keep_profiles)
@@ -1124,6 +1138,7 @@ def run_instance(
         effective_headless = False if ext_paths else headless
         success_finished = False
 
+        _registration_stage("browser-starting")
         try:
             with sync_playwright() as p:
                 context = p.chromium.launch_persistent_context(
@@ -1164,6 +1179,7 @@ def run_instance(
                     context.set_extra_http_headers(cfg.extra_headers)
 
                 page = context.pages[0] if context.pages else context.new_page()
+                _registration_stage("browser-ready")
 
                 registration_watcher = None
 
@@ -1263,7 +1279,9 @@ def run_instance(
                 try:
                     if auto_goto:
                         try:
+                            _registration_stage("site-loading")
                             page.goto(url, wait_until="domcontentloaded", timeout=15000)
+                            _registration_stage("site-loaded")
                         except Exception as exc:
                             if is_https_url(url):
                                 raise HttpsNavigationError(
@@ -1327,8 +1345,9 @@ def run_instance(
                             if instance_plan and instance_plan.get("profile_record_id"):
                                 try:
                                     from nexora_accounts.registration_autofill import autofill_existing_registration
+                                    _registration_stage("form-scanning")
                                     prefill_result = autofill_existing_registration(page, instance_plan)
-                                    log(f"[#{idx}] Cadastro: {prefill_result['message']}")
+                                    log(f"[#{idx} ID={registration_id[:8]}] Cadastro: {prefill_result['status']} ({prefill_result.get('fieldCount', 0)} campo(s)).")
                                     # Even a test-data-blocked profile needs a watcher:
                                     # the user can supply legitimate values transiently in Contas.
                                     from nexora_accounts.registration_submit import RegistrationWatcher, request_demo_submit
@@ -1336,8 +1355,12 @@ def run_instance(
                                     # One-click end-to-end test is allowed ONLY on local demo domains.
                                     if prefill_result["status"] == "filled" and request_demo_submit(instance_plan["profile_record_id"]):
                                         log(f"[#{idx}] Cadastro DEMO: envio automático solicitado (ambiente local).")
-                                except Exception:
-                                    log(f"[#{idx}] Cadastro: preenchimento indisponível; verifique o formulário.")
+                                except Exception as exc:
+                                    _registration_stage(
+                                        "browser-error", "local",
+                                        type(exc).__name__.lower().replace("_", "-")[:55]
+                                    )
+                                    log(f"[#{idx}] Cadastro: falha no preenchimento; veja o histórico do perfil.")
                             log(f"[#{idx}] ✋ MODO MANUAL pronto em {url}.")
 
                         success_finished = True
@@ -1384,7 +1407,12 @@ def run_instance(
                     # loop. Do not silently downgrade HTTPS to HTTP.
                     raise
                 except Exception as e:
-                    err_msg = str(e)
+                    if registration_id:
+                        _registration_stage(
+                            "browser-error", "local",
+                            type(e).__name__.lower().replace("_", "-")[:55]
+                        )
+                    err_msg = type(e).__name__ if registration_id else str(e)
                     if "Timeout" in err_msg or "Formulário não apareceu" in err_msg:
                         log(f"[#{idx}] ⏳ FALHA: Timeout/Form ausente.")
                     elif "ERR_PROXY" in err_msg or "ERR_TUNNEL" in err_msg:
@@ -1408,11 +1436,15 @@ def run_instance(
             log(f"[#{idx}] ⚠️ {e}")
             return
         except HttpsNavigationError as e:
-            log(f"[#{idx}] ⚠️ {e}")
+            _registration_stage("navigation-error", "local", "https-navigation")
+            log(f"[#{idx}] ⚠️ Navegação HTTPS indisponível; verifique conexão, proxy e certificado.")
             log(f"[#{idx}] Navegação HTTPS interrompida sem novas tentativas.")
             return
         except Exception as e:
-            log(f"[#{idx}] Erro crítico ao abrir navegador: {e}")
+            _registration_stage(
+                "browser-error", "local", type(e).__name__.lower().replace("_", "-")[:55]
+            )
+            log(f"[#{idx}] Erro crítico ao abrir navegador: {type(e).__name__}.")
 
         if success_finished:
             break
