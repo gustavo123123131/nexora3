@@ -21,26 +21,40 @@ _SUBMIT_SELECTORS = (
 )
 
 
-def _real_values(values):
-    """Validate user-supplied, authorized values without persisting credentials."""
+def _real_values(values, generated=None):
+    """Require legitimate owner/contact info but reuse the existing generated login.
+
+    The backend owns username/password resolution: the user need not type
+    credentials already saved in this profile. Identity/contacts cannot be
+    fabricated for a real service. Secrets stay ephemeral in the submission queue.
+    """
     if not isinstance(values, dict):
         raise AccountError("Dados de cadastro inválidos.")
+    generated = generated if isinstance(generated, dict) else {}
     cleaned = {}
     for field in ("username", "password", "confirmPassword", "fullName", "email", "phone"):
-        value = values.get(field, "")
+        default = generated.get(field, "") if field in ("username", "password") else ""
+        if field == "confirmPassword":
+            default = values.get("password", generated.get("password", ""))
+        value = values.get(field, "") or default
         if not isinstance(value, str) or len(value) > 160 or any(ord(c) < 32 for c in value):
-            raise AccountError("Um campo de cadastro é inválido.")
+            raise AccountError("Campo inválido: " + field + ".")
         cleaned[field] = value if field in ("password", "confirmPassword") else value.strip()
-    if not 3 <= len(cleaned["username"]) <= 80 or not 8 <= len(cleaned["password"]) <= 128:
-        raise AccountError("Username ou senha não atende aos requisitos mínimos.")
-    if cleaned["password"] != cleaned["confirmPassword"] or len(cleaned["fullName"]) < 3:
-        raise AccountError("Confirmação da senha ou nome completo inválido.")
+
+    if not 3 <= len(cleaned["username"]) <= 80:
+        raise AccountError("Nome de usuário inválido: use entre 3 e 80 caracteres.")
+    if not 12 <= len(cleaned["password"]) <= 128:
+        raise AccountError("Senha curta: são necessários pelo menos 12 caracteres. Gere um novo perfil.")
+    if cleaned["password"] != cleaned["confirmPassword"]:
+        raise AccountError("A confirmação da senha não coincide.")
+    if len(cleaned["fullName"]) < 3:
+        raise AccountError("Informe o nome legítimo do titular.")
     if not cleaned["email"] and not cleaned["phone"]:
         raise AccountError("Informe um e-mail ou telefone legítimo.")
     if cleaned["email"] and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", cleaned["email"]):
         raise AccountError("E-mail inválido.")
-    if cleaned["email"].lower().endswith("@example.test"):
-        raise AccountError("E-mail de teste não é permitido neste cadastro.")
+    if cleaned["email"].lower().endswith(("@example.test", "@example.com", "@example.org", "@example.net")):
+        raise AccountError("E-mail reservado para testes. Use um endereço que você controla.")
     if cleaned["phone"] and not re.fullmatch(r"\+?[\d\s()\-]{10,20}", cleaned["phone"]):
         raise AccountError("Telefone inválido.")
     return cleaned
@@ -54,7 +68,7 @@ def request_submit(account_id, user_confirmed, repository=None, values=None):
     account = repo.account(account_id)
     data = account.get("profileData") or {}
     from nexora_accounts.registration_autofill import _demo
-    supplied = _real_values(values) if values is not None else None
+    supplied = _real_values(values, data) if values is not None else None
     if supplied is None and not _demo(account.get("targetUrl", "")) and (
             data.get("isTestData") is not False or data.get("ownerConfirmed") is not True):
         raise AccountError("Dados de teste não podem ser enviados ao provedor.")
