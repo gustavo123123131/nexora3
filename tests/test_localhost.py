@@ -19,7 +19,7 @@ def test_localhost_ui_and_events():
         assert len(data['csrf_token']) > 32
         headers = {'X-LixoCPA-CSRF': data['csrf_token']}
         tabs = data['tree']['children'][0]['children']
-        assert [t['options']['_tab_label'] for t in tabs] == ['Criar Mãe', 'Criar Filha']
+        assert [t['options']['_tab_label'] for t in tabs] == ['Mãe', 'Filha']
         assert len(list(walk(data['tree']))) >= 110  # Duas abas, sem Área Pix
         # A aba Pix saiu, e controles exclusivos não podem estar visíveis.
         def walk_visible(node):
