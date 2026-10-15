@@ -2286,9 +2286,7 @@ class MaeTab(ctk.CTkFrame):
             )
         self.deposit_amount_entry.configure(state=(state if bool(self.autopix_enabled_var.get()) else "disabled"))
 
-        self.btn_start_auto.configure(state=("disabled" if running else "normal"))
         self.btn_start_manual.configure(state=("disabled" if running else "normal"))
-        self.btn_reopen_guides.configure(state=("disabled" if running else "normal"))
         self.btn_verify_phone.configure(state=("normal" if running else "disabled"))
         self.btn_stop.configure(state=("normal" if running else "disabled"))
         self.chk_verify_phone.configure(state=state)
