@@ -1,5 +1,5 @@
-/* Nexora Contas: read-only local browser profile directory.
- * Only "Abrir Conta" in Mãe/Filha creates profiles; no manual forms or site APIs.
+/* Nexora Contas: profiles created by Abrir Conta, with optional owner-confirmed registration.
+ * Real contact details are passed transiently to the existing browser watcher.
  */
 'use strict';
 (function () {
@@ -31,7 +31,7 @@
   };
   const stageLabel = key => stageNames[key] || text(key);
 
-  function create({get}) {
+  function create({get,post}) {
     const root = make('div', 'accounts-workspace');
     const heading = make('div', 'accounts-heading');
     const titleBox = make('div');
@@ -91,6 +91,96 @@
       }
       return wrapper;
     }
+
+    function realRegistrationForm(acc) {
+      // Generated names and example.test addresses are not owner's confirmed identity.
+      // Real data remains only in this form until the user explicitly requests submission.
+      const section=make('section','accounts-registration-actions');
+      section.style.gridColumn='1/-1';
+      const toggle=make('button','accounts-submit-button','Cadastrar com meus dados');
+      toggle.type='button';
+      const form=make('form','accounts-real-form');
+      form.hidden=true;
+      const explanation=make('p','accounts-action-hint',
+        'Preencha seus dados reais. O username e a senha deste perfil serão reutilizados. '+
+        'O envio usa a janela já aberta; não armazena estes dados no perfil.');
+      explanation.style.gridColumn='1/-1';
+      form.append(explanation);
+      function field(label,type,autocomplete) {
+        const wrap=make('label','accounts-real-field',label);
+        const input=make('input','accounts-real-input');
+        input.type=type;
+        input.autocomplete=autocomplete;
+        input.maxLength=160;
+        wrap.append(input);
+        form.append(wrap);
+        return input;
+      }
+      const fullName=field('Nome completo do titular','text','name');
+      fullName.required=true;
+      fullName.minLength=3;
+      const email=field('Seu e-mail (ou telefone abaixo)','email','email');
+      const phone=field('Seu telefone (ou e-mail acima)','tel','tel');
+      const consentLabel=make('label','accounts-consent-label');
+      const consent=make('input');
+      consent.type='checkbox';
+      consent.required=true;
+      consentLabel.append(consent,make('span','',
+        'Confirmo que sou o titular dos dados informados e autorizo o envio '+
+        'do cadastro para o endereço indicado neste perfil.'));
+      form.append(consentLabel);
+      const send=make('button','accounts-submit-button','Confirmar e clicar em Registro');
+      send.type='submit';
+      const status=make('p','accounts-action-hint','');
+      status.setAttribute('role','status');
+      status.style.gridColumn='1/-1';
+      form.append(send,status);
+      toggle.addEventListener('click',()=>{
+        form.hidden=!form.hidden;
+        toggle.setAttribute('aria-expanded',String(!form.hidden));
+        if(!form.hidden) fullName.focus();
+      });
+      toggle.setAttribute('aria-expanded','false');
+      form.addEventListener('submit',async event=>{
+        event.preventDefault();
+        const name=fullName.value.trim();
+        const mail=email.value.trim();
+        const tel=phone.value.trim();
+        if(name.length<3 || (!mail && !tel) || !consent.checked) {
+          status.textContent='Informe seu nome, ao menos um contato real e confirme a autorização.';
+          return;
+        }
+        if(!acc.targetUrl) {
+          status.textContent='Este perfil não tem URL de cadastro.';
+          return;
+        }
+        send.disabled=true;
+        status.textContent='Solicitando envio no navegador do perfil...';
+        try {
+          const answer=await post('/api/registration/accounts/submit-existing',{
+            accountId:acc.id,
+            userConfirmed:true,
+            values:{fullName:name,email:mail,phone:tel}
+          });
+          status.textContent=answer.duplicate
+            ? 'Já existe uma solicitação pendente para este perfil.'
+            : 'Envio solicitado. Acompanhe o status neste perfil; a plataforma ainda precisa confirmar o cadastro.';
+          if(!answer.duplicate) {
+            fullName.value='';
+            email.value='';
+            phone.value='';
+            consent.checked=false;
+          }
+        } catch(err) {
+          status.textContent='Não foi possível solicitar o envio: '+(err.message||err);
+        } finally {
+          send.disabled=false;
+        }
+      });
+      section.append(toggle,form);
+      return section;
+    }
+
     function cardFor(acc) {
       const data=acc.profileData||{};
       const card=make('article','accounts-card');
@@ -152,6 +242,7 @@
                    make('span','',stageLabel(entry.stage)+status));
         logPanel.append(row);
       }
+      if(acc.targetUrl && acc.status!=='completed') details.append(realRegistrationForm(acc));
       details.append(logPanel);
       card.append(head,summary,button,details);
       return card;
