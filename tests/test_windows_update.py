@@ -53,10 +53,13 @@ def test_no_live_registration_modules_or_call_sites():
         "nexora_accounts/service.py",
         "Settings/Criar_Mae/settings/actions.py",
         "Settings/Criar_Filha/settings/actions.py",
-        "webui/static/accounts_view.js",
     ]
     for relative in forbidden_paths:
         assert not (ROOT / relative).exists(), relative
+    # The modern Contas view is intentionally part of the browser-only UI.
+    current_accounts_ui = (ROOT / "webui/static/accounts_view.js").read_text(encoding="utf-8")
+    assert "/api/local-profiles/open" in current_accounts_ui
+    assert "/api/registration/" not in current_accounts_ui
     for name in ("Criar_Mae", "Criar_Filha"):
         body = (ROOT / "Settings" / name / "gui_tab.py").read_text(
             encoding="utf-8"
