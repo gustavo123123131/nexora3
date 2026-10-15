@@ -2376,19 +2376,20 @@ class MaeTab(ctk.CTkFrame):
             if saved_proxies and launch_plans:
                 assignments = proxy_store.assign(len(launch_plans), profile_id=selected_id)
                 checked = set()
-                probe_target = urlparse(normalized_urls[0]).hostname if normalized_urls else None
+                # Use an independent HTTPS endpoint for proxy preflight.
+                # The destination site performs its own TLS validation in Chromium.
                 for entry in assignments:
                     if entry["id"] in checked:
                         continue
                     checked.add(entry["id"])
-                    result = proxy_store.test_authenticated(
-                        entry["id"], target=probe_target or "example.com",
-                    )
+                    result = proxy_store.test_authenticated(entry["id"])
                     if not result["reachable"]:
                         self._set_status("Falha de autenticação/conexão da proxy.")
                         self._log(
                             f"[Proxy] {entry['host']}:{entry['port']}: "
-                            f"{result.get('status', 'falha')} — {result.get('message', 'Teste não concluído')}. "
+                            f"{result.get('status', 'falha')} "
+                            f"(etapa: {result.get('stage', 'não informada')}) — "
+                            f"{result.get('message', 'Teste não concluído')} "
                             "Navegadores não iniciados."
                         )
                         return
