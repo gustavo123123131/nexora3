@@ -1,120 +1,130 @@
+/* Nexora — compact account cards, readable in the existing panel. */
 .accounts-local {
-  padding: 28px 30px 44px;
+  padding: 22px 24px 36px;
   min-height: 100%;
-  color: #e8edf5;
+  color: #e7edf5;
 }
-.accounts-local h1 {
-  font-size: 27px;
-  font-weight: 750;
-  margin: 0 0 6px;
-}
-.accounts-local > p {
-  color: #95a3b8;
-  font-size: 13px;
-  margin: 0 0 12px;
-}
-.accounts-local-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
-  gap: 14px;
-  align-items: start;
-}
-.accounts-local-card {
-  background: #151e2c;
-  border: 1px solid #2a3749;
-  border-radius: 14px;
-  padding: 18px;
-  min-width: 0;
-}
-.accounts-local-card header {
+.accounts-page-heading {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 14px;
+  gap: 16px;
+  margin-bottom: 18px;
 }
-.accounts-local-card h2 {
-  font-size: 17px;
+.accounts-page-heading h1 {
+  margin: 0 0 6px;
+  font-size: 25px;
+  font-weight: 750;
+  color: #f3f6fb;
+}
+.accounts-page-heading p {
   margin: 0;
-  color: #f3f7fc;
+  color: #98a9bd;
+  font-size: 12px;
+  line-height: 1.5;
 }
-.accounts-local-card header span {
-  color: #a6b6cc;
-  font-size: 11px;
-  border: 1px solid #3b4a60;
-  border-radius: 999px;
-  padding: 4px 8px;
+.accounts-count {
+  flex: 0 0 auto;
+  padding: 7px 11px;
+  border: 1px solid #34465b;
+  border-radius: 8px;
+  color: #c4d2e3;
+  background: #192637;
+  font-size: 12px;
+  font-weight: 700;
 }
-.accounts-local-card dl {
-  display: grid;
-  gap: 0;
-  margin: 0;
-}
-.accounts-local-card dl > div {
-  display: grid;
-  grid-template-columns: 112px minmax(0, 1fr);
-  gap: 8px;
-  align-items: start;
-  padding: 8px 0;
-  border-top: 1px solid #283448;
+.accounts-status {
+  margin: 0 0 10px;
+  min-height: 18px;
+  color: #a8bed5;
   font-size: 12px;
 }
-.accounts-local-card dt { color: #94a3b8; }
-.accounts-local-card dd {
-  color: #e6edf7;
-  margin: 0;
-  overflow-wrap: anywhere;
-  user-select: text;
-}
-@media (max-width: 620px) {
-  .accounts-local { padding: 18px 12px; }
-  .accounts-local-card dl > div { grid-template-columns: 100px minmax(0, 1fr); }
-}
-
-.accounts-local-card header .accounts-select {
-  color: #dfe7fd;
-  border: 1px solid #445881;
-  background: #263756;
-  padding: 6px 9px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 11px;
-}
-.accounts-local-card header .accounts-select[aria-pressed="true"] {
-  border-color: #9eafff;
-  background: #334773;
-}
-
-.accounts-proxy-association {
+.accounts-status:empty { margin: 0; min-height: 0; }
+.accounts-local-grid {
   display: grid;
-  gap: 6px;
-  margin: 0 0 12px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 285px), 1fr));
+  gap: 12px;
+  align-items: stretch;
 }
-.accounts-proxy-association label { font-size: 11px; font-weight: 700; color: #adc2df; }
-.accounts-proxy-association select {
-  width: 100%; min-height: 35px; border: 1px solid #435574;
-  border-radius: 7px; background: #192639; color: #e7effb;
-  padding: 6px 10px; font-size: 12px;
+.accounts-local-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid #304157;
+  border-radius: 12px;
+  padding: 15px 16px;
+  background: #162333;
 }
-
-.accounts-card-actions {
-  display: flex; gap: 6px; margin-left: auto; align-items: center; flex-wrap: wrap;
+.accounts-local-card > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
 }
-.accounts-local-card header .accounts-open {
-  color: #eff9ff; border: 1px solid #337f72; background: #256b60;
-  padding: 7px 12px; border-radius: 8px; cursor: pointer;
-  font-size: 11px; font-weight: 750;
+.accounts-local-card h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 740;
+  color: #f2f7fc;
 }
-.accounts-local-card header .accounts-open:disabled { opacity: .55; }
-.accounts-device { color: #b2c7d8; font-size: 11px; margin: 0 0 12px; }
-.accounts-legacy-config { display: grid; gap: 7px; margin-bottom: 12px; }
-.accounts-legacy-config p { font-size: 11px; color: #a6b7cd; margin: 0 0 3px; }
-.accounts-legacy-config select, .accounts-legacy-config input {
-  width: 100%; min-height: 35px; border: 1px solid #435574;
-  border-radius: 7px; background: #192639; color: #e7effb;
-  padding: 6px 10px; font-size: 12px;
+.accounts-status-label {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 730;
+  flex: 0 0 auto;
 }
-@media (max-width: 540px) {
-  .accounts-local-card header { flex-wrap: wrap; }
-  .accounts-card-actions { margin-left: 0; width: 100%; }
+.accounts-status-pending { color: #ffd27e; background: #493c27; }
+.accounts-status-created { color: #8bdfab; background: #1a4533; }
+.accounts-status-error { color: #ffa3a3; background: #4b2a30; }
+.accounts-summary { display: grid; gap: 8px; }
+.account-summary-row {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  font-size: 12px;
+}
+.account-summary-key { color: #90a5bb; }
+.account-summary-value { color: #e4edf8; overflow-wrap: anywhere; }
+.accounts-card-note {
+  margin: 0;
+  color: #9cacc0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.accounts-card-footer {
+  margin-top: auto;
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid #293b4f;
+  padding-top: 11px;
+}
+.accounts-open {
+  border: 1px solid #338978;
+  background: #286e61;
+  color: #f6fbfe;
+  border-radius: 8px;
+  min-width: 76px;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 740;
+  cursor: pointer;
+}
+.accounts-open:hover:not(:disabled) { filter: brightness(1.14); }
+.accounts-open:disabled { opacity: 0.48; cursor: not-allowed; }
+.accounts-empty {
+  margin: 0;
+  padding: 24px 8px;
+  font-size: 13px;
+  color: #9caec2;
+}
+@media (max-width: 580px) {
+  .accounts-local { padding: 15px 12px 24px; }
+  .accounts-page-heading { align-items: flex-start; }
+  .accounts-page-heading h1 { font-size: 22px; }
+  .accounts-local-grid { grid-template-columns: 1fr; }
 }
