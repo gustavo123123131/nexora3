@@ -339,3 +339,73 @@ def test_diagnostics_explain_why_generated_external_profile_is_not_sent():
     assert any("CLIQUE NÃO SOLICITADO" in line for line in messages)
     assert not any("CLIQUE EXECUTADO" in line for line in messages)
     assert page.button.clicks == 0
+
+
+def test_owned_test_origin_requires_exact_https_opt_in(monkeypatch):
+    from nexora_accounts.registration_autofill import _owned_test_origin
+    monkeypatch.delenv("NEXORA_OWNED_TEST_ORIGINS", raising=False)
+    assert not _owned_test_origin("https://qa.example.org/register")
+    monkeypatch.setenv("NEXORA_OWNED_TEST_ORIGINS", "https://qa.example.org")
+    assert _owned_test_origin("https://qa.example.org/register")
+    assert not _owned_test_origin("https://other.qa.example.org/register")
+    assert not _owned_test_origin("https://qa.example.org:8443/register")
+    assert not _owned_test_origin("http://qa.example.org/register")
+
+
+def test_owned_https_site_full_prefill_then_one_registro_click(monkeypatch):
+    """Real Chromium DOM: test identities remain isolated to explicit owned origin."""
+    from playwright.sync_api import sync_playwright
+    from nexora_accounts.registration_autofill import autofill_existing_registration
+
+    monkeypatch.setenv("NEXORA_OWNED_TEST_ORIGINS", "https://qa.example.org")
+    account = valid_account()
+    account["targetUrl"] = "https://qa.example.org/register"
+    account["profileData"] = {
+        "isTestData": True,
+        "username": "exemploqa",
+        "password": "Senha@123",
+        "fullName": "Pessoa de Teste",
+        "email": "exemploqa@example.test",
+        "phone": "+55 (11) 90000-1234",
+        "cpfVerified": False,
+    }
+    repo = Repo(account)
+    log = []
+    html = """<!DOCTYPE html><html><body>
+      <input data-input-name="account">
+      <input data-input-name="userpass" type="password">
+      <input data-input-name="confirmPassword" type="password">
+      <input data-input-name="realName">
+      <button type="button" id="insideRegisterSubmitClick">Registro</button>
+      <script>
+      window.clickCount = 0;
+      document.querySelector("#insideRegisterSubmitClick").addEventListener(
+        "click", () => { window.clickCount++; });
+      </script>
+      </body></html>"""
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.route("https://qa.example.org/**", lambda route: route.fulfill(
+                status=200, content_type="text/html", body=html))
+            page.goto(account["targetUrl"])
+            plan = {"profile_record_id": account["id"], "idx": 1}
+            result = autofill_existing_registration(page, plan, repo)
+            assert result["status"] == "filled"
+            assert page.locator("input[data-input-name='realName']").input_value() == "Pessoa de Teste"
+            watcher = RegistrationWatcher(
+                page, plan, repository=repo, log=log.append, success_selector=""
+            )
+            assert request_autosubmit_after_fill(
+                page, plan, result, log.append, repository=repo
+            ) is True
+            watcher.tick()
+            assert page.evaluate("window.clickCount") == 1
+            watcher.tick()
+            assert page.evaluate("window.clickCount") == 1
+            assert any("CLIQUE EXECUTADO:" in line for line in log)
+            assert repo.account_record["stage"] == "awaiting-provider"
+            assert not any("Senha@123" in line for line in log)
+        finally:
+            browser.close()
