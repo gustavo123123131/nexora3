@@ -53,6 +53,8 @@ async def lifespan(_app):
     try:
         yield
     finally:
+        from nexora_accounts.session_launcher import ACCOUNT_LAUNCHER
+        ACCOUNT_LAUNCHER.stop_all()
         if _GUI is not None:
             _GUI.gateway_stop_event.set()
         ctk.shutdown()
@@ -177,7 +179,8 @@ def _active_browser_workers():
 @app.get('/api/update/idle')
 async def update_idle():
     # Used only by the local supervisor to avoid interrupting open browsers.
-    workers = _active_browser_workers()
+    from nexora_accounts.session_launcher import ACCOUNT_LAUNCHER
+    workers = _active_browser_workers() + ACCOUNT_LAUNCHER.active_count()
     return {"edition": NEXORA_EDITION, "idle": workers == 0,
             "activeWorkers": workers}
 
@@ -321,6 +324,20 @@ async def select_local_profile(body: dict):
         selected_id = LocalProfileStore().select(body.get('id'))
         return {'selectedProfileId': selected_id}
     except LocalProfileError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post('/api/local-profiles/open')
+async def open_local_profile(body: dict):
+    from nexora_accounts.local_profiles import LocalProfileError
+    from nexora_accounts.session_launcher import ACCOUNT_LAUNCHER, AccountBusyError
+    try:
+        # Identity comes exclusively from the card's ID, not a global
+        # selectedProfileId or the current Mãe/Filha tab.
+        return ACCOUNT_LAUNCHER.launch(init_original_ui(), body.get('id'))
+    except AccountBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (LocalProfileError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
