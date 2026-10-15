@@ -171,3 +171,94 @@ def test_proxy_authenticated_connect_remains_fail_closed(monkeypatch):
     assert result["status"] == "auth_rejected"
     assert result["stage"] == "connect"
     assert "demo-password" not in str(result)
+
+
+class FakeBrowserGateway:
+    def __init__(self):
+        self.counts = {}
+
+    def connect_count(self, host):
+        return self.counts.get(host, 0)
+
+
+class FakeIpLocator:
+    def __init__(self, page):
+        self.page = page
+
+    def inner_text(self, *, timeout):
+        return self.page.text
+
+
+class FakeIpResponse:
+    status = 200
+
+
+class FakeIpPage:
+    def __init__(self, gateway, *, routed=True, text='{"ip":"203.0.113.78"}'):
+        self.gateway = gateway
+        self.routed = routed
+        self.text = text
+        self.visited = []
+
+    def goto(self, url, *, wait_until, timeout):
+        from urllib.parse import urlsplit
+        assert wait_until == "domcontentloaded"
+        host = urlsplit(url).hostname
+        self.visited.append(url)
+        if self.routed:
+            self.gateway.counts[host] = self.gateway.counts.get(host, 0) + 1
+        return FakeIpResponse()
+
+    def locator(self, selector):
+        assert selector == "body"
+        return FakeIpLocator(self)
+
+
+def test_browser_ip_verifier_uses_actual_page_and_gateway_counter():
+    from Settings.session_proxy_gateway import verify_browser_exit_ip
+    gateway = FakeBrowserGateway()
+    page = FakeIpPage(gateway)
+    result = verify_browser_exit_ip(page, gateway)
+    assert result == "203.0.113.78"
+    assert len(page.visited) == 1
+    assert page.visited[0].startswith("https://api.ipify.org?")
+    assert gateway.connect_count("api.ipify.org") == 1
+
+
+def test_browser_ip_verifier_detects_direct_bypass_and_blocks():
+    import pytest
+    from Settings.session_proxy_gateway import verify_browser_exit_ip
+    gateway = FakeBrowserGateway()
+    page = FakeIpPage(gateway, routed=False, text="203.0.113.78")
+    with pytest.raises(ProxyConnectionError, match="browser_proxy_bypassed"):
+        verify_browser_exit_ip(page, gateway)
+    assert gateway.connect_count("api.ipify.org") == 0
+    assert len(page.visited) == 3
+
+
+def test_browser_ip_verifier_rejects_invalid_response_even_with_proxy():
+    import pytest
+    from Settings.session_proxy_gateway import verify_browser_exit_ip
+    gateway = FakeBrowserGateway()
+    page = FakeIpPage(gateway, text="not an IP")
+    with pytest.raises(ProxyConnectionError, match="browser_proxy_unverified"):
+        verify_browser_exit_ip(page, gateway)
+
+
+def test_live_overlay_refresh_preserves_gateway_verification():
+    from Settings.session_proxy_gateway import refresh_browser_exit_ip
+    gateway = FakeBrowserGateway()
+
+    class LivePage:
+        def evaluate(self, script, arg):
+            assert "fetch(url" in script
+            gateway.counts["api.ipify.org"] = gateway.counts.get("api.ipify.org", 0) + 1
+            return '{"ip":"198.51.100.23"}'
+
+    assert refresh_browser_exit_ip(LivePage(), gateway) == "198.51.100.23"
+
+    class DirectPage:
+        def evaluate(self, script, arg):
+            return '{"ip":"198.51.100.23"}'
+
+    assert refresh_browser_exit_ip(DirectPage(), gateway) == ""
