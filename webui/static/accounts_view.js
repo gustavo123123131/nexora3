@@ -94,6 +94,7 @@
         ['E-mail',data.email],
         ['Telefone',data.phone],
         ['CPF gerado (não verificado)',data.cpf],
+        ['Etapa do cadastro',acc.stage||acc.status||'local'],
         ['Criado em',date(acc.createdAt)]
       ]) {
         const item=make('div','accounts-summary-item');
