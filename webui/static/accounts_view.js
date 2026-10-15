@@ -15,8 +15,22 @@
     const d = new Date(value);
     return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString('pt-BR');
   };
+  const stageNames = {
+    'profile-created':'Perfil criado', 'review':'Formulário preenchido; aguardando revisão',
+    'submit-queued':'Envio solicitado', 'submitting':'Enviando formulário',
+    'awaiting-provider':'Aguardando a plataforma',
+    'provider-response-unverified':'Resposta recebida; aguardando confirmação',
+    'provider-http-error':'Erro HTTP do provedor', 'provider-confirmed':'Cadastro confirmado',
+    'timeout-unverified':'Tempo limite: resultado desconhecido',
+    'submit-result-unknown':'Envio incerto; confira no site',
+    'submit-button-missing':'Botão de registro ausente',
+    'test-data-blocked':'Dados fictícios: cadastro real bloqueado',
+    'form-not-found':'Formulário não encontrado', 'origin-changed':'Domínio mudou',
+    'browser-closed-unverified':'Navegador fechado antes da confirmação',
+  };
+  const stageLabel = key => stageNames[key] || text(key);
 
-  function create({get}) {
+  function create({get, post}) {
     const root = make('div', 'accounts-workspace');
     const heading = make('div', 'accounts-heading');
     const titleBox = make('div');
@@ -94,7 +108,7 @@
         ['E-mail',data.email],
         ['Telefone',data.phone],
         ['CPF gerado (não verificado)',data.cpf],
-        ['Etapa do cadastro',acc.stage||acc.status||'local'],
+        ['Etapa do cadastro',stageLabel(acc.stage||acc.status||'local')],
         ['Criado em',date(acc.createdAt)]
       ]) {
         const item=make('div','accounts-summary-item');
@@ -126,7 +140,41 @@
           field.type='password';field.nextElementSibling.textContent='Mostrar';
         }
       });
-      card.append(head,summary,button,details);
+      const actions=make('div','accounts-registration-actions');
+      if (acc.status==='pending' && acc.stage==='review' &&
+          data.isTestData===false && data.ownerConfirmed===true) {
+        const send=make('button','accounts-submit-button','Enviar cadastro');
+        send.type='button';
+        send.addEventListener('click',async()=>{
+          if (!window.confirm('Confirma o envio dos dados legítimos deste perfil ao site? '+
+                              'Conclua também os termos e verificações do provedor.')) return;
+          send.disabled=true; inform('Solicitando envio no navegador do perfil...');
+          try {
+            await post('/api/registration/accounts/submit-existing',
+                       {accountId:acc.id,userConfirmed:true});
+            inform('Solicitação enviada ao navegador. Acompanhe os logs do perfil.');
+            await refresh();
+          } catch(err) { inform('Não foi possível enviar: '+(err.message||err),true); }
+          finally { send.disabled=false; }
+        });
+        actions.append(send);
+      } else if (data.isTestData) {
+        actions.append(make('p','accounts-action-hint',
+          'Identidade fictícia de teste: o cadastro real não será enviado.'));
+      }
+      const events=Array.isArray(acc.registrationLog)?acc.registrationLog.slice(-15).reverse():[];
+      const logPanel=make('section','accounts-registration-log');
+      logPanel.append(make('h4','','Histórico do cadastro'));
+      if (!events.length) logPanel.append(make('p','','Aguardando eventos de cadastro.'));
+      for (const entry of events) {
+        const row=make('div','accounts-log-row');
+        const status=(entry.httpStatus? ' · HTTP '+entry.httpStatus:'');
+        row.append(make('time','',date(entry.at)),
+                   make('span','',stageLabel(entry.stage)+status));
+        logPanel.append(row);
+      }
+      details.append(logPanel);
+      card.append(head,summary,actions,button,details);
       return card;
     }
     function render() {
