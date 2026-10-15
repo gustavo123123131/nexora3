@@ -172,7 +172,7 @@ class AccountsRepository:
     modifying or deleting the SQLite source. Atomic replaces avoid partial JSON.
     """
 
-    def __init__(self, db_path=None):
+    def __init__(self, db_path=None, migrate_test_passwords=True):
         self.path = Path(db_path) if db_path else _default_folder() / "accounts.json"
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         self._lock = _LOCAL_JSON_LOCK
@@ -181,14 +181,15 @@ class AccountsRepository:
                 legacy = self.path.with_name("accounts.sqlite")
                 state = self._import_legacy(legacy) if self.path.suffix == ".json" and legacy.is_file() else self._empty()
                 self._write(state)
-            # Upgrade only weak passwords of unsubmitted local TEST profiles.
-            # Never rewrite confirmed profiles or legitimate user credentials.
+            # Preview tools can disable the upgrade to remain read-only.
+            # Never rewrite confirmed profiles or legitimate credentials.
             state = self._read()
             upgraded = 0
             from nexora_accounts.profile_data import make_password
             for account in state["accounts"]:
                 demo_data = account.get("profileData")
-                if (account.get("status") == "local"
+                if (migrate_test_passwords
+                        and account.get("status") == "local"
                         and account.get("stage") in ("profile-created", "test-data-blocked", "form-not-found")
                         and isinstance(demo_data, dict)
                         and demo_data.get("isTestData") is True
@@ -570,8 +571,10 @@ class AccountsRepository:
         """
         safe_stages = {
             "profile-created", "test-data-blocked", "form-not-found",
-            "browser-error", "navigation-error", "browser-closed-unverified",
-            "site-load-timeout", "site-unavailable", "registration-blocked",
+            "browser-starting", "browser-ready", "site-loading", "site-loaded",
+            "form-scanning", "form-found", "browser-error", "navigation-error",
+            "browser-closed-unverified", "site-load-timeout", "site-unavailable",
+            "registration-blocked",
         }
         with self._lock:
             state = self._read()
