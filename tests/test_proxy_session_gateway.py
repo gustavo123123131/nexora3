@@ -154,6 +154,9 @@ def test_https_probe_separates_tls_handshake_from_authentication(monkeypatch):
     assert result["reachable"] is False
     assert result["status"] == "tls_handshake_failed"
     assert result["stage"] == "tls_destination"
+    assert result["reachable"] is False
+    assert result["connectVerified"] is True
+    assert result["browserVerificationRequired"] is True
     assert "Negociação TLS" in result["message"]
 
 
@@ -170,6 +173,7 @@ def test_proxy_authenticated_connect_remains_fail_closed(monkeypatch):
     assert result["reachable"] is False
     assert result["status"] == "auth_rejected"
     assert result["stage"] == "connect"
+    assert result.get("browserVerificationRequired") is not True
     assert "demo-password" not in str(result)
 
 
@@ -270,3 +274,38 @@ def test_live_overlay_refresh_preserves_gateway_verification():
             raise RuntimeError("Content Security Policy blocks cross-origin fetch")
 
     assert refresh_browser_exit_ip(CspBlockedPage(), gateway) == ""
+
+
+def test_browser_verification_reports_sanitized_network_error():
+    from Settings.session_proxy_gateway import verify_browser_exit_ip
+    gateway = FakeBrowserGateway()
+
+    class FailedBrowserPage:
+        def goto(self, url, *, wait_until, timeout):
+            raise RuntimeError(
+                "Page.goto: net::ERR_TUNNEL_CONNECTION_FAILED at "
+                "https://some-secret.example/?token=never-display"
+            )
+
+    import pytest
+    with pytest.raises(ProxyConnectionError) as failure:
+        verify_browser_exit_ip(FailedBrowserPage(), gateway)
+    assert failure.value.code == "browser_proxy_unverified"
+    assert failure.value.detail == "ERR_TUNNEL_CONNECTION_FAILED"
+    assert "secret" not in failure.value.detail
+
+
+def test_tls_failure_during_upstream_connect_does_not_allow_browser_fallback(monkeypatch):
+    import ssl
+    from Settings import session_proxy_gateway as gateway
+    monkeypatch.setattr(
+        gateway, "_open_tunnel",
+        lambda proxy, target, port, timeout: (_ for _ in ()).throw(
+            ssl.SSLError(1, "upstream TLS failure")
+        ),
+    )
+    result = gateway.probe_proxy(ProxyConfig("https://localhost:8443"))
+    assert result["reachable"] is False
+    assert result["status"] == "tls_handshake_failed"
+    assert result["stage"] == "connect"
+    assert result["browserVerificationRequired"] is False
