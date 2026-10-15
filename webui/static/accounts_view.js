@@ -93,7 +93,7 @@
         ['Username',data.username||acc.loginIdentifier],
         ['E-mail',data.email],
         ['Telefone',data.phone],
-        ['CPF',data.cpf ? 'Protegido · ver detalhes' : 'Não disponível'],
+        ['CPF gerado (não verificado)',data.cpf],
         ['Criado em',date(acc.createdAt)]
       ]) {
         const item=make('div','accounts-summary-item');
@@ -104,14 +104,14 @@
       button.type='button';button.setAttribute('aria-expanded','false');
       const details=make('div','accounts-details');details.hidden=true;
       details.append(make('p','accounts-detail-warning',
-        'Identidade fictícia de teste. CPF com dígitos verificadores válidos, sem comprovação de titularidade. Não utilize estes dados para se passar por uma pessoa real.'));
+        'Dados gerados para testes. Um CPF com dígitos verificadores válidos pode coincidir com o de uma pessoa real; a titularidade não foi verificada. Não use estes dados para se passar por alguém.'));
       for(const [label,value,protectedField] of [
         ['Nome completo',data.fullName||null,false],
         ['Username',data.username||acc.loginIdentifier,false],
         ['Senha gerada',data.password,true],
         ['E-mail de teste',data.email,false],
         ['Telefone de teste',data.phone,false],
-        ['CPF fictício não verificado',data.cpf,true],
+        ['CPF gerado (não verificado)',data.cpf,false],
         ['Tipo / modo',(acc.profileScope==='mae'?'Mãe':'Filha')+' · '+mode,false],
         ['Número do perfil',acc.profileIndex,false],
         ['Criado em',date(acc.createdAt),false]
