@@ -44,8 +44,10 @@ def _real_values(values, generated=None):
 
     if not 3 <= len(cleaned["username"]) <= 80:
         raise AccountError("Nome de usuário inválido: use entre 3 e 80 caracteres.")
-    if not 12 <= len(cleaned["password"]) <= 128:
-        raise AccountError("Senha curta: são necessários pelo menos 12 caracteres. Gere um novo perfil.")
+    # Site HTML advertises maxlength=16; Nexora now creates nine-character
+    # test passwords. Keep older stored credentials up to 16 unchanged.
+    if not 7 <= len(cleaned["password"]) <= 16:
+        raise AccountError("Senha inválida: use entre 7 e 16 caracteres.")
     if cleaned["password"] != cleaned["confirmPassword"]:
         raise AccountError("A confirmação da senha não coincide.")
     if len(cleaned["fullName"]) < 3:
