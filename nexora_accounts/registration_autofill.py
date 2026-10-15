@@ -3,7 +3,6 @@
 This module never sends a registration, invokes a private HTTP API, confirms a
 real account or solves CAPTCHA. The site owns its final submission.
 """
-import os
 import time
 from urllib.parse import urlparse
 from nexora_accounts.service import AccountsRepository
@@ -191,50 +190,25 @@ def autofill_existing_registration(page, instance_plan, repository=None, progres
             real_name = _visible(page, FIELDS["realName"])
             report("real-name-field-found" if real_name is not None
                    else "real-name-field-missing")
-            # An explicitly user-configured, genuine owner name may be
-            # populated without claiming that a generated name is a legal ID.
-            # Do not persist this private value to accounts.json or logs.
-            owner_name = os.environ.get("NEXORA_REGISTRATION_OWNER_NAME", "").strip()
-            owner_name_valid = (
-                3 <= len(owner_name) <= 120
-                and any(char.isalpha() for char in owner_name)
-                and all(char.isalpha() or char.isspace() or char in "-'’." for char in owner_name)
-            )
-            if real_name is not None and owner_name_valid:
-                if not _same_site(target, page.url):
-                    report("origin-changed")
-                    return {
-                        "status": "blocked", "fieldCount": filled,
-                        "message": "Domínio alterado antes de preencher o nome.",
-                    }
-                try:
-                    real_name.fill(owner_name, timeout=6000)
-                    filled += 1
-                    report("real-name-filled")
-                    repo.set_stage(key, "local", "owner-name-prefilled")
-                except Exception:
-                    report("real-name-fill-error")
-                    return {
-                        "status": "error", "fieldCount": filled,
-                        "message": "O campo realName foi encontrado, mas não aceitou o nome.",
-                    }
+            # Do not load a global Windows owner name into every unrelated
+            # profile. On remote sites, generated profileData.fullName is
+            # synthetic; the person using the browser supplies their own
+            # identity separately. Authorized per-profile data is handled by
+            # the confirmed-owner path below.
             submit_button = _visible(page, ("#insideRegisterSubmitClick",))
             report("submit-button-found" if submit_button is not None
                    else "submit-button-missing")
-            if real_name is not None and filled != 4:
+            if real_name is not None:
                 report("name-entry-pending")
             report("submit-not-sent")
             return {
-                "status": "owner-name-filled" if filled == 4 else "credentials-filled",
+                "status": "credentials-filled",
                 "fieldCount": filled,
                 "message": (
-                    "Username, senha, confirmação e nome preenchidos. "
-                    "Confira o formulário e clique em Registro quando estiver pronto; "
-                    "o Nexora acompanhará o retorno."
-                    if filled == 4 else
-                    "Username e senhas preenchidos. Complete o campo Nome "
-                    "diretamente no navegador e clique em Registro após conferir "
-                    "os dados. O Nexora registrará o clique e a resposta do site."
+                    "Username e senhas preenchidos. O campo Nome não é "
+                    "preenchido com nomes globais do Windows nem com dados "
+                    "fictícios de perfis. Revise o nome do titular no navegador "
+                    "antes de qualquer registro externo."
                 ),
             }
         return {
