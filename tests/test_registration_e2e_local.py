@@ -244,7 +244,7 @@ def test_real_site_layout_preview_fills_only_nonidentity_credentials(tmp_path):
             assert completed_events == [
                 "username-filled", "password-filled", "password-confirmed",
                 "real-name-field-found", "submit-button-found",
-                "real-name-required", "submit-not-sent",
+                "name-entry-pending", "submit-not-sent",
             ]
             assert len(repo.account(key)["registrationLog"]) >= 8
             assert all(
@@ -301,3 +301,55 @@ def test_configured_owner_name_autofills_in_real_chromium_without_sending(
             context.close()
         finally:
             browser.close()
+
+
+
+def test_browser_manual_name_and_registro_click_are_logged_in_chromium(tmp_path):
+    """A manual browser click is observed and the local-only response classified."""
+    with demo_registration_server() as (url, requests):
+        repo = AccountsRepository(tmp_path / "accounts.json")
+        plan = repo.create_launch_profiles(
+            "mae", "desktop", [url], 1, tmp_path / "profiles"
+        )[0]
+        key = plan["profile_record_id"]
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            try:
+                page = browser.new_page()
+                page.goto(url, wait_until="domcontentloaded")
+                result = autofill_existing_registration(page, plan, repo)
+                assert result["status"] == "filled"
+                watcher = RegistrationWatcher(
+                    page, plan, repository=repo,
+                    success_selector="#demo-registration-success"
+                )
+                # Simulate a person editing the realName input in the page.
+                page.locator("input[data-input-name='realName']").fill("Titular do Teste")
+                watcher.tick()
+                assert any(
+                    e["stage"] == "name-entered-in-browser"
+                    for e in repo.account(key)["registrationLog"]
+                )
+                page.locator("#insideRegisterSubmitClick").click()
+                watcher.tick()
+                assert any(
+                    e["stage"] == "manual-submit-clicked"
+                    for e in repo.account(key)["registrationLog"]
+                )
+                page.locator("#demo-registration-success").wait_for(
+                    state="visible", timeout=5000
+                )
+                for _ in range(16):
+                    watcher.tick()
+                    if repo.account(key)["status"] == "completed":
+                        break
+                    page.wait_for_timeout(120)
+                assert requests["posted"] == 1
+                assert requests["real_name_filled"]
+                assert repo.account(key)["status"] == "completed"
+                assert repo.account(key)["stage"] == "provider-confirmed"
+                logs = json.dumps(repo.account(key)["registrationLog"])
+                assert "Titular do Teste" not in logs
+                assert repo.account(key)["profileData"]["password"] not in logs
+            finally:
+                browser.close()
