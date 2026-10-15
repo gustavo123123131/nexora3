@@ -5,13 +5,14 @@ Submission occurs only in the Playwright-owning thread. No raw API replay,
 credential logging, CAPTCHA bypass, or automatic retry after uncertain results.
 """
 import os
+import re
 import threading
 import time
 from urllib.parse import urlparse
 
 from nexora_accounts.service import AccountsRepository, AccountError
 
-_QUEUED = set()
+_QUEUED = {}  # account ID -> {values: approved data or None}, memory only
 _QUEUE_LOCK = threading.Lock()
 _SUBMIT_SELECTORS = (
     "#insideRegisterSubmitClick",
@@ -20,38 +21,63 @@ _SUBMIT_SELECTORS = (
 )
 
 
-def request_submit(account_id, user_confirmed, repository=None):
-    """Queue one explicit action; never touch a Playwright page from API threads."""
+def _real_values(values):
+    """Validate user-supplied, authorized values without persisting credentials."""
+    if not isinstance(values, dict):
+        raise AccountError("Dados de cadastro inválidos.")
+    cleaned = {}
+    for field in ("username", "password", "confirmPassword", "fullName", "email", "phone"):
+        value = values.get(field, "")
+        if not isinstance(value, str) or len(value) > 160 or any(ord(c) < 32 for c in value):
+            raise AccountError("Um campo de cadastro é inválido.")
+        cleaned[field] = value if field in ("password", "confirmPassword") else value.strip()
+    if not 3 <= len(cleaned["username"]) <= 80 or not 8 <= len(cleaned["password"]) <= 128:
+        raise AccountError("Username ou senha não atende aos requisitos mínimos.")
+    if cleaned["password"] != cleaned["confirmPassword"] or len(cleaned["fullName"]) < 3:
+        raise AccountError("Confirmação da senha ou nome completo inválido.")
+    if not cleaned["email"] and not cleaned["phone"]:
+        raise AccountError("Informe um e-mail ou telefone legítimo.")
+    if cleaned["email"] and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", cleaned["email"]):
+        raise AccountError("E-mail inválido.")
+    if cleaned["email"].lower().endswith("@example.test"):
+        raise AccountError("E-mail de teste não é permitido neste cadastro.")
+    if cleaned["phone"] and not re.fullmatch(r"\+?[\d\s()\-]{10,20}", cleaned["phone"]):
+        raise AccountError("Telefone inválido.")
+    return cleaned
+
+
+def request_submit(account_id, user_confirmed, repository=None, values=None):
+    """Queue only a confirmed registration; raw personal data lives in memory."""
     if user_confirmed is not True:
         raise AccountError("Confirme o envio do formulário.")
     repo = repository if repository is not None else AccountsRepository()
     account = repo.account(account_id)
     data = account.get("profileData") or {}
     from nexora_accounts.registration_autofill import _demo
-    if not _demo(account.get("targetUrl", "")) and (
+    supplied = _real_values(values) if values is not None else None
+    if supplied is None and not _demo(account.get("targetUrl", "")) and (
             data.get("isTestData") is not False or data.get("ownerConfirmed") is not True):
         raise AccountError("Dados de teste não podem ser enviados ao provedor.")
+    allowed_stages = ("review",) if supplied is None else (
+        "review", "test-data-blocked", "form-not-found")
     with _QUEUE_LOCK:
         if account_id in _QUEUED:
             return {"queued": True, "duplicate": True}
-        if account.get("status") != "pending" or account.get("stage") != "review":
-            raise AccountError("O formulário não está pronto. Aguarde a preparação ou revise o perfil.")
-        _QUEUED.add(account_id)
+        if account.get("stage") not in allowed_stages:
+            raise AccountError("Navegador ainda não está pronto para cadastrar.")
+        _QUEUED[account_id] = {"values": supplied}
     try:
         repo.set_stage(account_id, "pending", "submit-queued")
     except Exception:
         with _QUEUE_LOCK:
-            _QUEUED.discard(account_id)
+            _QUEUED.pop(account_id, None)
         raise
     return {"queued": True, "duplicate": False}
 
 
 def _take(account_id):
     with _QUEUE_LOCK:
-        if account_id not in _QUEUED:
-            return False
-        _QUEUED.remove(account_id)
-        return True
+        return _QUEUED.pop(account_id, None)
 
 
 class RegistrationWatcher:
@@ -114,25 +140,55 @@ class RegistrationWatcher:
             self.finished = True
             return
 
-        if _take(self.key):
+        command = _take(self.key)
+        if command is not None:
             if not self._valid_page():
                 self._stage("pending", "origin-changed")
                 return
             try:
+                values = command.get("values")
+                if values is not None:
+                    from nexora_accounts.registration_autofill import (
+                        _wait_for_registration, _same_site
+                    )
+                    fields = _wait_for_registration(self.page)
+                    if not fields:
+                        self._stage("pending", "form-not-found")
+                        return
+                    mapping = {
+                        "account": values["username"],
+                        "userpass": values["password"],
+                        "confirmPassword": values["password"],
+                        "realName": values["fullName"],
+                        "email": values["email"],
+                        "phone": values["phone"],
+                    }
+                    target = self.repo.account(self.key)["targetUrl"]
+                    for name, element in fields.items():
+                        value = mapping.get(name)
+                        if element is not None and value:
+                            if not _same_site(target, self.page.url):
+                                self._stage("pending", "origin-changed")
+                                return
+                            element.fill(value, timeout=6000)
+                    self._stage("pending", "review-real-data")
                 button = next((btn for selector in _SUBMIT_SELECTORS
                                if (btn := self.page.locator(selector).first).is_visible()), None)
                 if button is None:
                     self._stage("pending", "submit-button-missing")
                     return
-                # Does not check terms or circumvent disabled controls: site validates.
+                # Never manipulate terms/CAPTCHA; real website validation remains in place.
                 self.started_at = self.clock()
                 self._stage("pending", "submitting")
                 button.click(timeout=8000)
                 self._stage("pending", "awaiting-provider")
             except Exception:
-                # The click could have reached the remote server before timing out.
+                # The click may have reached the server before an error/timeout.
                 self._stage("pending", "submit-result-unknown")
                 return
+            finally:
+                if command.get("values") is not None:
+                    command["values"].clear()
 
         if self.http_codes:
             code = self.http_codes.pop(0)
