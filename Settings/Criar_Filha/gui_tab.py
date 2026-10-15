@@ -2311,6 +2311,17 @@ class FilhaTab(ctk.CTkFrame):
         for btn in self.quick_game_buttons:
             btn.configure(state="normal")
         
+    def create_local_profile(self):
+        """Create a local record without opening a browser."""
+        try:
+            from nexora_accounts.local_profiles import LocalProfileStore
+            profile = LocalProfileStore().create(AREA_PIX_SCOPE)
+            self._set_status(f"{profile['label']} criada.")
+            self._log(f"[Contas] {profile['label']} salva.")
+        except Exception as exc:
+            self._set_status("Erro ao salvar perfil.")
+            self._log(f"[Contas] Falha: {type(exc).__name__}")
+
     def start_browsers(self):
         """Launch isolated Chromium windows without creating accounts."""
         self._start(False)
