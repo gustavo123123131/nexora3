@@ -156,16 +156,50 @@ try {
         "Branch: $Branch" + [Environment]::NewLine + "Atualizado em: $(Get-Date -Format s)",
         [Text.Encoding]::UTF8
     )
-    # Na proxima vez, basta executar o CMD abaixo: sem download ou pip.
+    # One permanent local launcher; no need to download a new CMD ever again.
     $ResumeFile = Join-Path $AgentDir "iniciar-agente-local.cmd"
-    $resume = @(
-        '@echo off',
-        'cd /d "%~dp0"',
-        '".venv\Scripts\python.exe" agente_windows.py',
-        'pause'
-    ) -join [Environment]::NewLine
+    if ($Branch -eq "fix/remover-criacao-contas") {
+        if (-not (Test-Path -LiteralPath (Join-Path $AgentDir "atualizador_nexora.py"))) {
+            throw "Atualizador automatico nao encontrado no pacote."
+        }
+        $LocalConfig = @{ panel = $Painel; branch = $Branch } | ConvertTo-Json
+        [IO.File]::WriteAllText(
+            (Join-Path $AgentDir "nexora-updater-config.json"),
+            $LocalConfig, [Text.Encoding]::UTF8
+        )
+        # Avoid installing the same commit twice after initial setup.
+        try {
+            $Ref = Invoke-RestMethod -Uri (
+                "https://api.github.com/repos/gustavo123123131/nexora3/git/ref/heads/$Branch"
+            ) -TimeoutSec 15 -Headers @{ "User-Agent" = "Nexora-Windows-Installer" }
+            if ($Ref.object.sha -match '^[a-f0-9]{40}$') {
+                $Version = @{ branch = $Branch; sha = $Ref.object.sha } | ConvertTo-Json
+                [IO.File]::WriteAllText(
+                    (Join-Path $AgentDir "nexora-update-state.json"),
+                    $Version, [Text.Encoding]::UTF8
+                )
+            }
+        } catch {
+            Write-Host "A versao sera conferida pelo atualizador na primeira verificacao."
+        }
+        $resume = @(
+            '@echo off',
+            'title Nexora3 - Atualizador automatico Windows',
+            'cd /d "%~dp0"',
+            '".venv\Scripts\python.exe" atualizador_nexora.py --branch fix/remover-criacao-contas',
+            'pause'
+        ) -join [Environment]::NewLine
+    } else {
+        $resume = @(
+            '@echo off',
+            'cd /d "%~dp0"',
+            '".venv\Scripts\python.exe" agente_windows.py',
+            'pause'
+        ) -join [Environment]::NewLine
+    }
     [IO.File]::WriteAllText($ResumeFile, $resume, [Text.Encoding]::ASCII)
-    Write-Host "Proxima execucao: $ResumeFile"
+    Write-Host "Iniciador fixo: $ResumeFile (nao precisa baixar novamente)"
+
     $VenvDir = Join-Path $AgentDir ".venv"
     $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
     if (-not (Test-Path $VenvPython)) {
@@ -214,8 +248,14 @@ try {
         Invoke-QuietInstall -Label "Verificando Chromium..." `
             -CommandArgs @("-m", "playwright", "install", "chromium")
         Write-Host ""
-        Write-Host "Iniciando agente. Nao feche esta janela enquanto usar o Lixo CPA." -ForegroundColor Green
-        & $VenvPython agente_windows.py --painel $Painel
+        if ($Branch -eq "fix/remover-criacao-contas") {
+            Write-Host "NEXORA: iniciando supervisor automatico. Mantenha esta janela aberta." -ForegroundColor Green
+            Write-Host "O agente se atualizara e reiniciara quando suas janelas estiverem fechadas."
+            & $VenvPython atualizador_nexora.py --branch $Branch --painel $Painel
+        } else {
+            Write-Host "Iniciando agente." -ForegroundColor Green
+            & $VenvPython agente_windows.py --painel $Painel
+        }
         if ($LASTEXITCODE -ne 0) { throw "O agente encerrou com erro." }
     } finally {
         Pop-Location
