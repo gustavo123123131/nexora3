@@ -7,6 +7,7 @@ No credentials or Chromium profile folders are ever sent to GitHub.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import io
 import json
 import os
@@ -277,7 +278,38 @@ def terminate_agent(proc: subprocess.Popen):
         proc.wait(timeout=5)
 
 
-def run(root: Path, *, branch: str = BRANCH, panel: str | None = None,
+@contextmanager
+def single_instance(root: Path):
+    """Prevent two updater consoles from writing into the same installation."""
+    root.mkdir(parents=True, exist_ok=True)
+    lock_path = root / ".nexora-supervisor.lock"
+    with lock_path.open("a+b") as handle:
+        handle.seek(0)
+        handle.write(b"0")
+        handle.flush()
+        handle.seek(0)
+        try:
+            if os.name == "nt":
+                import msvcrt
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            raise RuntimeError(
+                "O Nexora ja esta aberto em outra janela. Use o agente existente."
+            ) from exc
+        try:
+            yield
+        finally:
+            handle.seek(0)
+            if os.name == "nt":
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _run_unlocked(root: Path, *, branch: str = BRANCH, panel: str | None = None,
         interval: int = INTERVAL_SECONDS):
     from agente_windows import validate_panel_url
 
@@ -370,6 +402,12 @@ def run(root: Path, *, branch: str = BRANCH, panel: str | None = None,
     finally:
         if child is not None:
             terminate_agent(child)
+
+
+def run(root: Path, *, branch: str = BRANCH, panel: str | None = None,
+        interval: int = INTERVAL_SECONDS):
+    with single_instance(root):
+        return _run_unlocked(root, branch=branch, panel=panel, interval=interval)
 
 
 def main():
