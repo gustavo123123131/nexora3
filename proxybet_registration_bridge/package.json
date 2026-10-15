@@ -1,9 +1,0 @@
-{
-  "name": "registration-account-bridge",
-  "version": "1.0.0",
-  "private": true,
-  "description": "Módulos independentes de cadastro autorizado e gerenciamento de contas, para integração local",
-  "type": "commonjs",
-  "engines": { "node": ">=20" },
-  "scripts": { "test": "node --test", "check": "node --check src/index.js && node --test" }
-}
