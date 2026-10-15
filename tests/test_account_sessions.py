@@ -105,6 +105,7 @@ def test_saved_card_launcher_reuses_only_its_own_data(isolated_profiles, monkeyp
     )
     b = isolated_profiles.create(
         "mae", device_mode="iphone", start_url="https://b.example",
+        connection_mode="direct",
     )
     isolated_profiles.select(a["id"])
     from Settings.Criar_Mae.settings.browser import ModeConfig
@@ -227,3 +228,70 @@ def test_legacy_profile_without_original_snapshot_is_rejected(isolated_profiles)
     from nexora_accounts.session_launcher import AccountLauncher
     with pytest.raises(ValueError, match="perfil técnico original"):
         AccountLauncher().launch(None, old["id"])
+
+
+def test_direct_account_connection_does_not_change_if_proxy_pool_changes(isolated_profiles, monkeypatch):
+    from types import SimpleNamespace
+    from Settings.Criar_Mae.settings.browser import ModeConfig
+    from dataclasses import asdict
+    from nexora_accounts.session_launcher import AccountLauncher
+    profile = isolated_profiles.create("mae", device_mode="android", connection_mode="direct")
+    isolated_profiles.set_runtime_config(profile["id"], asdict(ModeConfig(
+        "android", "Android Test User Agent", {"width": 412, "height": 915},
+        2.75, True, True, "Qualcomm", "Adreno", {},
+    )))
+    # Add a proxy AFTER the account was first created.
+    proxy_module.ProxyStore().save_line("http://u:pwd@a.proxy.test:8500")
+    seen = []
+    ready = threading.Event()
+    class Tab:
+        headless_var = SimpleNamespace(get=lambda: False)
+        winpos_controller = object()
+        speed_controller = object()
+        verify_phone_controller = object()
+        mirror = object()
+        withdraw_controller = object()
+        game_launch_controller = object()
+        instance_target_controller = object()
+        def after(self, delay, fn):
+            fn()
+        def _log(self, message):
+            pass
+    def launch(**kwargs):
+        seen.append(kwargs)
+        ready.set()
+    monkeypatch.setattr(AccountLauncher, "_controller",
+                        staticmethod(lambda gui, origin: (SimpleNamespace(run_all=launch), Tab())))
+    AccountLauncher().launch(None, profile["id"])
+    assert ready.wait(4)
+    assert seen[0]["proxy"] is None
+    assert "proxy_config" not in seen[0]["instance_plans"][0]
+
+
+def test_account_with_managed_proxy_without_original_binding_is_blocked(isolated_profiles, monkeypatch):
+    from Settings.Criar_Mae.settings.browser import ModeConfig
+    from dataclasses import asdict
+    from nexora_accounts.session_launcher import AccountLauncher
+    p = isolated_profiles.create("mae", device_mode="android", connection_mode="managed")
+    isolated_profiles.set_runtime_config(p["id"], asdict(ModeConfig(
+        "android", "Android Test User Agent", {"width": 412, "height": 915},
+        2.75, True, True, "Qualcomm", "Adreno", {},
+    )))
+    proxy_module.ProxyStore().save_line("http://u:pwd@a.proxy.test:8500")
+    messages = []
+    class Tab:
+        def after(self, delay, cb):
+            cb()
+        def _log(self, message):
+            messages.append(message)
+    from types import SimpleNamespace
+    monkeypatch.setattr(AccountLauncher, "_controller",
+                        staticmethod(lambda gui, origin: (SimpleNamespace(), Tab())))
+    launcher = AccountLauncher()
+    launcher.launch(None, p["id"])
+    import time
+    for _ in range(100):
+        if messages:
+            break
+        time.sleep(0.01)
+    assert any("vínculo da proxy original ausente" in msg for msg in messages)
