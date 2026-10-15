@@ -457,17 +457,34 @@ class AccountsRepository:
                 raise
             return plans
 
-    def set_stage(self, key, status, stage):
+    def set_stage(self, key, status, stage, http_status=None):
         if status not in STATUS or not re.fullmatch(r"[a-z0-9_-]{1,60}", stage):
             raise AccountError("Status inválido.")
+        if http_status is not None and (
+                isinstance(http_status, bool) or not isinstance(http_status, int)
+                or not 100 <= http_status <= 599):
+            raise AccountError("Código HTTP inválido.")
         with self._lock:
             state = self._read()
             account = next((a for a in state["accounts"] if a["id"] == key), None)
             if account is None:
                 raise AccountError("Conta não encontrada.")
             now = _now()
+            changed = account.get("status") != status or account.get("stage") != stage
             account.update({"status": status, "stage": stage, "updatedAt": now})
+            if changed or http_status is not None:
+                # Fixed stage identifiers and numeric HTTP codes, never credentials
+                # or untrusted response bodies. Logs are per account and bounded.
+                entry = {"at": now, "stage": stage}
+                if http_status is not None:
+                    entry["httpStatus"] = http_status
+                account.setdefault("registrationLog", []).append(entry)
+                account["registrationLog"] = account["registrationLog"][-30:]
             mapping = {"provider-confirmed": "completed", "review": "form_ready",
+                       "submit-queued": "submitting", "submitting": "submitting",
+                       "awaiting-provider": "submitting",
+                       "provider-response-unverified": "verification_required",
+                       "timeout-unverified": "verification_required",
                        "submitted": "submitting", "verification-required": "verification_required"}
             for job in state["jobs"]:
                 if job["accountId"] == key:

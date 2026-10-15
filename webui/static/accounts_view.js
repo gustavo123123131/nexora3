@@ -15,8 +15,23 @@
     const d = new Date(value);
     return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString('pt-BR');
   };
+  const stageNames = {
+    'profile-created':'Perfil criado', 'review':'Formulário preenchido; aguardando revisão',
+    'submit-queued':'Envio solicitado', 'submitting':'Enviando formulário',
+    'awaiting-provider':'Aguardando a plataforma',
+    'provider-response-unverified':'Resposta recebida; aguardando confirmação',
+    'provider-http-error':'Erro HTTP do provedor', 'provider-confirmed':'Cadastro confirmado',
+    'timeout-unverified':'Tempo limite: resultado desconhecido',
+    'submit-result-unknown':'Envio incerto; confira no site',
+    'submit-button-missing':'Botão de registro ausente',
+    'test-data-blocked':'Dados fictícios: cadastro real bloqueado',
+    'form-not-found':'Formulário não encontrado', 'origin-changed':'Domínio mudou',
+    'review-real-data':'Dados legítimos preenchidos para envio',
+    'browser-closed-unverified':'Navegador fechado antes da confirmação',
+  };
+  const stageLabel = key => stageNames[key] || text(key);
 
-  function create({get}) {
+  function create({get, post}) {
     const root = make('div', 'accounts-workspace');
     const heading = make('div', 'accounts-heading');
     const titleBox = make('div');
@@ -94,6 +109,7 @@
         ['E-mail',data.email],
         ['Telefone',data.phone],
         ['CPF gerado (não verificado)',data.cpf],
+        ['Etapa do cadastro',stageLabel(acc.stage||acc.status||'local')],
         ['Criado em',date(acc.createdAt)]
       ]) {
         const item=make('div','accounts-summary-item');
@@ -125,7 +141,97 @@
           field.type='password';field.nextElementSibling.textContent='Mostrar';
         }
       });
-      card.append(head,summary,button,details);
+      const actions=make('div','accounts-registration-actions');
+      if (acc.status==='pending' && acc.stage==='review' &&
+          data.isTestData===false && data.ownerConfirmed===true) {
+        const send=make('button','accounts-submit-button','Enviar cadastro');
+        send.type='button';
+        send.addEventListener('click',async()=>{
+          if (!window.confirm('Confirma o envio dos dados legítimos deste perfil ao site? '+
+                              'Conclua também os termos e verificações do provedor.')) return;
+          send.disabled=true; inform('Solicitando envio no navegador do perfil...');
+          try {
+            await post('/api/registration/accounts/submit-existing',
+                       {accountId:acc.id,userConfirmed:true});
+            inform('Solicitação enviada ao navegador. Acompanhe os logs do perfil.');
+            await refresh();
+          } catch(err) { inform('Não foi possível enviar: '+(err.message||err),true); }
+          finally { send.disabled=false; }
+        });
+        actions.append(send);
+      } else if (data.isTestData) {
+        actions.append(make('p','accounts-action-hint',
+          'O perfil possui dados fictícios. Para cadastrar no site real, forneça seus dados legítimos.'));
+        const openForm=make('button','accounts-submit-button','Cadastrar com meus dados');
+        openForm.type='button';
+        const form=make('form','accounts-real-form');
+        form.hidden=true;
+        const entries={};
+        for (const [key,label,type,required] of [
+          ['fullName','Nome completo','text',true],
+          ['username','Usuário','text',true],
+          ['email','E-mail (se disponível)','email',false],
+          ['phone','Telefone (se disponível)','tel',false],
+          ['password','Senha','password',true],
+          ['confirmPassword','Confirmar senha','password',true]
+        ]) {
+          const wrapper=make('label','accounts-real-field');
+          wrapper.append(make('span','',label));
+          const field=make('input','accounts-real-input');
+          field.type=type; field.required=required;
+          field.autocomplete='off'; field.maxLength=160;
+          wrapper.append(field); form.append(wrapper);
+          entries[key]=field;
+        }
+        const confirmLabel=make('label','accounts-consent-label');
+        const own=make('input');own.type='checkbox';own.required=true;
+        confirmLabel.append(own,make('span','',
+          'Confirmo que estes são meus dados legítimos e autorizo o cadastro no site selecionado.'));
+        form.append(confirmLabel);
+        const send=make('button','accounts-submit-button','Confirmar e enviar cadastro');
+        send.type='submit';form.append(send);
+        openForm.addEventListener('click',()=>{
+          form.hidden=!form.hidden;openForm.textContent=form.hidden?
+            'Cadastrar com meus dados':'Ocultar formulário';
+        });
+        form.addEventListener('submit',async event=>{
+          event.preventDefault();
+          if (!own.checked) { inform('Confirme que os dados são seus.',true); return; }
+          if (entries.password.value!==entries.confirmPassword.value) {
+            inform('A confirmação da senha não coincide.',true);return;
+          }
+          if (!entries.email.value.trim() && !entries.phone.value.trim()) {
+            inform('Informe seu e-mail ou telefone verdadeiro.',true);return;
+          }
+          if (!window.confirm('Autoriza enviar estes dados para criar a conta no site aberto? '+
+                              'Leia e aceite os termos exigidos no próprio site.')) return;
+          send.disabled=true;
+          try {
+            const values=Object.fromEntries(Object.entries(entries).map(([k,v])=>[k,v.value]));
+            await post('/api/registration/accounts/submit-existing',
+                       {accountId:acc.id,userConfirmed:true,values});
+            form.reset();form.hidden=true;
+            inform('Cadastro solicitado no navegador. Veja o histórico para acompanhar a resposta.');
+            await refresh();
+          } catch(err) {
+            inform('Cadastro não enviado: '+(err.message||err),true);
+          } finally {send.disabled=false;}
+        });
+        actions.append(openForm,form);
+      }
+      const events=Array.isArray(acc.registrationLog)?acc.registrationLog.slice(-15).reverse():[];
+      const logPanel=make('section','accounts-registration-log');
+      logPanel.append(make('h4','','Histórico do cadastro'));
+      if (!events.length) logPanel.append(make('p','','Aguardando eventos de cadastro.'));
+      for (const entry of events) {
+        const row=make('div','accounts-log-row');
+        const status=(entry.httpStatus? ' · HTTP '+entry.httpStatus:'');
+        row.append(make('time','',date(entry.at)),
+                   make('span','',stageLabel(entry.stage)+status));
+        logPanel.append(row);
+      }
+      details.append(logPanel);
+      card.append(head,summary,actions,button,details);
       return card;
     }
     function render() {
