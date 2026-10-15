@@ -126,7 +126,7 @@ def test_nexora_visual_and_existing_controls(tmp_path):
                 page.get_by_role("button", name="Proxy").click()
                 expect(page.locator(".tab-bar button.active")).to_have_text("Proxy")
                 expect(page.get_by_role("heading", name="Gerenciamento de proxy")).to_be_visible()
-                expect(page.get_by_text("Nenhum proxy configurado")).to_be_visible()
+                expect(page.locator(".proxy-table tbody")).to_contain_text("Nenhum proxy")
                 expect(page.get_by_text("GERENCIADOR LOCAL")).to_be_visible()
                 expect(page.locator(".proxy-table tbody tr")).to_have_count(1)
                 expect(page.get_by_role("button", name="Salvar proxy")).to_be_enabled()
