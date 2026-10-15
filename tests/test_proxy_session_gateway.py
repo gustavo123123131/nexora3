@@ -261,4 +261,12 @@ def test_live_overlay_refresh_preserves_gateway_verification():
         def evaluate(self, script, arg):
             return '{"ip":"198.51.100.23"}'
 
-    assert refresh_browser_exit_ip(DirectPage(), gateway) == ""
+    import pytest
+    with pytest.raises(ProxyConnectionError, match="browser_proxy_bypassed"):
+        refresh_browser_exit_ip(DirectPage(), gateway)
+
+    class CspBlockedPage:
+        def evaluate(self, script, arg):
+            raise RuntimeError("Content Security Policy blocks cross-origin fetch")
+
+    assert refresh_browser_exit_ip(CspBlockedPage(), gateway) == ""
