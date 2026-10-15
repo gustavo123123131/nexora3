@@ -226,7 +226,7 @@ class AccountsRepository:
                     state["sites"].append(json.loads(row["config"]))
                 for row in db.execute("SELECT * FROM accounts ORDER BY created_at"):
                     state["accounts"].append(self._legacy_account(row))
-                for row in db.execute("SELECT action,entity,occurred_at FROM account_audit ORDER BY id"):
+                for row in db.execute("SELECT action,entity,occurred_at FROM account_audit ORDER BY rowid"):
                     state["audit"].append({
                         "action": row["action"], "entity": row["entity"], "occurredAt": row["occurred_at"],
                     })
