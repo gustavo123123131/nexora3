@@ -35,6 +35,12 @@ class FakeLocator:
     def is_enabled(self):
         return self.enabled
 
+    def evaluate(self, script):
+        assert "section.login-register-fragment-submit" in script
+        assert "getAnimations" in script
+        self.events.append(("pause-animations", self.selector))
+        return {"sectionFound": True, "paused": 2}
+
     def click(self, *, timeout):
         if self.click_error:
             raise TimeoutError(self.click_error)
@@ -83,6 +89,8 @@ def test_fills_exact_fields_in_order_then_clicks(monkeypatch):
         ("fill", selector) for _, selector, _ in FIELDS
     ]
     assert page.events[-1] == ("click", SUBMIT)
+    assert page.events[-2] == ("pause-animations", SUBMIT)
+    assert any("animações pausadas=2" in msg for msg in messages)
     for _, selector, _ in FIELDS:
         assert ("read", selector) in page.events
     assert "Clique em Registrar enviado" in messages[-1]
