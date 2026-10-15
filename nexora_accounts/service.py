@@ -286,6 +286,76 @@ class AccountsRepository:
             self._audit(db, "account.delete", key)
 
 
+    def sync_cloud_site(self, data):
+        """Mirror a Supabase-owned site's non-secret metadata for local Playwright."""
+        config = _site_config(data)
+        with self._lock, self._open() as db:
+            db.execute(
+                """INSERT INTO sites(id,config,created_at) VALUES(?,?,?)
+                   ON CONFLICT(id) DO UPDATE SET config=excluded.config""",
+                (config["id"], json.dumps(config), _now()),
+            )
+            self._audit(db, "site.cloud_sync", config["id"])
+        return config
+
+    def sync_cloud_account(self, data):
+        """Mirror a cloud account using the SAME UUID; never copy credentials."""
+        if not isinstance(data, dict):
+            raise AccountError("Conta remota inválida.")
+        try:
+            key = str(uuid.UUID(str(data.get("id", ""))))
+        except (ValueError, AttributeError, TypeError) as exc:
+            raise AccountError("Identificador de conta remoto inválido.") from exc
+        site = self.site(data.get("siteId", ""))
+        display = _text(data.get("displayName", ""), "Identificação", 120)
+        scope, mode, idx = data.get("profileScope"), data.get("profileMode"), data.get("profileIndex")
+        if scope not in ("mae", "filha") or mode not in ("desktop", "android", "iphone", "mixed") \
+                or isinstance(idx, bool) or not isinstance(idx, int) or not 1 <= idx <= 999:
+            raise AccountError("Perfil remoto inválido.")
+        parent = data.get("parentId") or None
+        if parent:
+            try:
+                parent = str(uuid.UUID(str(parent)))
+            except (ValueError, AttributeError, TypeError) as exc:
+                raise AccountError("Conta mãe remota inválida.") from exc
+            linked = self.account(parent)
+            if scope != "filha" or linked["profileScope"] != "mae":
+                raise AccountError("Vínculo de conta mãe inválido.")
+        now = _now()
+        with self._lock, self._open() as db:
+            db.execute(
+                """INSERT INTO accounts(id,site_id,display_name,login_identifier,parent_id,
+                        profile_scope,profile_mode,profile_index,status,stage,created_at,updated_at)
+                   VALUES(?,?,?,?,?,?,?,?,'local','saved',?,?)
+                   ON CONFLICT(id) DO UPDATE SET
+                        site_id=excluded.site_id,display_name=excluded.display_name,
+                        parent_id=excluded.parent_id,profile_scope=excluded.profile_scope,
+                        profile_mode=excluded.profile_mode,profile_index=excluded.profile_index,
+                        updated_at=excluded.updated_at""",
+                (key, site["id"], display, "", parent, scope, mode, idx, now, now),
+            )
+            self._audit(db, "account.cloud_sync", key)
+        return self.account(key)
+
+    def sync_cloud_records(self, payload):
+        """Synchronize only metadata from the authenticated browser session.
+
+        Request authentication / Origin / CSRF are enforced by servidor.py.
+        No passwords, cookies, CPF or third-party request bodies are accepted.
+        """
+        if not isinstance(payload, dict):
+            raise AccountError("Sincronização inválida.")
+        sites, accounts = payload.get("sites", []), payload.get("accounts", [])
+        if not isinstance(sites, list) or not isinstance(accounts, list) or \
+                len(sites) > 100 or len(accounts) > 100:
+            raise AccountError("Muitos registros para sincronizar.")
+        for item in sites:
+            self.sync_cloud_site(item)
+        for item in accounts:
+            self.sync_cloud_account(item)
+        return {"sites": len(sites), "accounts": len(accounts)}
+
+
 class ExistingProfileBrowser:
     """Runs all sync Playwright operations in a single persistent worker thread.
 
