@@ -218,11 +218,11 @@ def autofill_existing_registration(page, instance_plan, repository=None, progres
                         "status": "error", "fieldCount": filled,
                         "message": "O campo realName foi encontrado, mas não aceitou o nome.",
                     }
-            elif real_name is not None:
-                report("real-name-required")
             submit_button = _visible(page, ("#insideRegisterSubmitClick",))
             report("submit-button-found" if submit_button is not None
                    else "submit-button-missing")
+            if real_name is not None and filled != 4:
+                report("real-name-required")
             report("submit-not-sent")
             return {
                 "status": "owner-name-filled" if filled == 4 else "credentials-filled",
