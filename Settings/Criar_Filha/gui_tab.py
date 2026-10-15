@@ -1051,7 +1051,12 @@ def run_instance(
         saved_bounds = None
         try:
             st_ui = load_settings()
-            by_idx = (st_ui.get("window_bounds_by_idx") or {}) if cfg.mode == "desktop" else {}
+            # Historic viewport/bounds are keyed only by window index and
+            # may belong to another account; never inherit them on an
+            # account-specific Chromium session.
+            by_idx = {} if (instance_plan or {}).get("account_profile") else (
+                (st_ui.get("window_bounds_by_idx") or {}) if cfg.mode == "desktop" else {}
+            )
             rec = by_idx.get(str(idx))
 
             # compat: se estiver no formato antigo (dict direto)
@@ -1067,7 +1072,12 @@ def run_instance(
         saved_vp = None
         try:
             st_ui = load_settings()
-            by_idx = (st_ui.get("window_bounds_by_idx") or {}) if cfg.mode == "desktop" else {}
+            # Historic viewport/bounds are keyed only by window index and
+            # may belong to another account; never inherit them on an
+            # account-specific Chromium session.
+            by_idx = {} if (instance_plan or {}).get("account_profile") else (
+                (st_ui.get("window_bounds_by_idx") or {}) if cfg.mode == "desktop" else {}
+            )
             rec = by_idx.get(str(idx))
 
             if isinstance(rec, dict) and isinstance(rec.get("viewport"), dict):
@@ -2543,10 +2553,6 @@ class FilhaTab(ctk.CTkFrame):
                 return
             plan["account_profile"] = new_profile
             plan["device_mode"] = device
-            # A runtime index must never be reused by another account, even
-            # when earlier Chromium windows are still open in this tab.
-            # Keep original idx for device allocation before changing it.
-            plan["idx"] = 100000 + new_profile["id"]
             plan["registration_profile"] = new_profile
             if plan.get("proxy_id"):
                 try:
