@@ -87,3 +87,25 @@
   .proxy-directory-footer { flex-wrap: wrap; }
   .proxy-directory-note { margin: 0; }
 }
+
+/* Real proxy manager controls: retain the original workspace theme. */
+.proxy-action {
+  padding: 7px 10px;
+  margin: 3px 3px 3px 0;
+  color: #d6e1ff;
+  background: #263855;
+  border: 1px solid #415579;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 650;
+}
+.proxy-action:hover:not(:disabled) { background: #344d75; }
+.proxy-action:disabled { opacity: .48; cursor: default; }
+.proxy-record-row td { border-bottom: 1px solid #2d3b51; padding: 13px 12px; font-size: 11px; color: #c3d0e4; overflow-wrap: anywhere; }
+.proxy-record-row td:first-child { padding-left: 22px; font-weight: 700; }
+.proxy-record-actions { min-width: 220px; }
+.proxy-feedback { margin: 0; min-height: 20px; color: #9ac5ea; font-size: 11px; line-height: 1.5; }
+.proxy-feedback.proxy-error { color: #ffb6a7; }
+#proxy-clear-active { margin-left: auto; }
+.proxy-directory-footer #proxy-active-label { overflow-wrap: anywhere; }
