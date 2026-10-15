@@ -1,5 +1,49 @@
 # Nexora3 — Diagnóstico do botão Abrir Conta e desenvolvimento sem PR
 
+
+## Correção confirmada pela comparação histórica — 15/10/2026
+
+**Sintoma relatado:** o navegador externo preenche username/senha/confirmação;
+os logs mostram `real-name-field-found`, `name-entry-pending` e
+`submit-not-sent`, mas o campo `realName` permanece vazio.
+
+**Causa no código:**
+- A implementação inicial já continha o mapeamento
+  `realName: data.get("fullName")` e restringia o preenchimento completo
+  quando `profileData.isTestData=True` num site externo.
+- O commit `3d56c49` adicionou um retorno antecipado que preenche apenas
+  username nos sites externos com dados sintéticos; commits seguintes
+  preencheram também senha/confirmação nesse ramo, mas não alteraram
+  a restrição do nome.
+- `real-name-field-found` prova que o seletor funcionou; portanto,
+  o campo vazio não é causado por seletor incorreto ou timeout.
+- O cenário localhost DEMO preenche `profileData.fullName`; isso não
+  significa que o fluxo externo tenha usado o mesmo ramo.
+- Perfis com `isTestData=False` **e** `ownerConfirmed=True` podem
+  preencher `realName` a partir do perfil, sem mudar o seletor.
+
+**Referência ProxyBet:** documentos locais
+`PROXYBET_FLUXO_CADASTRO_VERIFICADO.md` e o pacote
+`proxybet_registration_bridge/` mostram o mesmo mapeamento
+`input[data-input-name="realName"]` para
+`identity.realName`/`identity.nome`, além de separação entre
+geração, preenchimento e confirmação. A referência é análise estática
+histórica, não teste ao vivo da 5GBet nem permissão para criar cadastros
+externos fictícios.
+
+**Escopo executado:**
+- Apenas `webui/static/accounts_view.js` e
+  `webui/static/accounts_view.css` foram simplificados na interface.
+  Cada cartão mostra nome do perfil gerado, username e e-mail;
+  não há detalhes, senha, CPF, formulário nem etapas de cadastro.
+  Login, Mãe, Filha e persistência original não foram reescritos.
+- Testes focados em `create_launch_profiles` → `accounts.json`
+  → renderização dos cartões no Chromium; e em preenchimento do
+  seletor `realName` em Chromium com formulário HTTPS interceptado.
+- Nenhum POST externo na 5GBet foi feito ou confirmado.
+  Para teste de ponta a ponta no serviço real, falta acesso a um
+  ambiente de testes autorizado do provedor e dados legítimos.
+
 ## Branch de trabalho
 
 Todas as correções desta etapa ficam na branch EXISTENTE
@@ -82,9 +126,10 @@ lista antes de confirmar.
 
 ## Onde olhar os logs
 
-**Contas -> Ver detalhes -> Histórico do cadastro:** cada perfil
-tem seu log persistente de até 100 eventos, incluindo horário UTC,
-etapa, duração em milissegundos, código HTTP e categoria do erro.
+**A interface Contas mostra apenas nome, username e e-mail.**
+O botão Ver detalhes e o histórico de cadastro foram removidos dos cartões.
+O histórico estruturado (até 100 eventos) permanece no arquivo local
+`accounts.json`; o terminal do agente Windows apresenta os eventos ao vivo.
 
 **Terminal do agente Windows:** cada etapa aparece no formato:
 
