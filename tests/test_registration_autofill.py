@@ -16,6 +16,9 @@ class Field:
     def fill(self, value, timeout=None):
         self.fills.append(value)
 
+    def input_value(self, timeout=None):
+        return self.fills[-1] if self.fills else ""
+
     def click(self, timeout=None):
         self.clicks += 1
 
@@ -25,6 +28,9 @@ class Page:
         self.url, self.fields = url, fields
 
     def wait_for_load_state(self, *args, **kwargs):
+        pass
+
+    def wait_for_timeout(self, milliseconds):
         pass
 
     def locator(self, selector):
@@ -73,13 +79,13 @@ def test_generated_credentials_prefilled_without_sending_an_identity():
     repo = Repo(profile(isTestData=True), "https://example.org/register")
     result = autofill_existing_registration(
         Page("https://example.org/register", fields), {"profile_record_id": "id"}, repo)
-    assert result["status"] == "credentials-filled"
-    assert result["fieldCount"] == 3
+    assert result["status"] == "profile-name-filled"
+    assert result["fieldCount"] == 4
     assert fields["input[data-input-name='account']"].fills == ["joana_titular"]
     assert fields["input[data-input-name='userpass']"].fills == ["Senha!Teste12345"]
     assert fields["input[data-input-name='confirmPassword']"].fills == ["Senha!Teste12345"]
-    assert fields["input[data-input-name='realName']"].fills == []
-    assert repo.stages == [("id", "local", "credentials-prefilled")]
+    assert fields["input[data-input-name='realName']"].fills == ["Pessoa Autorizada"]
+    assert repo.stages[-1] == ("id", "local", "profile-name-prefilled")
 
 
 def test_test_data_can_prefill_local_demo():
@@ -125,14 +131,14 @@ def test_global_windows_name_does_not_overwrite_another_profile(monkeypatch):
         Page("https://example.org/register", fields),
         {"profile_record_id": "id"}, repo, progress=progress.append
     )
-    assert result["status"] == "credentials-filled"
-    assert result["fieldCount"] == 3
-    assert fields["input[data-input-name='realName']"].fills == []
+    assert result["status"] == "profile-name-filled"
+    assert result["fieldCount"] == 4
+    assert fields["input[data-input-name='realName']"].fills == ["Felipe Nogueira"]
     assert fields["input[data-input-name='userpass']"].fills == ["Senha!Teste12345"]
     assert fields["input[data-input-name='confirmPassword']"].fills == ["Senha!Teste12345"]
     assert all(field.clicks == 0 for field in fields.values())
-    assert "real-name-filled" not in progress
-    assert "name-entry-pending" in progress
+    assert "real-name-filled" in progress
+    assert "name-entry-pending" not in progress
     assert progress[-1] == "submit-not-sent"
 
 
@@ -144,9 +150,9 @@ def test_external_form_without_explicit_owner_name_keeps_real_name_empty(monkeyp
         Page("https://example.org/register", fields),
         {"profile_record_id": "id"}, repo,
     )
-    assert result["status"] == "credentials-filled"
-    assert fields["input[data-input-name='realName']"].fills == []
-    assert repo.stages[-1] == ("id", "local", "credentials-prefilled")
+    assert result["status"] == "profile-name-filled"
+    assert fields["input[data-input-name='realName']"].fills == ["Pessoa Autorizada"]
+    assert repo.stages[-1] == ("id", "local", "profile-name-prefilled")
 
 
 def test_invalid_owner_name_not_forwarded_to_external_page(monkeypatch):
@@ -157,5 +163,5 @@ def test_invalid_owner_name_not_forwarded_to_external_page(monkeypatch):
         Page("https://example.org/register", fields),
         {"profile_record_id": "id"}, repo,
     )
-    assert result["status"] == "credentials-filled"
-    assert fields["input[data-input-name='realName']"].fills == []
+    assert result["status"] == "profile-name-filled"
+    assert fields["input[data-input-name='realName']"].fills == ["Pessoa Autorizada"]
