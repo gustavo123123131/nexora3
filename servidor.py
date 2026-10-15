@@ -329,11 +329,18 @@ async def select_local_profile(body: dict):
 
 @app.post('/api/local-profiles/open')
 async def open_local_profile(body: dict):
-    from nexora_accounts.local_profiles import LocalProfileError
+    from nexora_accounts.local_profiles import LocalProfileError, LocalProfileStore
     from nexora_accounts.session_launcher import ACCOUNT_LAUNCHER, AccountBusyError
     try:
         # Identity comes exclusively from the card's ID, not a global
         # selectedProfileId or the current Mãe/Filha tab.
+        profile = LocalProfileStore().get(body.get('id'))
+        if not profile.get("deviceMode"):
+            if not body.get("deviceMode"):
+                raise LocalProfileError("Escolha o dispositivo desta conta antiga.")
+            LocalProfileStore().configure_legacy_launch(
+                profile["id"], body["deviceMode"], body.get("startUrl") or "",
+            )
         return ACCOUNT_LAUNCHER.launch(init_original_ui(), body.get('id'))
     except AccountBusyError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
