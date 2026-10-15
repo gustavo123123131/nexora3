@@ -528,6 +528,14 @@ def run_automations(page: Page, idx: int, instance_plan: dict | None = None):
     print(f"[#{idx}] --- FIM DA AUTOMAÇÃO ---")
 
 
+def run_registration_only(page: Page, idx: int, instance_plan: dict | None = None):
+    """Only registration, never withdrawal or deposit."""
+    print(f"[#{idx}] Cadastro: execução iniciada.")
+    result = check_and_fill_register(page, idx, instance_plan=instance_plan)
+    print(f"[#{idx}] Cadastro confirmado pelo site.")
+    return result
+
+
 def check_and_fill_register(page: Page, idx: int, instance_plan: dict | None = None):
     """
     Universal:
@@ -678,11 +686,27 @@ def check_and_fill_register(page: Page, idx: int, instance_plan: dict | None = N
                 except Exception:
                     pass
 
-            # 3) Se chegou aqui, assume sucesso
-            print(f"[#{idx}] ✅ Registro concluído com sucesso! Aguardando sair da tela de login/registro...")
-
-            # espera fechar modal/redirect antes de continuar
-            wait_exit_auth_screen(page, timeout_ms=30000)
+            # No HTTP 200, modal close, or click can prove a completed account.
+            # Each authorized provider needs its own unequivocal logged-in indicator.
+            import os
+            confirmation_selector = os.environ.get("NEXORA_REGISTRATION_SUCCESS_SELECTOR", "").strip()
+            if not confirmation_selector:
+                raise Exception(
+                    "CADASTRO NÃO CONFIRMADO: falta configurar "
+                    "NEXORA_REGISTRATION_SUCCESS_SELECTOR para este site. "
+                    "Não salvamos conta sem comprovação."
+                )
+            try:
+                page.locator(confirmation_selector).first.wait_for(
+                    state="visible", timeout=30000
+                )
+            except Exception as exc:
+                raise Exception(
+                    "CADASTRO PENDENTE/NÃO CONFIRMADO: indicador do site ausente. "
+                    "Verifique o resultado e conclua as verificações oficiais. "
+                    "Nenhuma conta foi salva como concluída."
+                ) from exc
+            print(f"[#{idx}] Indicador de conclusão do provedor detectado.")
 
             if using_email:
                 final_register_username = account_value.split("@", 1)[0].strip() if "@" in account_value else account_value
