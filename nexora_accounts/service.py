@@ -144,8 +144,8 @@ def validate_values(values, fields):
             errors[key] = "E-mail inválido"
         elif key == "phone" and not re.fullmatch(r"\+?[\d\s()\-]{10,20}", value):
             errors[key] = "Telefone inválido"
-        elif key == "password" and not 12 <= len(value) <= 128:
-            errors[key] = "Senha deve ter de 12 a 128 caracteres"
+        elif key == "password" and not 7 <= len(value) <= 16:
+            errors[key] = "Senha deve ter de 7 a 16 caracteres"
         elif key == "fullName" and len(value) < 3:
             errors[key] = "Nome inválido"
         elif key == "cpf" and not _cpf_valid(value):
