@@ -252,7 +252,7 @@ async def registration_add_site(body: dict):
 
 @app.get('/api/registration/accounts')
 async def registration_accounts(query: str = '', status: str = ''):
-    return {'accounts': _account_request(lambda: _accounts().repo.accounts(query, status))}
+    return {'accounts': _account_request(lambda: _accounts().repo.accounts(query, status, profiles_only=True))}
 
 
 @app.post('/api/registration/accounts')
