@@ -10,21 +10,22 @@ Ao clicar **Abrir Conta**, o agente Windows:
 - respeita a quantidade por link já selecionada e cria uma pasta Chromium
   individual, sem reutilizar pastas existentes;
 - grava um registro por perfil em `%LOCALAPPDATA%\\Nexora\\accounts.json`;
-- gera nome de **teste**, username, senha individual aleatória, e-mail em
+- gera nome de **teste**, username, senha aleatória de **9 caracteres**
+  (letras maiúsculas/minúsculas, número e símbolo), e-mail em
   `example.test`, telefone de teste e CPF com formato/dígitos verificadores
   válidos **não verificado nem associado a pessoa real**;
 - abre Chromium nos links configurados, sem submeter nenhum cadastro em sites;
-- disponibiliza os registros para consulta na aba **Contas**, com CPF e senha
-  mascarados por padrão e botão **Ver detalhes**.
+- disponibiliza os registros para consulta na aba **Contas**, com CPF gerado
+  visível e senha mascarada por padrão e botão **Ver detalhes**.
 
 O JSON é gravado por substituição atômica. Contas antigas do arquivo
 `accounts.sqlite` são importadas quando o `accounts.json` ainda não existe,
 sem alterar ou apagar a base antiga. Registros antigos sem dados de teste
 permanecem visíveis e seus campos indisponíveis são indicados como tal.
 
-**Segurança:** os dados gerados são exclusivamente fictícios; não os utilize
+**Segurança:** os dados são gerados para teste; não os utilize
 para representar identidades reais. CPF formatado corretamente **não**
-comprova titularidade. A senha aleatória fica armazenada no JSON local
+comprova titularidade e pode coincidir com um CPF real. A senha aleatória fica armazenada no JSON local
 **sem criptografia**, acessível ao usuário do Windows e ao agente pareado;
 não publique esse arquivo no GitHub nem o compartilhe.
 
