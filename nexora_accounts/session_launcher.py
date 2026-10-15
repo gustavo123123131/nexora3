@@ -59,7 +59,6 @@ class AccountLauncher:
             raise AccountBusyError(
                 f"{profile['label']} já está aberta. Feche a janela antes de abrir outra."
             )
-        module, tab = self._controller(gui, profile["origin"])
         # Legacy account cards were created before device and URL were saved.
         # Never guess which original URL/device they used.
         device = profile.get("deviceMode")
@@ -80,6 +79,7 @@ class AccountLauncher:
         url = str(profile.get("startUrl") or "").strip()
         if url and not url.startswith(("https://", "http://")):
             raise ValueError("URL salva na conta é inválida.")
+        module, tab = self._controller(gui, profile["origin"])
         instance_idx = next(self._instance_numbers)
         stop_event = threading.Event()
         with self._lock:
