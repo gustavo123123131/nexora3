@@ -149,8 +149,22 @@ def probe_proxy(proxy, *, target=PROXY_PROBE_HOST, timeout=8):
         reason = raw_reason if len(raw_reason) <= 64 and all(
             char in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_" for char in raw_reason
         ) else "TLS_HANDSHAKE_ERROR"
-        return {"reachable": False, "status": "tls_handshake_failed", "stage": stage,
-                "message": f"Negociação TLS não concluída na etapa {stage} ({reason})."}
+        # A successful upstream CONNECT followed by a broken *Python* TLS
+        # handshake is not proof that Chromium cannot navigate securely.
+        # Only this narrowly-scoped state may advance to the existing
+        # Chromium HTTPS/IP check, which is mandatory and fail-closed.
+        connect_verified = stage == "tls_destination"
+        return {
+            "reachable": False,
+            "status": "tls_handshake_failed",
+            "stage": stage,
+            "connectVerified": connect_verified,
+            "browserVerificationRequired": connect_verified,
+            "message": (
+                f"Negociação TLS não concluída na etapa {stage} ({reason}). "
+                "O Chromium deverá comprovar HTTPS e IP pela mesma proxy."
+            ),
+        }
     except socket.gaierror:
         return {"reachable": False, "status": "dns_error", "stage": stage,
                 "message": "Não foi possível resolver o DNS da proxy ou do destino."}
