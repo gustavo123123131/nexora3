@@ -289,14 +289,6 @@ async def list_local_profiles():
     return {'profiles': LocalProfileStore().list()}
 
 
-@app.post('/api/local-profiles')
-async def create_local_profile(body: dict):
-    from nexora_accounts.local_profiles import LocalProfileStore, LocalProfileError
-    try:
-        return {'profile': LocalProfileStore().create(body.get('origin'))}
-    except LocalProfileError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
 
 def main():
     parser = argparse.ArgumentParser(description='Lixo CPA no navegador (apenas máquina local)')
