@@ -45,8 +45,6 @@ OBSOLETE_CODE = (
     "Settings/Criar_Filha/settings/actions.py",
     "Settings/Criar_Filha/settings/identity.py",
     "Settings/Criar_Filha/settings/nomes.txt",
-    "webui/static/accounts_view.js",
-    "webui/static/accounts_view.css",
     "docs/DIAGNOSTICO_CONTAS.md",
     "docs/REGISTRATION_PREFILL.md",
 )
@@ -69,6 +67,9 @@ REQUIRED = (
     "servidor.py", "agente_windows.py", "atualizador_nexora.py",
     "Settings/Criar_Mae/gui_tab.py", "Settings/Criar_Filha/gui_tab.py",
     "webui/static/app.js",
+    "webui/static/accounts_view.js",
+    "webui/static/accounts_view.css",
+    "Settings/registration_autofill.py",
 )
 
 
