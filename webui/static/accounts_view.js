@@ -55,9 +55,10 @@
         const savedDevice = profile.runtimeConfig
           && profile.runtimeConfig.mode === profile.deviceMode
           && !!profile.runtimeConfig.user_agent;
-        const registrationStatus = profile.status === 'created' ||
+        // Account creation status reflects *only* site registration events.
+        // Older records lacking device snapshots are not failed sign-ups.
+        const currentStatus = profile.status === 'created' ||
           profile.status === 'error' ? profile.status : 'pending';
-        const currentStatus = savedDevice ? registrationStatus : 'error';
         const card = document.createElement('article');
         card.className = 'accounts-local-card';
         const head = document.createElement('header');
@@ -100,10 +101,10 @@
         });
         footer.append(open);
 
-        // A missing historical device snapshot is an operational error,
-        // NOT a claim that external registration failed.
+        // Lack of technical history prevents an *exact* reopen, but does
+        // not provide evidence that external registration failed.
         const issue = !savedDevice
-          ? 'Configuração original indisponível. Esta conta antiga não pode ser reaberta com segurança.'
+          ? 'Perfil antigo: dispositivo original não foi salvo. Reabertura indisponível; a conta continua preservada.'
           : (profile.statusMessage || '');
         if (issue) {
           const explanation = document.createElement('p');
