@@ -199,13 +199,13 @@ class ProxyStore:
             self._write(state)
         return result
 
-    def assign(self, count):
-        """Allocate a stable provider endpoint per new browser session.
+    def assign(self, count, *, profile_id=None):
+        """Allocate one endpoint per browser, retaining the selected profile binding.
 
-        Round-robin cursor persists across Mãe/Filha launches. The provider,
-        not Nexora, controls the external IP of any rotating endpoint.
+        A provider may rotate its exit IP; an endpoint assignment is not an IP
+        guarantee. All assignments are copied before any browser starts.
         """
-        if count < 0:
+        if not isinstance(count, int) or count < 0:
             raise ProxyError("Quantidade de sessões inválida.")
         with _LOCK:
             state = self._read()
@@ -214,9 +214,58 @@ class ProxyStore:
                 return []
             start = state.get("nextSlot", 0) % len(items)
             selected = [items[(start + i) % len(items)].copy() for i in range(count)]
+            if profile_id is not None and count:
+                bound_id = state.get("profileProxies", {}).get(str(profile_id))
+                if bound_id:
+                    bound = next((p for p in items if p["id"] == bound_id), None)
+                    if bound is None:
+                        raise ProxyError("A proxy vinculada a esta conta foi excluída; selecione outra.")
+                    selected[0] = bound.copy()
+                    others = [p for p in items if p["id"] != bound_id]
+                    if others:
+                        for i in range(1, count):
+                            selected[i] = others[(start + i - 1) % len(others)].copy()
             state["nextSlot"] = (start + count) % len(items)
             self._write(state)
             return selected
+
+    def bind_profile(self, profile_id, proxy_id):
+        from nexora_accounts.local_profiles import LocalProfileStore
+        if isinstance(profile_id, bool) or not isinstance(profile_id, int):
+            raise ProxyError("ID do perfil inválido.")
+        if not any(p["id"] == profile_id for p in LocalProfileStore().list()):
+            raise ProxyError("Perfil não encontrado.")
+        with _LOCK:
+            state = self._read()
+            if proxy_id is not None and not any(p["id"] == proxy_id for p in state["items"]):
+                raise ProxyError("Proxy para este perfil não encontrada.")
+            bindings = state.setdefault("profileProxies", {})
+            if proxy_id is None:
+                bindings.pop(str(profile_id), None)
+            else:
+                bindings[str(profile_id)] = proxy_id
+                state["managed"] = True
+            self._write(state)
+            return {"profileId": profile_id, "proxyId": proxy_id}
+
+    def profile_bindings(self):
+        with _LOCK:
+            return dict(self._read().get("profileProxies", {}))
+
+    def test_authenticated(self, identifier, *, target="example.com", timeout=8):
+        with _LOCK:
+            entry = next((p.copy() for p in self._read()["items"] if p["id"] == identifier), None)
+        if entry is None:
+            raise ProxyError("Proxy não encontrada.")
+        from Settings.Criar_Mae.settings.browser import ProxyConfig
+        from Settings.session_proxy_gateway import probe_proxy
+        return probe_proxy(
+            ProxyConfig(
+                server=f"{entry['protocol']}://{entry['host']}:{entry['port']}",
+                username=entry.get("username") or None,
+                password=entry.get("password") or None,
+            ), target=target, timeout=timeout,
+        )
 
     def delete(self, identifier):
         with _LOCK:
@@ -227,6 +276,9 @@ class ProxyStore:
                 raise ProxyError("Proxy não encontrado.")
             if state.get("activeId") == identifier:
                 state["activeId"] = None
+            # Deleted endpoints cannot silently remain bound to accounts.
+            bindings = state.get("profileProxies", {})
+            state["profileProxies"] = {k: v for k, v in bindings.items() if v != identifier}
             self._write(state)
             return {"ok": True}
 
