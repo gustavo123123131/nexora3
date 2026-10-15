@@ -2364,7 +2364,8 @@ class MaeTab(ctk.CTkFrame):
         self._start(True)
 
     def start_without_automation(self):
-        self._start(True)
+        # Local profile generation only; no real site registration.
+        self._start(False)
     def open_reopen_guides_selector(self):
         accounts = load_saved_accounts()
         if not accounts:
@@ -2572,6 +2573,24 @@ class MaeTab(ctk.CTkFrame):
         if self.proxy_var.get().strip() and proxy is None:
             return
 
+        # Abrir Conta: allocate NEW disk profiles and independent fictional
+        # identities before launching Chromium. Never infer a site registration.
+        launch_plans = None
+        if not run_auto:
+            from nexora_accounts.service import AccountsRepository, AccountError
+            try:
+                launch_plans = AccountsRepository().create_launch_profiles(
+                    "mae", mode, url_list, count, PROFILES_DIR
+                )
+            except (AccountError, OSError, ValueError) as exc:
+                self._set_status("Erro ao criar perfis locais.")
+                self._log(f"[UI] Falha ao criar perfis locais: {exc}")
+                return
+            self.available_instance_ids = [plan["idx"] for plan in launch_plans]
+            self._update_instance_target_label()
+            self._log(f"[UI] {len(launch_plans)} perfil(is) local(is) novo(s) salvo(s) em accounts.json.")
+            self._set_status(f"{len(launch_plans)} perfil(is) criado(s) localmente.")
+
         clear_invite_file(self._log)
         self.save_settings()
 
@@ -2633,8 +2652,8 @@ class MaeTab(ctk.CTkFrame):
                     count_per_url=count,
                     headless=headless,
                     proxy=proxy,
-                    auto_goto=True,
-                    keep_profiles=keep_profiles,
+                    auto_goto=bool(url_list),
+                    keep_profiles=True if launch_plans else keep_profiles,
                     run_auto=run_auto,
                     start_game_enabled=start_game_enabled,
                     start_game_name=start_game_name,
@@ -2651,6 +2670,7 @@ class MaeTab(ctk.CTkFrame):
                     use_same_identity=use_same_identity,
                     instance_target_controller=self.instance_target_controller,
                     automation_callback=run_registration_only if run_auto else None,
+                    instance_plans=launch_plans,
                 )
             except Exception as e:
                 log_threadsafe(f"[ERRO] Worker: {e}")
