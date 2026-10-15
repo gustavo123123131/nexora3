@@ -17,6 +17,50 @@ FIELDS = (
 SUBMIT = 'button#insideRegisterSubmitClick'
 
 
+def _report_button_hit_test(page, log, prefix: str) -> None:
+    """Inspect the real button after a failed Playwright click; never submit."""
+    try:
+        info = page.evaluate(
+            """selector => {
+                const button = document.querySelector(selector);
+                if (!button) return {missing: true};
+                const box = button.getBoundingClientRect();
+                const x = box.left + box.width / 2;
+                const y = box.top + box.height / 2;
+                const inside = x >= 0 && y >= 0 && x < innerWidth && y < innerHeight;
+                const top = inside ? document.elementFromPoint(x, y) : null;
+                const covered = Boolean(top && top !== button && !button.contains(top));
+                const marker = top ? [
+                    top.tagName.toLowerCase(),
+                    top.id ? ('#' + top.id) : '',
+                    ...Array.from(top.classList).slice(0, 3).map(name => '.' + name)
+                ].join('') : 'nenhum';
+                return {
+                    missing: false, inside, covered, marker,
+                    width: Math.round(box.width), height: Math.round(box.height),
+                    cssPointerEvents: getComputedStyle(button).pointerEvents
+                };
+            }""",
+            SUBMIT,
+        )
+        if info.get("missing"):
+            log(f"{prefix} [Registro] Diagnóstico: botão não está mais no DOM.")
+        elif not info.get("inside"):
+            log(f"{prefix} [Registro] Diagnóstico: centro do botão fora da área visível; "
+                f"tamanho {info['width']}x{info['height']}.")
+        elif info.get("covered"):
+            log(f"{prefix} [Registro] Diagnóstico: sobreposição no botão; "
+                f"elemento acima: {info.get('marker', 'desconhecido')}.")
+        else:
+            log(f"{prefix} [Registro] Diagnóstico: centro do botão sem sobreposição; "
+                f"elemento superior: {info.get('marker', 'desconhecido')}; "
+                f"pointer-events={info.get('cssPointerEvents', 'desconhecido')}.")
+    except Exception as exc:
+        log(f"{prefix} [Registro] Diagnóstico DOM indisponível: {type(exc).__name__}.")
+
+
+
+
 def fill_registration_form(page, profile: dict, log, stop_event, *,
                            timeout_ms: int = 15000, delay_seconds: float = 0.25) -> bool:
     """Return True when the click is sent, not when the site accepts registration.
@@ -99,4 +143,6 @@ def fill_registration_form(page, profile: dict, log, stop_event, *,
         else:
             reason = "O navegador não concluiu esta etapa."
         log(f"{prefix} [Registro] Falha na etapa {stage}: {type(exc).__name__}. {reason}")
+        if stage == "Clicar em Registrar":
+            _report_button_hit_test(page, log, prefix)
         return False
