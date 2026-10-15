@@ -59,9 +59,9 @@
       '<h1>Contas e cadastro</h1>',
       '<p>Gerencie contas próprias, perfis existentes e cadastros autorizados.</p>',
       '</div><button type="button" class="accounts-refresh">↻ Atualizar</button></div>',
-      '<div class="accounts-notice">Os registros ficam exclusivamente no agente Windows. ',
-      'Cadastros exigem site autorizado, revisão humana e verificação oficial. ',
-      'Não há CAPTCHA automático nem API ProxyBet presumida.</div>',
+      '<div class="accounts-notice">Plataformas e contas ficam no Supabase, com acesso por usuário. ',
+      'O Windows mantém só os metadados necessários para abrir os perfis. ',
+      'Cadastros exigem revisão e verificações oficiais do site.</div>',
       '<p class="accounts-message" role="status" hidden></p>',
       '<section class="accounts-main-grid">',
       '<article class="accounts-panel">',
@@ -81,10 +81,10 @@
       '<label>Seletor de confirmação inequívoca (opcional)<input name="successSelector" maxlength="200" placeholder=".registro-confirmado"></label>',
       '<label class="accounts-consent"><input type="checkbox" name="authorized">',
       '<span>Confirmo que tenho autorização para usar o cadastro deste site.</span></label>',
-      '<button type="submit" class="accounts-primary">Salvar configuração local</button>',
+      '<button type="submit" class="accounts-primary">Salvar no Supabase</button>',
       '</form></article>',
       '<article class="accounts-panel">',
-      '<header><h2>02 · Adicionar conta</h2><p>Vincule a um perfil Chromium já existente no Nexora.</p></header>',
+      '<header><h2>02 · Adicionar conta</h2><p>Vincule a um perfil do Windows ou crie registros em lote.</p></header>',
       '<form id="nexora-account-form" autocomplete="off">',
       '<label>Site cadastrado<select name="siteId" required></select></label>',
       '<label>Nome interno<input name="displayName" required maxlength="120" placeholder="Minha conta 01"></label>',
@@ -94,11 +94,13 @@
       '<label>Modo<select name="profileMode"><option value="desktop">Computador</option>',
       '<option value="android">Android</option><option value="iphone">iPhone</option>',
       '<option value="mixed">Android/iPhone alternados</option></select></label></div>',
-      '<div class="accounts-two"><label>Número do perfil<input type="number" name="profileIndex" min="1" max="999" value="1" required></label>',
+      '<div class="accounts-two"><label>Número do perfil (conta única)<input type="number" name="profileIndex" min="1" max="999" value="1" required></label>',
       '<label>Conta mãe vinculada<select name="parentId"><option value="">Sem vínculo</option></select></label></div>',
-      '<p class="accounts-tip">O mesmo tipo, modo e número acessam o diretório ',
+      '<label>Quantidade de registros (1 a 100)<input type="number" name="quantity" min="1" max="100" value="1" required></label>',
+      '<p class="accounts-tip">Em lote, nomes e números sequenciais são definidos automaticamente. ',
+      'O mesmo tipo, modo e número acessam o diretório ',
       'de perfil já usado no multi-login. Feche uma janela desse perfil antes de reabri-la por aqui.</p>',
-      '<button type="submit" class="accounts-primary">Salvar conta local</button>',
+      '<button type="submit" class="accounts-primary">Salvar no Supabase</button>',
       '</form></article>',
       '</section>',
       '<section class="accounts-panel accounts-directory">',
@@ -144,6 +146,24 @@
     }
 
     let sites = [], accounts = [], activeReview = null;
+    let cloud = null;
+    if (window.NexoraCloudAccounts) {
+      const localPost = post;
+      cloud = window.NexoraCloudAccounts.create({
+        postLocal: localPost,
+        onAuthChange: logged => {
+          root.classList.toggle('accounts-cloud-locked', !logged);
+          review.hidden = true; activeReview = null;
+          if (logged) void safeRun(refresh);
+          else { sites = []; accounts = []; redraw(); }
+        },
+      });
+      root.insertBefore(cloud.authNode, root.querySelector('.accounts-main-grid'));
+      root.classList.toggle('accounts-cloud-locked', !cloud.signedIn());
+      get = cloud.get;
+      post = cloud.post;
+    }
+
     let busy = false, lastShown = 0;
     const safeRun = async (fn) => {
       if (busy) return;
@@ -195,6 +215,7 @@
     }
 
     async function refresh() {
+      if (cloud && !cloud.signedIn()) { sites = []; accounts = []; redraw(); return; }
       const [s, a] = await Promise.all([
         get('/api/registration/sites'), get('/api/registration/accounts'),
       ]);
@@ -222,7 +243,7 @@
         siteForm.reset();
         await refresh();
         siteSelect.value = result.site.id;
-        notify(root, 'Site configurado no Windows. Nenhuma API externa foi chamada.');
+        notify(root, 'Site salvo no Supabase. Será sincronizado com o Windows ao abrir uma conta.');
       });
     });
 
@@ -235,11 +256,12 @@
           loginIdentifier: form.get('loginIdentifier'), parentId: form.get('parentId'),
           profileScope: form.get('profileScope'), profileMode: form.get('profileMode'),
           profileIndex: Number(form.get('profileIndex')),
+          quantity: Number(form.get('quantity')),
         });
         accountForm.elements.namedItem('displayName').value = '';
         accountForm.elements.namedItem('loginIdentifier').value = '';
         await refresh();
-        notify(root, 'Conta ' + result.account.displayName + ' salva no agente Windows.');
+        notify(root, result.quantity > 1 ? result.quantity + ' contas criadas no Supabase.' : 'Conta ' + result.account.displayName + ' salva no Supabase.');
       });
     });
 
@@ -249,10 +271,10 @@
       const action = button.dataset.action, accountId = button.dataset.key;
       void safeRun(async () => {
         if (action === 'delete') {
-          if (!confirm('Excluir apenas este registro local? Nenhuma conta externa será apagada.')) return;
+          if (!confirm('Excluir este registro do Supabase e sua cópia local? O perfil Chromium e a conta externa serão preservados.')) return;
           await post('/api/registration/accounts/delete', {accountId});
           review.hidden = true; activeReview = null;
-          notify(root, 'Registro local excluído.');
+          notify(root, 'Registro removido do Supabase. O perfil Chromium não foi apagado.');
         } else if (action === 'open') {
           await post('/api/registration/accounts/open', {accountId});
           notify(root, 'Chromium solicitado no seu Windows, usando o perfil original.');
