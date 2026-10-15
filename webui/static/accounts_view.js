@@ -24,6 +24,8 @@
     'username-filled':'Username preenchido', 'password-filled':'Senha preenchida',
     'password-confirmed':'Confirmação de senha preenchida',
     'real-name-filled':'Nome do titular preenchido',
+    'owner-name-prefilled':'Nome legítimo preenchido; envio pendente',
+    'real-name-fill-error':'Erro ao preencher o nome do titular',
     'real-name-field-found':'Campo de nome encontrado',
     'real-name-field-missing':'Campo de nome não encontrado',
     'submit-button-found':'Botão Registro encontrado',
