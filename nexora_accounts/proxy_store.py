@@ -198,6 +198,9 @@ class ProxyStore:
             key = ("protocol", "host", "port", "username", "password")
             existing = next((p for p in state["items"] if all(p.get(k) == payload[k] for k in key)), None)
             if existing:
+                if not state.get("managed"):
+                    state["managed"] = True
+                    self._write(state)
                 return _public(existing)
             result = self.save(payload)
             state = self._read()
