@@ -212,21 +212,45 @@ def request_autosubmit_after_fill(page, instance_plan, prefill_result, log, repo
     repo = repository if repository is not None else AccountsRepository()
     log_registration_preflight(page, log)
     status = prefill_result.get("status", "sem-estado")
-    if status != "filled":
-        account = repo.account(instance_plan["profile_record_id"])
-        from nexora_accounts.registration_autofill import _demo, _owned_test_origin
-        target = account.get("targetUrl", "")
-        if (not (_demo(target) or _owned_test_origin(target)) and
-                (account.get("profileData") or {}).get("isTestData") is not False):
-            log("[Cadastro] CLIQUE BLOQUEADO: este perfil contém dados fictícios "
-                "e a página é de um site externo.")
-        log(f"[Cadastro] CLIQUE NÃO SOLICITADO: preenchimento terminou em '{status}'; "
-            "o watcher só envia formulários concluídos e autorizados.")
-        return False
     key = instance_plan["profile_record_id"]
     account = repo.account(key)
     from nexora_accounts.registration_autofill import _demo, _owned_test_origin
     target = account.get("targetUrl", "")
+    demo_or_owned = _demo(target) or _owned_test_origin(target)
+    # Some versions of the prefill routine return profile-name-filled after
+    # filling all four required fields. Accept that state only in a dedicated
+    # test environment; a public site's unverified test profile cannot submit.
+    if status == "profile-name-filled" and demo_or_owned:
+        from nexora_accounts.registration_autofill import FIELDS
+        required = ("account", "userpass", "confirmPassword", "realName")
+        values = {}
+        for field in required:
+            try:
+                element = next(
+                    loc for selector in FIELDS[field]
+                    if (loc := page.locator(selector).first).is_visible()
+                )
+                value = element.input_value(timeout=2000)
+            except Exception:
+                value = ""
+            if not isinstance(value, str) or not value.strip():
+                log(f"[Cadastro] CLIQUE NÃO SOLICITADO: campo {field} incompleto.")
+                return False
+            values[field] = value
+        if values["userpass"] != values["confirmPassword"]:
+            log("[Cadastro] CLIQUE NÃO SOLICITADO: confirmação da senha diferente.")
+            return False
+        if not account.get("stage") in ("profile-name-prefilled", "review"):
+            log("[Cadastro] CLIQUE NÃO SOLICITADO: etapa de preenchimento inesperada.")
+            return False
+        repo.set_stage(key, "pending", "review")
+        log("[Cadastro] Campos obrigatórios conferidos. Registro pronto para teste.")
+        status = "filled"
+    if status != "filled":
+        if not demo_or_owned and (account.get("profileData") or {}).get("isTestData") is not False:
+            log("[Cadastro] CLIQUE BLOQUEADO: dados de teste em cadastro externo.")
+        log(f"[Cadastro] CLIQUE NÃO SOLICITADO: preenchimento terminou em '{status}'.")
+        return False
     if _owned_test_origin(target) and not _owned_test_origin(page.url):
         log("[Cadastro] CLIQUE NÃO SOLICITADO: a página não está na origem HTTPS autorizada.")
         return False
