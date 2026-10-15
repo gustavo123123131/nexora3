@@ -1,7 +1,7 @@
 /* Nexora: list local profiles only. */
 'use strict';
 (function () {
-  function create({get}) {
+  function create({get, post}) {
     const node = document.createElement('section');
     node.className = 'accounts-local';
     const title = document.createElement('h1');
@@ -25,7 +25,7 @@
       ['confirmPassword', 'Confirmar senha'],
     ];
 
-    function render(profiles) {
+    function render(profiles, selectedId) {
       list.replaceChildren();
       status.textContent = profiles.length
         ? profiles.length + (profiles.length === 1 ? ' conta salva' : ' contas salvas')
@@ -38,7 +38,24 @@
         heading.textContent = profile.label;
         const origin = document.createElement('span');
         origin.textContent = profile.origin === 'mae' ? 'Conta Mãe' : 'Conta Filha';
-        head.append(heading, origin);
+        const select = document.createElement('button');
+        select.type = 'button';
+        const chosen = profile.id === selectedId;
+        select.textContent = chosen ? 'Selecionada — limpar' : 'Selecionar';
+        select.className = 'accounts-select';
+        select.setAttribute('aria-pressed', chosen ? 'true' : 'false');
+        select.addEventListener('click', async () => {
+          select.disabled = true;
+          try {
+            await post('/api/local-profiles/select', {id: chosen ? null : profile.id});
+            await refresh();
+          } catch (error) {
+            status.textContent = 'Não foi possível selecionar: ' + error.message;
+          } finally {
+            select.disabled = false;
+          }
+        });
+        head.append(heading, origin, select);
         const details = document.createElement('dl');
         for (const [key, label] of fields) {
           const row = document.createElement('div');
@@ -59,7 +76,7 @@
       const current = ++generation;
       try {
         const data = await get('/api/local-profiles');
-        if (current === generation) render(Array.isArray(data.profiles) ? data.profiles : []);
+        if (current === generation) render(Array.isArray(data.profiles) ? data.profiles : [], data.selectedProfileId ?? null);
       } catch (error) {
         if (current === generation) status.textContent = 'Não foi possível carregar os perfis: ' + error.message;
       }
