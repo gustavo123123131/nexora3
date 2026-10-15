@@ -150,3 +150,69 @@ def test_reject_unapproved_branch_and_malformed_github_sha():
         updater.newest_commit("main")
     with pytest.raises(ValueError):
         updater.fetch_release("../../attack")
+
+
+def test_prevents_two_supervisors_in_same_installation(tmp_path):
+    with updater.single_instance(tmp_path):
+        with pytest.raises(RuntimeError, match="ja esta aberto"):
+            with updater.single_instance(tmp_path):
+                pass
+    # The file remains but its OS lock is released after the process exits.
+    with updater.single_instance(tmp_path):
+        pass
+
+
+def test_supervisor_restarts_automatically_only_when_windows_are_closed(
+        tmp_path, monkeypatch):
+    """Simulate 3 update checks, open windows then idle, with no real internet."""
+    sha = "d" * 40
+    files = updater.collect_sources(archive())
+    old_data = tmp_path / "Settings/Criar_Mae/__profiles/profile_1/state.txt"
+    old_data.parent.mkdir(parents=True)
+    old_data.write_text("existing browser cookie", encoding="utf-8")
+    spawned = []
+
+    class FakeAgent:
+        def __init__(self, argv, cwd, env):
+            self.argv = argv
+            self.env = env
+            self.running = True
+            self.terminated = False
+            spawned.append(self)
+
+        def poll(self):
+            return None if self.running else 0
+
+        def terminate(self):
+            self.running = False
+            self.terminated = True
+
+        def wait(self, timeout):
+            return 0
+
+    monkeypatch.setattr(updater.subprocess, "Popen", FakeAgent)
+    monkeypatch.setattr(updater, "newest_commit", lambda branch: sha)
+    monkeypatch.setattr(updater, "fetch_release", lambda commit: files)
+    states = iter((False, True))
+    monkeypatch.setattr(updater, "idle_browser_state", lambda: next(states))
+    ticks = iter(range(200, 8000, 200))
+    monkeypatch.setattr(updater.time, "monotonic", lambda: next(ticks))
+    counter = {"sleeps": 0}
+
+    def fake_sleep(seconds):
+        counter["sleeps"] += 1
+        if counter["sleeps"] >= 4:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(updater.time, "sleep", fake_sleep)
+    updater.run(tmp_path, panel="https://my-work-8765.app.github.dev")
+    assert len(spawned) == 2
+    assert spawned[0].terminated is True
+    assert spawned[1].terminated is True
+    assert spawned[0].env["LIXOCPA_AGENT_KEY"]
+    assert spawned[0].env["LIXOCPA_AGENT_KEY"] == spawned[1].env["LIXOCPA_AGENT_KEY"]
+    assert json.loads((tmp_path / updater.STATE_NAME).read_text())["sha"] == sha
+    assert old_data.read_text() == "existing browser cookie"
+    assert json.loads((tmp_path / updater.CONFIG_NAME).read_text())["panel"].endswith(
+        "-8765.app.github.dev"
+    )
