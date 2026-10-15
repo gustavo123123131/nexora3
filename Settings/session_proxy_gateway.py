@@ -7,6 +7,8 @@ Never forwards a request directly if an upstream proxy was configured.
 from __future__ import annotations
 
 import ipaddress
+import json
+import secrets
 import socket
 import socketserver
 import ssl
@@ -190,6 +192,97 @@ def probe_exit_ip(proxy, timeout=6):
 
 
 
+
+def _validated_ip_from_text(raw):
+    """Only accept an actual IP address, never an arbitrary response string."""
+    value = str(raw or "").strip()
+    try:
+        decoded = json.loads(value)
+        if isinstance(decoded, dict):
+            value = str(decoded.get("ip") or "").strip()
+    except (ValueError, TypeError):
+        pass
+    try:
+        return str(ipaddress.ip_address(value))
+    except ValueError:
+        return ""
+
+
+def verify_browser_exit_ip(page, gateway, *, timeout_ms=10000):
+    """Verify the *Chromium page's* public IP travelled via this session gateway.
+
+    Uses the same page immediately before the requested destination navigation,
+    so there is no secondary context, independent HTTP client or temporary tab.
+    """
+    targets = (
+        ("api.ipify.org", "https://api.ipify.org?format=json"),
+        ("icanhazip.com", "https://icanhazip.com/"),
+        ("api64.ipify.org", "https://api64.ipify.org?format=json"),
+    )
+    saw_direct_success = False
+    for host, url in targets:
+        previous = gateway.connect_count(host)
+        try:
+            separator = "&" if "?" in url else "?"
+            response = page.goto(
+                url + separator + "nexora_check=" + secrets.token_hex(6),
+                wait_until="domcontentloaded", timeout=timeout_ms,
+            )
+            if response is None or response.status != 200:
+                continue
+            raw = page.locator("body").inner_text(timeout=4000)
+            ip_value = _validated_ip_from_text(raw)
+            if not ip_value:
+                continue
+            if gateway.connect_count(host) <= previous:
+                saw_direct_success = True
+                continue
+            return ip_value
+        except Exception:
+            # Try another known endpoint, but never continue to the user's
+            # destination without proof that Chromium used this gateway.
+            continue
+    if saw_direct_success:
+        raise ProxyConnectionError("browser_proxy_bypassed")
+    raise ProxyConnectionError("browser_proxy_unverified")
+
+
+def refresh_browser_exit_ip(page, gateway, *, timeout_ms=6000):
+    """Non-navigating best-effort refresh from inside the active browser page.
+
+    CSP or CORS on some target websites may reject cross-origin fetch; retain
+    the last verified address rather than inventing a current IP in that case.
+    """
+    host = "api.ipify.org"
+    before = gateway.connect_count(host)
+    try:
+        raw = page.evaluate(
+            """async ({url, timeoutMs}) => {
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), timeoutMs);
+                try {
+                    const response = await fetch(url, {
+                        cache: 'no-store', credentials: 'omit',
+                        signal: controller.signal,
+                    });
+                    return response.ok ? await response.text() : '';
+                } finally {
+                    clearTimeout(timeout);
+                }
+            }""",
+            {"url": "https://api.ipify.org?format=json&nexora_check="
+                     + secrets.token_hex(6), "timeoutMs": int(timeout_ms)},
+        )
+        ip_value = _validated_ip_from_text(raw)
+        if ip_value and gateway.connect_count(host) > before:
+            return ip_value
+    except Exception:
+        pass
+    return ""
+
+
+
+
 class SessionProxyGateway:
     """One isolated HTTP local proxy per Chromium browser instance."""
 
@@ -199,6 +292,13 @@ class SessionProxyGateway:
         self.proxy = proxy
         self.server = None
         self.thread = None
+        self._lock = threading.Lock()
+        self._upstream_connects = {}
+
+    def connect_count(self, host):
+        """Only count successfully authenticated upstream CONNECT tunnels."""
+        with self._lock:
+            return self._upstream_connects.get(host.lower(), 0)
 
     def start(self):
         owner = self
@@ -221,6 +321,9 @@ class SessionProxyGateway:
                             raise ProxyConnectionError("invalid_target")
                         host, port_raw = target.rsplit(":", 1)
                         upstream = _open_tunnel(owner.proxy, host, int(port_raw))
+                        with owner._lock:
+                            key = host.lower()
+                            owner._upstream_connects[key] = owner._upstream_connects.get(key, 0) + 1
                         client.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
                         if body:
                             upstream.sendall(body)
