@@ -1009,11 +1009,10 @@ def run_instance(
         # Legacy ad-hoc HTTP proxies keep their existing local gateway.
         session_proxy = (instance_plan or {}).get("proxy_config") is not None
         if session_proxy:
-            proxy_dict = {"server": proxy.server}
-            if proxy.username:
-                proxy_dict["username"] = proxy.username
-            if proxy.password:
-                proxy_dict["password"] = proxy.password
+            # The browser talks only to an ephemeral loopback port. Its
+            # upstream authentication is handled by a per-session gateway;
+            # no proxy credentials are sent into Chromium.
+            proxy_dict = None
             log(f"[#{idx}] [Proxy] Sessão configurada: {(instance_plan or {}).get('proxy_label')}.")
         else:
             proxy_dict = (
@@ -1091,7 +1090,13 @@ def run_instance(
         effective_headless = False if ext_paths else headless
         success_finished = False
 
+        session_gateway = None
         try:
+            if session_proxy:
+                from Settings.session_proxy_gateway import SessionProxyGateway
+                session_gateway = SessionProxyGateway(proxy).start()
+                proxy_dict = session_gateway.playwright_proxy()
+                log(f"[#{idx}] [Proxy] Gateway isolado iniciado; autenticação externa protegida.")
             with sync_playwright() as p:
                 context = p.chromium.launch_persistent_context(
                     user_data_dir=str(user_data_dir),
@@ -1190,7 +1195,9 @@ def run_instance(
                         return last_overlay_ip_refresh["ip"]
 
                     _ensure_overlay()
-                    ip_live = fetch_public_ip_via_context(context)
+                    # APIRequestContext's proxy isolation is not guaranteed
+                    # here; never query the exit IP over an unverified route.
+                    ip_live = "" if session_proxy else fetch_public_ip_via_context(context)
                     last_overlay_ip_refresh["at"] = now
                     last_overlay_ip_refresh["url"] = current_url
                     last_overlay_ip_refresh["ip"] = ip_live or ""
@@ -1342,6 +1349,9 @@ def run_instance(
             return
         except Exception as e:
             log(f"[#{idx}] Erro crítico ao abrir navegador: {type(e).__name__}.")
+        finally:
+            if session_gateway is not None:
+                session_gateway.close()
 
         if success_finished:
             break
