@@ -7,6 +7,15 @@ const pendingInput = new Map();
 const shownDialogs = new Set();
 // Proxy workspace uses local-agent endpoints and does not change existing GUI callbacks.
 const PROXY_PREVIEW_ID = '__nexora_proxy_visual__';
+const ACCOUNTS_VIEW_ID = '__nexora_accounts_local__';
+let accountsViewInstance = null;
+function accountsView() {
+  if (!accountsViewInstance) {
+    accountsViewInstance = window.NexoraAccountsView.create({get: getRegistration});
+  }
+  accountsViewInstance.onShow();
+  return accountsViewInstance.node;
+}
 let proxyPreviewNode = null;
 let proxyPreviewInstance = null;
 function proxyPreview() {
