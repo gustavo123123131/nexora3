@@ -101,16 +101,30 @@ def _open_tunnel(proxy, host: str, port: int, timeout=8):
         raise
 
 
-def probe_proxy(proxy, *, target="example.com", timeout=8):
-    """Authenticated CONNECT + real TLS verification (not just a TCP port check)."""
+# Independent, well-known HTTPS host: do not let a destination site's
+# certificate issue be misreported as a failing proxy. The browser still
+# verifies the actual destination separately during page.goto.
+PROXY_PROBE_HOST = "example.com"
+
+
+def probe_proxy(proxy, *, target=PROXY_PROBE_HOST, timeout=8):
+    """Test proxy authentication, CONNECT and trusted TLS in distinct stages.
+
+    Never disables certificate checks, falls back to direct traffic or prints
+    the upstream proxy credentials.
+    """
+    stage = "connect"
     try:
         with _open_tunnel(proxy, target, 443, timeout) as tunnel:
-            with ssl.create_default_context().wrap_socket(tunnel, server_hostname=target) as secure:
+            stage = "tls_destination"
+            with ssl.create_default_context().wrap_socket(
+                tunnel, server_hostname=target
+            ) as secure:
                 secure.settimeout(timeout)
-                # TLS handshake completed through the proxy; no site-specific
-                # HEAD/GET is needed and sites may legitimately reject HEAD.
+                # TLS handshake completed. A site-specific HEAD/GET is not
+                # needed and sites may legitimately reject such requests.
         return {"reachable": True, "status": "ok",
-                "message": "Autenticação, túnel CONNECT e HTTPS verificados via proxy."}
+                "message": "Autenticação, CONNECT e certificado HTTPS verificados."}
     except ProxyConnectionError as exc:
         labels = {
             "auth_rejected": "Autenticação da proxy recusada (HTTP 407 ou SOCKS5).",
@@ -118,14 +132,35 @@ def probe_proxy(proxy, *, target="example.com", timeout=8):
             "socks_auth_unsupported": "Método de autenticação SOCKS5 não aceito.",
             "invalid_proxy": "Configuração da proxy inválida.",
         }
-        return {"reachable": False, "status": exc.code,
+        return {"reachable": False, "status": exc.code, "stage": stage,
                 "message": labels.get(exc.code, "Falha de comunicação com a proxy.")}
-    except ssl.SSLError:
-        return {"reachable": False, "status": "tls_error",
-                "message": "Falha ao verificar TLS pelo túnel da proxy."}
-    except (OSError, TimeoutError, ValueError):
-        return {"reachable": False, "status": "network_error",
-                "message": "Proxy indisponível, DNS não resolvido ou tempo de conexão esgotado."}
+    except ssl.SSLCertVerificationError as exc:
+        verification_code = getattr(exc, "verify_code", None)
+        suffix = f" (código de verificação {verification_code})" if isinstance(verification_code, int) else ""
+        return {"reachable": False, "status": "tls_certificate_invalid", "stage": stage,
+                "message": "O certificado HTTPS não foi validado" + suffix
+                           + ". Verifique a cadeia de certificados do Windows/agente ou do destino de teste."}
+    except ssl.SSLError as exc:
+        raw_reason = str(getattr(exc, "reason", "") or "")
+        # Only expose a short OpenSSL code; never forward exception details
+        # containing addresses, credentials or CONNECT authorization.
+        reason = raw_reason if len(raw_reason) <= 64 and all(
+            char in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_" for char in raw_reason
+        ) else "TLS_HANDSHAKE_ERROR"
+        return {"reachable": False, "status": "tls_handshake_failed", "stage": stage,
+                "message": f"Negociação TLS não concluída na etapa {stage} ({reason})."}
+    except socket.gaierror:
+        return {"reachable": False, "status": "dns_error", "stage": stage,
+                "message": "Não foi possível resolver o DNS da proxy ou do destino."}
+    except (TimeoutError, socket.timeout):
+        return {"reachable": False, "status": "timeout", "stage": stage,
+                "message": "A proxy ou o destino demorou demais para responder."}
+    except ConnectionRefusedError:
+        return {"reachable": False, "status": "connection_refused", "stage": stage,
+                "message": "A conexão com a porta da proxy foi recusada."}
+    except (OSError, ValueError):
+        return {"reachable": False, "status": "network_error", "stage": stage,
+                "message": "Não foi possível estabelecer a conexão pela proxy."}
 
 
 def probe_exit_ip(proxy, timeout=6):
