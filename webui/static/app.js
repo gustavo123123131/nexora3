@@ -426,7 +426,7 @@ function renderNode(obj) {
     if (obj.type === 'tabs') {
       const tabs = obj.children || [];
       let active = selectedTabs.get(obj.id);
-      if (active !== PROXY_PREVIEW_ID && !tabs.some(tab => tab.id === active)) active = tabs[0]?.id;
+      if (active !== PROXY_PREVIEW_ID && active !== ACCOUNTS_VIEW_ID && !tabs.some(tab => tab.id === active)) active = tabs[0]?.id;
       selectedTabs.set(obj.id, active);
       const bar = el.querySelector('.tab-bar');
       const oldButtons = new Map([...bar.children].map(button => [button.dataset.tabid, button]));
