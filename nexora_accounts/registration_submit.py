@@ -149,15 +149,15 @@ def request_confirmed_auto_submit(account_id, repository=None):
 
 
 def request_demo_submit(account_id, repository=None):
-    """Auto-send ONLY to local/.test demo pages after Abrir Conta; never remotely.
+    """Auto-click after Abrir Conta ONLY for local demos or opt-in owned HTTPS test origins.
 
-    The user's Abrir Conta action starts the local-only test workflow.
-    No personal identity is claimed and no real registration is attempted.
+    Third-party domains stay blocked; an exact test origin must be explicitly configured.
     """
-    from nexora_accounts.registration_autofill import _demo
+    from nexora_accounts.registration_autofill import _demo, _owned_test_origin
     repo = repository if repository is not None else AccountsRepository()
     account = repo.account(account_id)
-    if not _demo(account.get("targetUrl", "")):
+    target = account.get("targetUrl", "")
+    if not (_demo(target) or _owned_test_origin(target)):
         return False
     if (account.get("profileData") or {}).get("isTestData") is not True:
         return False
@@ -214,8 +214,9 @@ def request_autosubmit_after_fill(page, instance_plan, prefill_result, log, repo
     status = prefill_result.get("status", "sem-estado")
     if status != "filled":
         account = repo.account(instance_plan["profile_record_id"])
-        from nexora_accounts.registration_autofill import _demo
-        if (not _demo(account.get("targetUrl", "")) and
+        from nexora_accounts.registration_autofill import _demo, _owned_test_origin
+        target = account.get("targetUrl", "")
+        if (not (_demo(target) or _owned_test_origin(target)) and
                 (account.get("profileData") or {}).get("isTestData") is not False):
             log("[Cadastro] CLIQUE BLOQUEADO: este perfil contém dados fictícios "
                 "e a página é de um site externo.")
@@ -224,12 +225,18 @@ def request_autosubmit_after_fill(page, instance_plan, prefill_result, log, repo
         return False
     key = instance_plan["profile_record_id"]
     account = repo.account(key)
+    from nexora_accounts.registration_autofill import _demo, _owned_test_origin
+    target = account.get("targetUrl", "")
+    if _owned_test_origin(target) and not _owned_test_origin(page.url):
+        log("[Cadastro] CLIQUE NÃO SOLICITADO: a página não está na origem HTTPS autorizada.")
+        return False
     if request_demo_submit(key, repo):
-        log(f"[Cadastro] CLIQUE NA FILA: demonstração local; seletor {_SUBMIT_SELECTOR}.")
+        environment = ("domínio de teste próprio" if _owned_test_origin(target)
+                       else "demonstração local")
+        log(f"[Cadastro] CLIQUE NA FILA: {environment}; seletor {_SUBMIT_SELECTOR}.")
         return True
     profile = account.get("profileData") or {}
-    from nexora_accounts.registration_autofill import _demo
-    if not _demo(account.get("targetUrl", "")):
+    if not (_demo(target) or _owned_test_origin(target)):
         if profile.get("isTestData") is not False:
             log("[Cadastro] CLIQUE BLOQUEADO: identidade fictícia em site externo.")
             return False
@@ -349,8 +356,12 @@ class RegistrationWatcher:
 
     def _valid_page(self):
         from nexora_accounts.registration_autofill import _same_site
+        from nexora_accounts.registration_autofill import _owned_test_origin
         account = self.repo.account(self.key)
-        return _same_site(account.get("targetUrl", ""), self.page.url)
+        target = account.get("targetUrl", "")
+        if _owned_test_origin(target) and not _owned_test_origin(self.page.url):
+            return False
+        return _same_site(target, self.page.url)
 
     def _check_success(self):
         # Site-specific, documented authenticated success evidence is mandatory.
