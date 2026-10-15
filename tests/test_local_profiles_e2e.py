@@ -59,6 +59,7 @@ uvicorn.run(servidor.app,host='127.0.0.1',port=18766,log_level='warning')
                 page = browser.new_page()
                 page.goto(URL)
                 expect(page.get_by_role("button", name="Abrir Conta")).to_be_visible()
+                page.locator("input.ctk-entry").first.fill("https://example.test")
                 page.get_by_role("button", name="Abrir Conta").click()
                 page.wait_for_function("""async () => {
                     const result = await fetch('/api/registration/accounts');
