@@ -10,11 +10,13 @@ Ao clicar **Abrir Conta**, o agente Windows:
 - respeita a quantidade por link já selecionada e cria uma pasta Chromium
   individual, sem reutilizar pastas existentes;
 - grava um registro por perfil em `%LOCALAPPDATA%\\Nexora\\accounts.json`;
-- gera nome de **teste**, username, senha aleatória de **9 caracteres**
-  (letras maiúsculas/minúsculas, número e símbolo), e-mail em
-  `example.test`, telefone de teste e CPF com formato/dígitos verificadores
+- gera nome de **teste**, username único com prefixo neutro, senha de **16 caracteres**
+  (letras maiúsculas/minúsculas, números e símbolos), e-mail **não verificável**
+  em `example.test`, telefone de teste e CPF com formato/dígitos verificadores
   válidos **não verificado nem associado a pessoa real**;
-- abre Chromium nos links configurados, sem submeter nenhum cadastro em sites;
+- abre Chromium nos links configurados. Em **demonstrações locais**, preenche
+  e pode enviar o formulário de teste sem digitação. Em plataformas reais,
+  **não** envia dados fictícios, pois nome civil e contato precisam ser legítimos;
 - disponibiliza os registros para consulta na aba **Contas**, com CPF gerado
   visível e senha mascarada por padrão e botão **Ver detalhes**.
 
@@ -29,9 +31,12 @@ comprova titularidade e pode coincidir com um CPF real. A senha aleatória fica 
 **sem criptografia**, acessível ao usuário do Windows e ao agente pareado;
 não publique esse arquivo no GitHub nem o compartilhe.
 
-O fluxo de registro automático em plataformas externas fica **desativado no
-botão Abrir Conta** nesta etapa. Nenhuma confirmação de cadastro externo é
-emitida por criar uma pasta ou um registro local.
+O botão **Abrir Conta** prepara o perfil e, em ambientes de demonstração
+locais, tenta preencher e enviar o cadastro de teste automaticamente.
+Em plataformas externas, dados de identificação fictícios continuam bloqueados:
+username e senha podem ser gerados, mas nome e contatos legítimos devem ser
+informados pelo titular. Nenhuma confirmação externa é inferida de um clique ou
+HTTP 200. Os detalhes e os logs aparecem em **Contas**.
 
 ### Atualizar a instalação atual (máximo três ações)
 
