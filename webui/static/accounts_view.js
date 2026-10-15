@@ -25,7 +25,7 @@
       ['confirmPassword', 'Confirmar senha'],
     ];
 
-    function render(profiles, selectedId) {
+    function render(profiles, selectedId, proxies, bindings) {
       list.replaceChildren();
       status.textContent = profiles.length
         ? profiles.length + (profiles.length === 1 ? ' conta salva' : ' contas salvas')
@@ -56,6 +56,39 @@
           }
         });
         head.append(heading, origin, select);
+        // Compact persistent association; the Proxy section stays one-input only.
+        const proxyRow = document.createElement('div');
+        proxyRow.className = 'accounts-proxy-association';
+        const proxyLabel = document.createElement('label');
+        const proxySelect = document.createElement('select');
+        proxySelect.setAttribute('aria-label', 'Proxy da ' + profile.label);
+        proxyLabel.textContent = 'Proxy';
+        const automatic = document.createElement('option');
+        automatic.value = '';
+        automatic.textContent = 'Automática na próxima abertura';
+        proxySelect.append(automatic);
+        for (const proxy of proxies) {
+          const option = document.createElement('option');
+          option.value = proxy.id;
+          option.textContent = proxy.protocol.toUpperCase() + ' — ' + proxy.host + ':' + proxy.port;
+          proxySelect.append(option);
+        }
+        proxySelect.value = bindings[String(profile.id)] || '';
+        proxySelect.addEventListener('change', async () => {
+          proxySelect.disabled = true;
+          try {
+            await post('/api/proxies/bind-profile', {
+              profileId: profile.id, proxyId: proxySelect.value || null
+            });
+            status.textContent = 'Proxy vinculada à ' + profile.label + '.';
+          } catch (error) {
+            status.textContent = 'Não foi possível salvar a proxy: ' + error.message;
+          } finally {
+            proxySelect.disabled = false;
+            await refresh();
+          }
+        });
+        proxyRow.append(proxyLabel, proxySelect);
         const details = document.createElement('dl');
         for (const [key, label] of fields) {
           const row = document.createElement('div');
@@ -66,7 +99,7 @@
           row.append(dt, dd);
           details.appendChild(row);
         }
-        card.append(head, details);
+        card.append(head, proxyRow, details);
         list.appendChild(card);
       }
     }
@@ -75,8 +108,15 @@
     async function refresh() {
       const current = ++generation;
       try {
-        const data = await get('/api/local-profiles');
-        if (current === generation) render(Array.isArray(data.profiles) ? data.profiles : [], data.selectedProfileId ?? null);
+        const [data, proxyData, bindingData] = await Promise.all([
+          get('/api/local-profiles'), get('/api/proxies'), get('/api/proxies/profile-bindings')
+        ]);
+        if (current === generation) render(
+          Array.isArray(data.profiles) ? data.profiles : [],
+          data.selectedProfileId ?? null,
+          Array.isArray(proxyData.proxies) ? proxyData.proxies : [],
+          bindingData.bindings || {}
+        );
       } catch (error) {
         if (current === generation) status.textContent = 'Não foi possível carregar os perfis: ' + error.message;
       }
