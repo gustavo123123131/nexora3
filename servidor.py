@@ -318,7 +318,8 @@ async def submit_existing_registration(body: dict):
     """
     from nexora_accounts.registration_submit import request_submit
     return _account_request(lambda: request_submit(
-        body.get("accountId"), body.get("userConfirmed"), _accounts().repo
+        body.get("accountId"), body.get("userConfirmed"), _accounts().repo,
+        body.get("values")
     ))
 
 
