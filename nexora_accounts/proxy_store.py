@@ -69,8 +69,9 @@ def parse_proxy_line(raw):
         raise ProxyError("Tipo de proxy não suportado. Use HTTP, HTTPS ou SOCKS5.")
     if not body:
         raise ProxyError("Formato inválido. Informe host:porta[:usuario:senha].")
-    if "@" not in body and body.count(":") >= 3 and not body.startswith("["):
-        host, port, username, password = body.split(":", 3)
+    segments = body.split(":", 3)
+    if len(segments) == 4 and segments[1].isdigit() and not body.startswith("["):
+        host, port, username, password = segments
         fields = (host, port, username, password)
     else:
         try:
