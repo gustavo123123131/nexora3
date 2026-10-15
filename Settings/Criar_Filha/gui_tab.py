@@ -1,4 +1,5 @@
 import threading
+from uuid import uuid4
 import shutil
 import time
 from pathlib import Path
@@ -10,7 +11,7 @@ import urllib.error
 import tkinter.messagebox as tkmb
 import tkinter.simpledialog as tksd
 import customtkinter as ctk
-from Settings.device_modes import MODE_LABELS, mode_label, resolve_mode, profile_directory
+from Settings.device_modes import MODE_LABELS, mode_label, resolve_mode, profile_mode, account_profile_directory
 from Settings.url_normalizer import normalize_url_list, is_https_url, HttpsNavigationError
 from Settings.mobile_window import mobile_window_args, fit_mobile_content
 from Settings.speed_controller import SpeedController
@@ -1007,7 +1008,8 @@ def run_instance(
             log(f"[#{idx}] ⏹️ Parado antes de iniciar.")
             return
 
-        cfg = make_config(mode, idx)
+        current_mode = (instance_plan or {}).get("device_mode", mode)
+        cfg = make_config(current_mode, idx)
         log(f"[#{idx}] Dispositivo selecionado: {cfg.mode} (navegador Chromium).")
         # Saved workspace proxies use a fixed endpoint per Chromium context.
         # Legacy ad-hoc HTTP proxies keep their existing local gateway.
@@ -1027,8 +1029,20 @@ def run_instance(
 
         log(f"[#{idx}] Iniciando navegador (ciclo {attempt}/{MAX_BROWSER_RESTARTS}).")
 
-        user_data_dir = profile_directory(PROFILES_DIR, mode, idx)
-        ensure_clean_profile_dir(user_data_dir, keep=keep_profiles)
+        account_profile = (instance_plan or {}).get("account_profile")
+        if account_profile is not None:
+            # Each account keeps one *exclusive* on-disk Chromium directory.
+            # New accounts never inherit old profile_1 / profile_2 cookies.
+            user_data_dir = account_profile_directory(
+                PROFILES_DIR, AREA_PIX_SCOPE, int(account_profile["id"])
+            )
+            ensure_clean_profile_dir(user_data_dir, keep=True)
+            log(f"[#{idx}] [Sessão] {account_profile['label']} — diretório individual, dispositivo {cfg.mode}.")
+        else:
+            # Legacy paths are never used by a fresh unassociated session.
+            user_data_dir = PROFILES_DIR / "sessions" / uuid4().hex
+            ensure_clean_profile_dir(user_data_dir, keep=False)
+            log(f"[#{idx}] [Sessão] Janela temporária independente; dispositivo {cfg.mode}.")
 
         # --- abre o Chrome já na posição/tamanho salvo (por idx) ---
         saved_bounds = None
@@ -2394,17 +2408,14 @@ class FilhaTab(ctk.CTkFrame):
         for btn in self.quick_game_buttons:
             btn.configure(state="normal")
         
-    def create_local_profile(self):
-        """Add one local profile to Contas for this browser launch."""
+    def create_local_profile(self, *, device_mode=None, start_url=None):
+        """Create a NEW account for a fresh browser; never reuse selection."""
         try:
             from nexora_accounts.local_profiles import LocalProfileStore
-            store = LocalProfileStore()
-            profile = store.selected()
-            if profile:
-                self._log(f"[Contas] Usando {profile['label']} selecionada.")
-            else:
-                profile = store.create(AREA_PIX_SCOPE)
-                self._log(f"[Contas] {profile['label']} criada e salva.")
+            profile = LocalProfileStore().create(
+                AREA_PIX_SCOPE, device_mode=device_mode, start_url=start_url,
+            )
+            self._log(f"[Contas] {profile['label']} criada e salva ({device_mode}).")
             return profile
         except Exception as exc:
             self._set_status("Erro ao salvar perfil.")
@@ -2464,13 +2475,11 @@ class FilhaTab(ctk.CTkFrame):
                 self._set_status("Adicione uma proxy para abrir navegadores.")
                 self._log("[Proxy] Nenhuma proxy salva; abertura bloqueada para evitar conexão direta.")
                 return
-            # A selected existing account retains its original proxy.
-            from nexora_accounts.local_profiles import LocalProfileStore
-            selected_profile = LocalProfileStore().selected()
-            selected_id = selected_profile["id"] if selected_profile else None
+            # "Abrir Navegadores" always creates new accounts; a globally
+            # selected card must never inject an old identity into this action.
             launch_plans = _build_instance_plans(normalized_urls or ["about:blank"], count, use_same_identity)
             if saved_proxies and launch_plans:
-                assignments = proxy_store.assign(len(launch_plans), profile_id=selected_id)
+                assignments = proxy_store.assign(len(launch_plans))
                 checked = set()
                 # Use an independent HTTPS endpoint for proxy preflight.
                 # The destination site performs its own TLS validation in Chromium.
@@ -2508,23 +2517,29 @@ class FilhaTab(ctk.CTkFrame):
             self._log(f"[Proxy] Falha na configuração: {type(exc).__name__}. Nenhum navegador iniciado.")
             return
 
-        # Chromium profiles stay untouched; Contas records are stored separately.
+        # Account records and Chromium directories are both isolated by ID.
         self.save_settings()
-        profile = self.create_local_profile()
-        if not profile:
-            return
-        if launch_plans and launch_plans[0].get("proxy_id"):
-            try:
-                proxy_store.bind_profile(profile["id"], launch_plans[0]["proxy_id"])
-                self._log(f"[Proxy] {profile['label']}: associação persistente salva.")
-            except ProxyError as exc:
-                self._set_status("Falha ao vincular a proxy à conta.")
-                self._log("[Proxy] Associação do perfil falhou; navegador não iniciado.")
+        # Each launched browser gets its OWN newly generated card and
+        # on-disk Chromium directory; no profiles are implicitly selected.
+        for plan in launch_plans:
+            device = profile_mode(mode, plan["idx"])
+            new_profile = self.create_local_profile(
+                device_mode=device,
+                start_url=plan["url"] if normalized_urls else "",
+            )
+            if not new_profile:
                 return
-        if launch_plans:
-            launch_plans[0]["registration_profile"] = profile
-            if len(launch_plans) > 1:
-                self._log("[Registro] Somente a primeira janela usará a conta selecionada.")
+            plan["account_profile"] = new_profile
+            plan["device_mode"] = device
+            plan["registration_profile"] = new_profile
+            if plan.get("proxy_id"):
+                try:
+                    proxy_store.bind_profile(new_profile["id"], plan["proxy_id"])
+                    self._log(f"[Proxy] {new_profile['label']}: associação persistente salva.")
+                except ProxyError:
+                    self._set_status("Falha ao vincular a proxy à conta.")
+                    self._log("[Proxy] Associação do perfil falhou; navegador não iniciado.")
+                    return
 
         autopix_enabled = bool(self.autopix_enabled_var.get()) and run_auto
         autochave_enabled = bool(self.autochave_enabled_var.get()) and run_auto
