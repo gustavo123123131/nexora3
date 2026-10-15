@@ -1005,13 +1005,22 @@ def run_instance(
 
         cfg = make_config(mode, idx)
         log(f"[#{idx}] Dispositivo selecionado: {cfg.mode} (navegador Chromium).")
-        # Keep the existing local HTTP gateway (including per-instance idx).
-        # HTTPS/SOCKS5 upstreams use Playwright's native proxy configuration.
-        proxy_dict = (
-            build_upstream_proxy_dict(proxy, idx=idx)
-            if proxy and proxy.server.split(":", 1)[0] in ("https", "socks5")
-            else build_proxy_dict(proxy, idx=idx) if proxy else None
-        )
+        # Saved workspace proxies use a fixed endpoint per Chromium context.
+        # Legacy ad-hoc HTTP proxies keep their existing local gateway.
+        session_proxy = (instance_plan or {}).get("proxy_config") is not None
+        if session_proxy:
+            proxy_dict = {"server": proxy.server}
+            if proxy.username:
+                proxy_dict["username"] = proxy.username
+            if proxy.password:
+                proxy_dict["password"] = proxy.password
+            log(f"[#{idx}] [Proxy] Sessão configurada: {(instance_plan or {}).get('proxy_label')}.")
+        else:
+            proxy_dict = (
+                build_upstream_proxy_dict(proxy, idx=idx)
+                if proxy and proxy.server.split(":", 1)[0] in ("https", "socks5")
+                else build_proxy_dict(proxy, idx=idx) if proxy else None
+            )
 
         log(f"[#{idx}] Iniciando navegador (ciclo {attempt}/{MAX_BROWSER_RESTARTS}).")
 
@@ -1409,7 +1418,7 @@ def run_all(
         t = threading.Thread(
             target=run_instance,
             args=(
-                plan["idx"], plan["url"], mode, headless, proxy, exts,
+                plan["idx"], plan["url"], mode, headless, plan.get("proxy_config", proxy), exts,
                 auto_goto, keep_profiles, run_auto, start_game_enabled, start_game_name, start_game_id, stop_event,
                 winpos_controller, speed_controller, mirror, withdraw_controller, verify_phone_controller,
                 game_launch_controller, instance_target_controller, plan, log, automation_callback
@@ -2333,20 +2342,51 @@ class MaeTab(ctk.CTkFrame):
         start_game_name = self.start_game_name_var.get().strip()
         start_game_id = self.start_game_id_var.get().strip()
 
-        proxy = self._validate_proxy()
-        if self.proxy_var.get().strip() and proxy is None:
+        # Use saved proxies from the shared Proxy section when available.
+        # Never fall back to an invisible legacy proxy when this manager was used.
+        from nexora_accounts.proxy_store import ProxyStore, ProxyError
+        try:
+            proxy_store = ProxyStore()
+            saved_proxies = proxy_store.list()["proxies"]
+            managed_proxies = bool(saved_proxies) or proxy_store.is_managed()
+            proxy = None if managed_proxies else self._validate_proxy()
+            if not managed_proxies and self.proxy_var.get().strip() and proxy is None:
+                return
+            launch_plans = _build_instance_plans(normalized_urls, count, use_same_identity) if normalized_urls else None
+            if saved_proxies and launch_plans:
+                assignments = proxy_store.assign(len(launch_plans))
+                checked = set()
+                for entry in assignments:
+                    if entry["id"] in checked:
+                        continue
+                    checked.add(entry["id"])
+                    result = proxy_store.test(entry["id"])
+                    if not result["reachable"]:
+                        self._set_status("Proxy indisponível. Navegadores não iniciados.")
+                        self._log(f"[Proxy] Falha na conexão TCP com {entry['host']}:{entry['port']}; início cancelado.")
+                        return
+                for plan, entry in zip(launch_plans, assignments):
+                    plan["proxy_config"] = ProxyConfig(
+                        server=f"{entry['protocol']}://{entry['host']}:{entry['port']}",
+                        username=entry["username"] or None,
+                        password=entry["password"] or None,
+                    )
+                    plan["proxy_label"] = f"{entry['protocol'].upper()} {entry['host']}:{entry['port']}"
+                    self._log(f"[Proxy] Janela #{plan['idx']}: {plan['proxy_label']}.")
+                if len(launch_plans) > len(checked):
+                    self._log("[Proxy] Mais sessões do que proxies: endpoints serão reutilizados; IPs distintos não são garantidos.")
+        except (ProxyError, OSError, ValueError) as exc:
+            self._set_status("Configuração de proxy inválida.")
+            self._log(f"[Proxy] Falha na configuração: {type(exc).__name__}. Nenhum navegador iniciado.")
             return
 
         # Chromium profiles stay untouched; Contas records are stored separately.
-        launch_plans = None
-
         clear_invite_file(self._log)
         self.save_settings()
         profile = self.create_local_profile()
         if not profile:
             return
-        if normalized_urls:
-            launch_plans = _build_instance_plans(normalized_urls, count, use_same_identity)
+        if launch_plans:
             launch_plans[0]["registration_profile"] = profile
             if len(launch_plans) > 1:
                 self._log("[Registro] Somente a primeira janela usará a conta selecionada.")
