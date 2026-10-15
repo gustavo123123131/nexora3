@@ -25,3 +25,8 @@ def claim_account(origin: str, account_id: int):
     finally:
         with _LOCK:
             _OPEN.discard(key)
+
+
+def is_account_open(origin: str, account_id: int) -> bool:
+    with _LOCK:
+        return (origin, account_id) in _OPEN
