@@ -180,6 +180,41 @@ class LocalProfileStore:
             raise LocalProfileError("Conta não encontrada.")
         return profile
 
+    def configure_legacy_launch(self, profile_id: int, device_mode: str, start_url: str = "") -> dict:
+        """Capture missing launch settings once for cards created before this fix."""
+        from Settings.device_modes import resolve_mode
+        from Settings.url_normalizer import normalize_url_list
+        try:
+            mode = resolve_mode(device_mode)
+        except ValueError as exc:
+            raise LocalProfileError("Escolha Android, iPhone ou Computador.") from exc
+        if mode == "mixed":
+            raise LocalProfileError("Selecione somente um dispositivo para a conta.")
+        raw_url = str(start_url or "").strip()
+        if len(raw_url) > 2048:
+            raise LocalProfileError("URL muito longa.")
+        if raw_url:
+            try:
+                urls = normalize_url_list(raw_url)
+            except ValueError as exc:
+                raise LocalProfileError("URL da conta inválida.") from exc
+            if len(urls) != 1:
+                raise LocalProfileError("Informe somente uma URL para a conta.")
+            raw_url = urls[0]
+        with _LOCK:
+            data = self._read()
+            item = next((p for p in data["profiles"] if p["id"] == profile_id), None)
+            if item is None:
+                raise LocalProfileError("Conta não encontrada.")
+            if item.get("deviceMode"):
+                # A normal card's remembered device is never overwritten by
+                # a stale UI value or a malicious re-open request.
+                return item.copy()
+            item["deviceMode"] = mode
+            item["startUrl"] = raw_url
+            self._write(data)
+            return item.copy()
+
     def create(
         self, origin: str, *,
         device_mode: str | None = None,
