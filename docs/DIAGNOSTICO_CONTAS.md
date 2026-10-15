@@ -196,3 +196,31 @@ o sistema não envia cadastro usando CPF/e-mail/telefone sintéticos.
 A aba Contas e o terminal registram `submit-not-sent` em vez de
 declarar sucesso. Nos testes locais, o envio é automatizado usando
 o botão real `#insideRegisterSubmitClick` de um formulário simulado.
+
+## Atualização: preenchimento direto no navegador e log do clique — 15/10/2026
+
+Após o feedback do usuário, o Nexora não exige mais configurar o campo
+`realName` pelo PowerShell para acompanhar o cadastro. O usuário pode digitar
+o nome diretamente no navegador Chromium já aberto e clicar em Registro.
+
+O agente registra **apenas a ação**, sem gravar nome/senha/valores digitados:
+- `name-entry-pending` — campo de nome disponível e ainda não preenchido
+  automaticamente;
+- `name-entered-in-browser` — atividade de digitação observada no campo;
+- `manual-submit-clicked` — clique no botão real
+  `#insideRegisterSubmitClick` observado;
+- `provider-http-error`, `provider-response-unverified`,
+  `provider-confirmed` — estados baseados em evidências distintas.
+
+A variável antiga `NEXORA_REGISTRATION_OWNER_NAME` continua **opcional**
+para quem já a configurou com seu próprio nome; não é pré-requisito
+para concluir o formulário manualmente no Chromium. Não preencher
+`profileData.fullName` fictício em sites externos nem clicar
+automaticamente para criar identidade não verificada.
+
+**Teste realizado:** Chromium + servidor HTTP de demonstração local,
+formulário com os seletores enviados pelo usuário, preenchimento do nome
+no navegador e clique humano simulado em Registro. Verificado que o
+watcher registra o clique, observa uma única requisição local e só
+marca sucesso quando o DOM de demonstração confirma. Nenhum cadastro
+real na plataforma externa foi criado ou confirmado por esses testes.
