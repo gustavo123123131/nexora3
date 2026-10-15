@@ -30,7 +30,6 @@ from Settings.Criar_Filha.settings.browser import (
     ProxyConfig,
 )
 from Settings.Criar_Filha.settings.withdrawal import verify_phone_now
-from Settings.Criar_Filha.settings.actions import run_automations, run_saved_account_automation, run_registration_only, RegistrationUnverified, load_saved_accounts
 from Settings.Criar_Filha.settings.withdrawal import start_withdrawal
 from Settings.withdraw_controller import WithdrawController
 from Settings.Criar_Filha.settings.games import search_and_open_game
@@ -558,7 +557,6 @@ def _idle_wait_with_speed(
     log: Callable[[str], None],
     idx: int,
     shared_phone_key: str = "",
-    registration_watcher=None,
 ):
     last_version = -1
 
@@ -578,13 +576,6 @@ def _idle_wait_with_speed(
     last_game_launch_version = game_launch_controller.get().version
     last_verify_phone_version = verify_phone_controller.get_version()
     while not stop_event.is_set():
-        # Playwright can only be accessed by the thread that owns this page.
-        if registration_watcher is not None:
-            try:
-                registration_watcher.tick()
-            except Exception:
-                log(f"[#{idx}] Cadastro: falha ao verificar retorno. Confira o perfil.")
-                registration_watcher = None
         # ---- salvar posição individual por idx (1x por clique) ----
         try:
             v = winpos_controller.get_version()
@@ -863,54 +854,14 @@ def _proxy_url_from_playwright(proxy_dict: dict) -> str:
     return server
 
 
-def _normalize_site_key(url: str) -> str:
-    raw = (url or "").strip()
-    if not raw:
-        return ""
-
-    try:
-        parsed = urlparse(raw if "://" in raw else f"https://{raw}")
-        host = (parsed.hostname or "").lower().strip()
-        if host.startswith("www."):
-            host = host[4:]
-        if host:
-            return host
-    except Exception:
-        pass
-
-    return raw.lower()
-
-
-def _build_instance_plans(urls: List[str], count_per_url: int, use_same_identity: bool) -> List[dict]:
-    plans: List[dict] = []
-    site_seen: dict[str, int] = {}
-    shared_owner_defined = False
-
-    global_idx = 1
-
-    for current_url in urls:
-        for _ in range(count_per_url):
-            site_key = _normalize_site_key(current_url) or current_url.strip().lower()
-            occurrence = site_seen.get(site_key, 0) + 1
-            site_seen[site_key] = occurrence
-
-            shared_candidate = bool(use_same_identity and occurrence == 1)
-            shared_owner = bool(shared_candidate and not shared_owner_defined)
-            if shared_owner:
-                shared_owner_defined = True
-
-            plans.append({
-                "idx": global_idx,
-                "url": current_url,
-                "site_key": site_key,
-                "site_occurrence": occurrence,
-                "shared_identity_key": ("cross_site_shared_identity" if shared_candidate else ""),
-                "shared_identity_owner": shared_owner,
-                "should_autochave": (True if not shared_candidate else shared_owner),
-            })
-            global_idx += 1
-
-    return plans
+def _build_instance_plans(urls: List[str], count_per_url: int, use_same_identity: bool = False) -> List[dict]:
+    """Allocate browser windows only; never generate or store account details."""
+    return [
+        {"idx": idx, "url": url}
+        for idx, url in enumerate(
+            (url for url in urls for _ in range(count_per_url)), start=1
+        )
+    ]
 
 
 def fetch_public_ip(proxy_dict: dict | None, timeout: float = 6.0) -> str:
@@ -1039,17 +990,6 @@ def run_instance(
     except Exception:
         shared_phone_key = ""
 
-    registration_id = str((instance_plan or {}).get("profile_record_id") or "")
-
-    def _registration_stage(stage, status="local", error_code=None):
-        if not registration_id:
-            return
-        try:
-            from nexora_accounts.registration_trace import trace_registration
-            trace_registration(registration_id, idx, stage, status, log, error_code)
-        except Exception:
-            log(f"[#{idx}] Cadastro: falha ao persistir etapa {stage}.")
-
     for attempt in range(1, MAX_BROWSER_RESTARTS + 1):
         if stop_event.is_set():
             log(f"[#{idx}] ⏹️ Parado antes de iniciar.")
@@ -1065,10 +1005,7 @@ def run_instance(
             else build_proxy_dict(proxy, idx=idx) if proxy else None
         )
 
-        if registration_id:
-            log(f"[#{idx} ID={registration_id[:8]}] Abrindo perfil (ciclo {attempt}/{MAX_BROWSER_RESTARTS}).")
-        else:
-            log(f"\n[#{idx}] 🔄 CICLO {attempt}/{MAX_BROWSER_RESTARTS}: Iniciando navegador.")
+        log(f"[#{idx}] Iniciando navegador (ciclo {attempt}/{MAX_BROWSER_RESTARTS}).")
 
         user_data_dir = profile_directory(PROFILES_DIR, mode, idx)
         ensure_clean_profile_dir(user_data_dir, keep=keep_profiles)
@@ -1137,7 +1074,6 @@ def run_instance(
         effective_headless = False if ext_paths else headless
         success_finished = False
 
-        _registration_stage("browser-starting")
         try:
             with sync_playwright() as p:
                 context = p.chromium.launch_persistent_context(
@@ -1178,9 +1114,7 @@ def run_instance(
                     context.set_extra_http_headers(cfg.extra_headers)
 
                 page = context.pages[0] if context.pages else context.new_page()
-                _registration_stage("browser-ready")
 
-                registration_watcher = None
 
                 # Match the native window to the emulated phone independently
                 # from the site's CSS viewport. No DOM/CSS edits or zoom.
@@ -1278,9 +1212,7 @@ def run_instance(
                 try:
                     if auto_goto:
                         try:
-                            _registration_stage("site-loading")
                             page.goto(url, wait_until="domcontentloaded", timeout=15000)
-                            _registration_stage("site-loaded")
                         except Exception as exc:
                             if is_https_url(url):
                                 raise HttpsNavigationError(
@@ -1317,59 +1249,8 @@ def run_instance(
                         except Exception:
                             pass
 
-                        if run_auto:
-                            automation_fn = automation_callback or run_automations
-                            log(f"[#{idx}] ▶️ Iniciando automação em {url}...")
-                            automation_fn(page, idx, instance_plan=instance_plan)
-                            log(f"[#{idx}] 🏆 SUCESSO! Instância finalizada.")
-
-                            if start_game_enabled:
-                                game_name = (start_game_name or "").strip()
-                                game_id = str(start_game_id or "").strip()
-                                if game_name and game_id:
-                                    if callable(search_and_open_game):
-                                        log(f"[#{idx}] 🎮 Iniciar jogo marcado. Abrindo {game_name} ({game_id})...")
-                                        try:
-                                            search_and_open_game(page, idx, game_name, game_id, log=log)
-                                        except Exception as e:
-                                            log(f"[#{idx}] ❌ Falha ao abrir jogo automático {game_name} ({game_id}): {e}")
-                                    else:
-                                        log(f"[#{idx}] ❌ Função de abrir jogo indisponível.")
-                                else:
-                                    log(f"[#{idx}] ⚠️ Iniciar jogo marcado, mas nome/ID do jogo não foram preenchidos.")
-                        else:
-                            # Use the same Playwright page and the saved record created by Abrir Conta.
-                            # Only local demos or confirmed non-test owners may auto-submit.
-                            registration_watcher = None
-                            if instance_plan and instance_plan.get("profile_record_id"):
-                                try:
-                                    from nexora_accounts.registration_autofill import autofill_existing_registration
-                                    _registration_stage("form-scanning")
-                                    prefill_result = autofill_existing_registration(
-                                        page, instance_plan, progress=_registration_stage
-                                    )
-                                    log(
-                                        f"[#{idx} ID={registration_id[:8]}] Cadastro: "
-                                        f"{prefill_result['status']} "
-                                        f"({prefill_result.get('fieldCount', 0)} campo(s)). "
-                                        f"{prefill_result['message']}"
-                                    )
-                                    # Even a test-data-blocked profile needs a watcher:
-                                    # the user can supply legitimate values transiently in Contas.
-                                    from nexora_accounts.registration_submit import (
-                                        RegistrationWatcher, request_autosubmit_after_fill,
-                                    )
-                                    registration_watcher = RegistrationWatcher(page, instance_plan, log=log)
-                                    request_autosubmit_after_fill(
-                                        page, instance_plan, prefill_result, log,
-                                    )
-                                except Exception as exc:
-                                    _registration_stage(
-                                        "browser-error", "local",
-                                        type(exc).__name__.lower().replace("_", "-")[:55]
-                                    )
-                                    log(f"[#{idx}] Cadastro: falha no preenchimento; veja o histórico do perfil.")
-                            log(f"[#{idx} ID={registration_id[:8]}] Navegador pronto; cadastro externo ainda não confirmado.")
+                        # Browser-only mode: do not fill, register, or submit forms.
+                        log(f"[#{idx}] Navegador pronto. Nenhum cadastro será executado.")
 
                         success_finished = True
                         _idle_wait_with_speed(
@@ -1385,7 +1266,6 @@ def run_instance(
                             log,
                             idx,
                             shared_phone_key=shared_phone_key,
-                            registration_watcher=registration_watcher,
                         )
 
                     else:
@@ -1404,23 +1284,14 @@ def run_instance(
                             log,
                             idx,
                             shared_phone_key=shared_phone_key,
-                            registration_watcher=registration_watcher,
                         )
 
-                except RegistrationUnverified:
-                    # The site may already have received a POST; never resubmit blindly.
-                    raise
                 except HttpsNavigationError:
                     # Fall through the context cleanup and stop the retry
                     # loop. Do not silently downgrade HTTPS to HTTP.
                     raise
                 except Exception as e:
-                    if registration_id:
-                        _registration_stage(
-                            "browser-error", "local",
-                            type(e).__name__.lower().replace("_", "-")[:55]
-                        )
-                    err_msg = type(e).__name__ if registration_id else str(e)
+                    err_msg = str(e)
                     if "Timeout" in err_msg or "Formulário não apareceu" in err_msg:
                         log(f"[#{idx}] ⏳ FALHA: Timeout/Form ausente.")
                     elif "ERR_PROXY" in err_msg or "ERR_TUNNEL" in err_msg:
@@ -1440,18 +1311,11 @@ def run_instance(
                     except Exception:
                         pass
 
-        except RegistrationUnverified as e:
-            log(f"[#{idx}] ⚠️ {e}")
-            return
         except HttpsNavigationError as e:
-            _registration_stage("navigation-error", "local", "https-navigation")
             log(f"[#{idx}] ⚠️ Navegação HTTPS indisponível; verifique conexão, proxy e certificado.")
             log(f"[#{idx}] Navegação HTTPS interrompida sem novas tentativas.")
             return
         except Exception as e:
-            _registration_stage(
-                "browser-error", "local", type(e).__name__.lower().replace("_", "-")[:55]
-            )
             log(f"[#{idx}] Erro crítico ao abrir navegador: {type(e).__name__}.")
 
         if success_finished:
@@ -1521,11 +1385,6 @@ def run_all(
         instance_plans = [dict(plan or {}) for plan in instance_plans if isinstance(plan, dict)]
     total_instances = len(instance_plans)
     log(f"[+] Iniciando {total_instances} instâncias...")
-
-    if use_same_identity:
-        shared_count = sum(1 for plan in instance_plans if plan.get("shared_identity_key"))
-        individual_count = total_instances - shared_count
-        log(f"[+] Mesmo nick/email: {shared_count} instância(s) compartilhadas entre sites diferentes e {individual_count} individual(is).")
 
     threads: List[threading.Thread] = []
 
