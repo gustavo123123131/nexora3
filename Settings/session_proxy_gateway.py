@@ -108,12 +108,8 @@ def probe_proxy(proxy, *, target="example.com", timeout=8):
         with _open_tunnel(proxy, target, 443, timeout) as tunnel:
             with ssl.create_default_context().wrap_socket(tunnel, server_hostname=target) as secure:
                 secure.settimeout(timeout)
-                secure.sendall(
-                    f"HEAD / HTTP/1.1\r\nHost: {target}\r\nConnection: close\r\n\r\n".encode("ascii")
-                )
-                first = secure.recv(4096)
-                if not first.startswith(b"HTTP/"):
-                    raise ProxyConnectionError("invalid_https_response")
+                # TLS handshake completed through the proxy; no site-specific
+                # HEAD/GET is needed and sites may legitimately reject HEAD.
         return {"reachable": True, "status": "ok",
                 "message": "Autenticação, túnel CONNECT e HTTPS verificados via proxy."}
     except ProxyConnectionError as exc:
@@ -140,8 +136,6 @@ class SessionProxyGateway:
         if not proxy or not proxy.server:
             raise ProxyConnectionError("proxy_required")
         self.proxy = proxy
-        self.user = "session-" + secrets.token_hex(12)
-        self.password = secrets.token_urlsafe(24)
         self.server = None
         self.thread = None
 
@@ -157,21 +151,9 @@ class SessionProxyGateway:
                     if not packet or len(packet) > 65536:
                         return
                     head, body = _split_header_body(packet)
-                    auth_line = None
-                    for header in head.split(b"\r\n"):
-                        if header.lower().startswith(b"proxy-authorization:"):
-                            auth_line = header.split(b":", 1)[1].strip()
-                            break
-                    expected = b"Basic " + base64.b64encode(
-                        f"{owner.user}:{owner.password}".encode("utf-8")
-                    )
-                    if not auth_line or not secrets.compare_digest(auth_line, expected):
-                        client.sendall(
-                            b"HTTP/1.1 407 Proxy Authentication Required\r\n"
-                            b"Proxy-Authenticate: Basic realm=\"NexoraSession\"\r\n"
-                            b"Connection: close\r\nContent-Length: 0\r\n\r\n"
-                        )
-                        return
+                    # Loopback-only ephemeral port belongs to this context.
+                    # Never ask Chromium to authenticate to another proxy;
+                    # only this gateway authenticates with the upstream.
                     method, target, version = _parse_request_line(head)
                     if method.upper() == "CONNECT":
                         if ":" not in target:
@@ -233,8 +215,7 @@ class SessionProxyGateway:
     def playwright_proxy(self):
         if self.server is None:
             raise RuntimeError("Gateway de sessão ainda não iniciado.")
-        return {"server": f"http://127.0.0.1:{self.server.server_address[1]}",
-                "username": self.user, "password": self.password}
+        return {"server": f"http://127.0.0.1:{self.server.server_address[1]}"}
 
     def close(self):
         if self.server is not None:
