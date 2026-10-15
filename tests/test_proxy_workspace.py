@@ -202,7 +202,7 @@ def test_proxies_assigned_per_session_without_changing_provider_credentials(isol
 
 @pytest.mark.parametrize("raw", [
     "", "invalid", "ftp://proxy.example.com:8080", "proxy.example.com:99999",
-    "socks5://proxy.example.com:0", "proxy.example.com:80:bad:name:more",
+    "socks5://proxy.example.com:0", "proxy.example.com:80:bad:pass\u0001word",
 ])
 def test_invalid_one_line_proxy_fails_without_saving(isolated_store, raw):
     with pytest.raises(ProxyError):
