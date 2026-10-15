@@ -16,6 +16,9 @@ def test_localhost_ui_and_events():
             assert client.get(route).status_code == 200
         data = client.get('/api/state').json()
         assert len(data['server_version']) > 8
+        assert data['edition'] == 'browser-only'
+        assert client.get('/api/health').json()['edition'] == 'browser-only'
+        assert client.get('/api/registration/accounts').status_code == 404
         assert len(data['csrf_token']) > 32
         headers = {'X-LixoCPA-CSRF': data['csrf_token']}
         tabs = data['tree']['children'][0]['children']
