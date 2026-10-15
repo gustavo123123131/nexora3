@@ -223,3 +223,38 @@ def test_add_line_api_preserves_password_privacy(isolated_store):
         listing = client.get("/api/proxies")
         assert "secret" not in listing.text
         assert listing.json()["proxies"][0]["protocol"] == "http"
+
+
+def test_account_proxy_binding_survives_restart(isolated_store, monkeypatch, tmp_path):
+    import nexora_accounts.local_profiles as profile_module
+    from nexora_accounts.local_profiles import LocalProfileStore
+    monkeypatch.setattr(profile_module, "_default_path",
+                        lambda: tmp_path / "Nexora" / "generated_profiles.json")
+    profile = LocalProfileStore().create("mae")
+    a = isolated_store.save_line("http://alice:secret@one.example.com:8001")
+    b = isolated_store.save_line("http://bob:secret@two.example.com:8002")
+    assert isolated_store.bind_profile(profile["id"], b["id"])["proxyId"] == b["id"]
+    reopened = ProxyStore(isolated_store.path)
+    assert reopened.profile_bindings()[str(profile["id"])] == b["id"]
+    allocated = reopened.assign(2, profile_id=profile["id"])
+    assert [x["id"] for x in allocated] == [b["id"], a["id"]]
+    assert reopened.delete(b["id"]) == {"ok": True}
+    assert str(profile["id"]) not in reopened.profile_bindings()
+
+
+def test_profile_bindings_api_persists_and_checks_csrf(isolated_store, monkeypatch, tmp_path):
+    import nexora_accounts.local_profiles as profile_module
+    from nexora_accounts.local_profiles import LocalProfileStore
+    monkeypatch.setattr(profile_module, "_default_path",
+                        lambda: tmp_path / "Nexora" / "generated_profiles.json")
+    profile = LocalProfileStore().create("filha")
+    proxy = isolated_store.save_line("example.proxy.test:9000:demo:secret")
+    with TestClient(servidor.app) as client:
+        csrf = client.get("/api/state").json()["csrf_token"]
+        data = {"profileId": profile["id"], "proxyId": proxy["id"]}
+        assert client.post("/api/proxies/bind-profile", json=data).status_code == 403
+        assert client.post("/api/proxies/bind-profile", json=data,
+                           headers={"X-LixoCPA-CSRF": csrf}).status_code == 200
+        result = client.get("/api/proxies/profile-bindings").json()["bindings"]
+        assert result[str(profile["id"])] == proxy["id"]
+        assert "secret" not in json.dumps(result)
