@@ -807,6 +807,10 @@ class LocalProfileStore:
             )
             if not provider_confirmed and not click_only:
                 raise LocalProfileError("Cadastro não confirmado por uma fonte verificada.")
+            registered_origin = normalize_origin(item.get("platformOrigin"))
+            if (not actual or actual != normalize_origin(item.get("startUrl"))
+                or (registered_origin and actual != registered_origin)):
+                raise LocalProfileError("Origem da plataforma divergente.")
             if click_only:
                 # An arbitrary string/ID cannot bypass review. Bind the
                 # validated observer result to this exact account and run.
@@ -822,10 +826,6 @@ class LocalProfileStore:
                     raise LocalProfileError(
                         "Identificação independente não corresponde à sessão."
                     )
-            registered_origin = normalize_origin(item.get("platformOrigin"))
-            if (not actual or actual != normalize_origin(item.get("startUrl"))
-                or (registered_origin and actual != registered_origin)):
-                raise LocalProfileError("Origem da plataforma divergente.")
             if platform_user_id in (
                 item.get("username"), account_id, run_id,
                 str(item.get("deviceProfileId") or ""),
