@@ -352,6 +352,22 @@ async def open_local_profile(body: dict):
 
 
 
+@app.post('/api/local-profiles/delete')
+async def delete_local_profile(body: dict):
+    from nexora_accounts.local_profiles import LocalProfileError
+    from nexora_accounts.browser_sessions import AccountSessionBusy
+    from nexora_accounts.profile_cleanup import delete_account
+    if body.get('confirmed') is not True:
+        raise HTTPException(status_code=422, detail="Confirme a exclusão da conta.")
+    try:
+        return delete_account(body.get('id'))
+    except AccountSessionBusy as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except LocalProfileError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+
 def main():
     parser = argparse.ArgumentParser(description='Lixo CPA no navegador (apenas máquina local)')
     parser.add_argument('--port', type=int, default=8765)
