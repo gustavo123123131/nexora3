@@ -617,8 +617,8 @@ class LocalProfileStore:
         from urllib.parse import urlsplit
 
         allowed = (
-            "pending", "verification_required", "created", "rejected",
-            "error", "unconfirmed",
+            "pending", "confirming", "verification_required", "created",
+            "rejected", "error", "unconfirmed",
         )
         if status not in allowed or type(profile_id) is not int:
             raise LocalProfileError("Resultado do registro inválido.")
@@ -669,11 +669,14 @@ class LocalProfileStore:
                 raise LocalProfileError("A conta original não corresponde ao cadastro.")
             if item.get("lastSessionId") != run_id:
                 raise LocalProfileError("Resultado antigo ignorado: execução diferente.")
-            if status == "created":
+            # Even the transient confirming state must belong to this
+            # exact account/site. It is not evidence of registration success.
+            if status in ("confirming", "created"):
                 expected = origin(item.get("startUrl"))
                 actual = origin(site_origin)
                 if not expected or expected != actual:
                     raise LocalProfileError("Origem autenticada diferente da conta.")
+            if status == "created":
                 existing = item.get("platformUserId")
                 if existing is not None and platform_user_id not in (None, existing):
                     raise LocalProfileError("Conflito de ID remoto: atualização bloqueada.")
@@ -924,6 +927,14 @@ class LocalProfileStore:
                 if browser_id is not None:
                     item["lastBrowserId"] = str(browser_id)
             item["sessionStatus"] = action
+            # A browser closed while awaiting the response cannot leave the
+            # account permanently claiming that confirmation is in progress.
+            if action in ("closed", "error") and item.get("status") == "confirming":
+                item["status"] = "unconfirmed"
+                item["statusMessage"] = (
+                    "Sessão encerrada antes da confirmação do cadastro pelo site."
+                )
+                self._event(item, "registration.unconfirmed", "Monitoramento interrompido")
             self._event(item, "session." + action, "Abertura " + action)
             self._write(data)
 
