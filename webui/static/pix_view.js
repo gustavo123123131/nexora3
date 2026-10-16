@@ -106,6 +106,7 @@
     function checkValue() {
       const options = identify(field.value);
       const kinds = Object.keys(options);
+      const previouslySelected = choose.value;
       choose.replaceChildren();
       choose.hidden = kinds.length <= 1 || form.hidden;
       if (kinds.length === 0) {
@@ -125,7 +126,11 @@
           choose.append(option);
         }
         // A saved account's type is known when opening the editor.
-        if (editing && field.value.trim() === editing.value) choose.value = editing.type;
+        if (editing && field.value.trim() === editing.value) {
+          choose.value = editing.type;
+        } else if (kinds.includes(previouslySelected)) {
+          choose.value = previouslySelected;
+        }
       }
       return options;
     }
@@ -219,7 +224,11 @@
 
     addButton.addEventListener('click', () => showForm(null));
     cancel.addEventListener('click', hideForm);
-    field.addEventListener('input', checkValue);
+    field.addEventListener('input', () => {
+      // A new value must not silently inherit an earlier ambiguous choice.
+      choose.value = '';
+      checkValue();
+    });
     form.addEventListener('submit', async event => {
       event.preventDefault();
       if (busy) return;
