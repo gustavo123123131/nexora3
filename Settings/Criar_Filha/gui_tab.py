@@ -2748,7 +2748,9 @@ class FilhaTab(ctk.CTkFrame):
                 lambda pid=new_profile["id"], run=session_id:
                     LocalProfileStore().record_session(pid, "ready", run)
             )
-            LocalProfileStore().record_session(new_profile["id"], "starting", session_id)
+            LocalProfileStore().record_session(
+                new_profile["id"], "starting", session_id, plan["idx"]
+            )
             if plan.get("proxy_id"):
                 try:
                     proxy_store.bind_profile(new_profile["id"], plan["proxy_id"])
