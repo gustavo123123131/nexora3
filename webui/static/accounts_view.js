@@ -92,14 +92,38 @@
           open.disabled = true;
           try {
             await post('/api/local-profiles/open', {id: profile.id});
-            status.textContent = 'Abrindo ' + (profile.label || 'conta') + ' com a sessão salva.';
+            status.textContent = 'Abertura solicitada para ' + (profile.label || 'conta') +
+              '. Aguarde os logs do Chromium para confirmação.';
           } catch (error) {
             status.textContent = 'Não foi possível abrir ' + profile.label + ': ' + error.message;
           } finally {
             open.disabled = false;
           }
         });
-        footer.append(open);
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'accounts-delete';
+        remove.textContent = 'Excluir';
+        remove.title = 'Excluir esta conta e seus dados locais de navegador';
+        remove.addEventListener('click', async () => {
+          const accountName = profile.label || 'esta conta';
+          if (!window.confirm('Excluir ' + accountName +
+              '? Os dados locais do navegador serão apagados. Esta ação não pode ser desfeita.')) return;
+          open.disabled = true;
+          remove.disabled = true;
+          try {
+            await post('/api/local-profiles/delete', {
+              id: profile.id, confirmed: true
+            });
+            status.textContent = accountName + ' excluída com sucesso.';
+            await refresh();
+          } catch (error) {
+            status.textContent = 'Não foi possível excluir ' + accountName + ': ' + error.message;
+            remove.disabled = false;
+            open.disabled = !savedDevice;
+          }
+        });
+        footer.append(open, remove);
 
         // Lack of technical history prevents an *exact* reopen, but does
         // not provide evidence that external registration failed.
