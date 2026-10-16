@@ -677,6 +677,13 @@ class LocalProfileStore:
                 existing = item.get("platformUserId")
                 if existing is not None and platform_user_id not in (None, existing):
                     raise LocalProfileError("Conflito de ID remoto: atualização bloqueada.")
+                if platform_user_id is not None and any(
+                    other["id"] != profile_id
+                    and other.get("platformUserId") == platform_user_id
+                    and other.get("platformOrigin") in (None, actual)
+                    for other in state["profiles"]
+                ):
+                    raise LocalProfileError("ID remoto já associado a outra conta desta plataforma.")
             if item.get("status") == "created" and status != "created":
                 return item.copy()
             item["status"] = status
