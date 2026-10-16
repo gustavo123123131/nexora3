@@ -12,6 +12,8 @@ from pathlib import Path
 import secrets
 import string
 import tempfile
+import shutil
+import uuid
 import threading
 import unicodedata
 
@@ -94,10 +96,96 @@ def _username(full_name: str, existing: set[str]) -> str:
 
 
 class LocalProfileStore:
-    """Small append-only JSON repository; the file stays on the Windows agent."""
+    """Persistent per-account registry. Numeric IDs and folders stay unchanged."""
 
     def __init__(self, path: str | Path | None = None):
         self.path = Path(path) if path is not None else _default_path()
+        with _LOCK:
+            if self.path.exists():
+                data = self._read()
+                if self._upgrade(data):
+                    self._backup("migration")
+                    self._write(data)
+
+    @staticmethod
+    def _now() -> str:
+        return datetime.now(timezone.utc).isoformat()
+
+    @staticmethod
+    def _base_profile_dir(origin: str):
+        if origin == "mae":
+            from Settings.Criar_Mae.settings.utils import PROFILES_DIR
+        elif origin == "filha":
+            from Settings.Criar_Filha.settings.utils import PROFILES_DIR
+        else:
+            raise LocalProfileError("Origem inválida.")
+        return PROFILES_DIR
+
+    @classmethod
+    def _profile_path(cls, origin: str, idx: int) -> str:
+        from Settings.device_modes import account_profile_directory
+        return str(account_profile_directory(cls._base_profile_dir(origin), origin, idx).resolve())
+
+    def _upgrade(self, data: dict) -> bool:
+        """Fill missing metadata only. Never move or change existing profiles."""
+        changed = False
+        if data.get("schemaVersion", 1) < 2:
+            data["schemaVersion"] = 2
+            changed = True
+        seen_accounts = set()
+        seen_devices = set()
+        for item in data["profiles"]:
+            if not isinstance(item, dict) or type(item.get("id")) is not int:
+                raise LocalProfileError("Registro de conta inválido; faça backup do arquivo.")
+            for key, seen in (("accountId", seen_accounts), ("deviceProfileId", seen_devices)):
+                existing = item.get(key)
+                if existing:
+                    try:
+                        uuid.UUID(str(existing))
+                    except ValueError as exc:
+                        raise LocalProfileError("Identificador persistente inválido.") from exc
+                    if existing in seen:
+                        raise LocalProfileError("Identificador de conta duplicado.")
+                else:
+                    item[key] = str(uuid.uuid4())
+                    changed = True
+                seen.add(item[key])
+            if not item.get("profilePath"):
+                item["profilePath"] = self._profile_path(item["origin"], item["id"])
+                changed = True
+            if "history" not in item:
+                item["history"] = []
+                changed = True
+            if "lastOpenedAt" not in item:
+                item["lastOpenedAt"] = None
+                changed = True
+            if "parentId" not in item:
+                item["parentId"] = None
+                changed = True
+        return changed
+
+    def _backup(self, purpose="backup") -> None:
+        """Copy intact JSON before any migration/deletion, with 5 rotations."""
+        if not self.path.exists():
+            return
+        backup_dir = self.path.parent / "profile-backups"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        backup = backup_dir / (self.path.stem + "." + uuid.uuid4().hex + ".json")
+        shutil.copy2(self.path, backup)
+        files = sorted(backup_dir.glob(self.path.stem + ".*.json"), key=lambda x: x.stat().st_mtime_ns)
+        for old in files[:-5]:
+            old.unlink()
+
+    @staticmethod
+    def _event(item: dict, action: str, detail: str = "") -> None:
+        # Never put credentials, tokens, URLs or request bodies in history.
+        item.setdefault("history", []).append({
+            "at": datetime.now(timezone.utc).isoformat(),
+            "event": action[:48],
+            "detail": detail[:160],
+        })
+        item["history"] = item["history"][-80:]
+        item["updatedAt"] = datetime.now(timezone.utc).isoformat()
 
     def _read(self) -> dict:
         if not self.path.exists():
@@ -189,6 +277,7 @@ class LocalProfileStore:
             remaining = [p for p in data["profiles"] if p["id"] != profile_id]
             if len(remaining) == len(data["profiles"]):
                 raise LocalProfileError("Conta não encontrada.")
+            self._backup("delete")
             data["profiles"] = remaining
             if data.get("selectedProfileId") == profile_id:
                 data["selectedProfileId"] = None
@@ -250,7 +339,7 @@ class LocalProfileStore:
                 raise LocalProfileError("Dispositivo da sessão não corresponde à conta.")
             item["runtimeConfig"] = snapshot
             item["deviceLabel"] = self._device_label(snapshot)
-            item["updatedAt"] = datetime.now(timezone.utc).isoformat()
+            self._event(item, "device.initialized", "Configuração Chromium fixada")
             self._write(state)
             return item.copy()
 
@@ -284,9 +373,24 @@ class LocalProfileStore:
                 return item.copy()
             item["status"] = status
             item["statusMessage"] = str(message or "")[:220]
-            item["updatedAt"] = datetime.now(timezone.utc).isoformat()
+            self._event(item, "registration." + status, "Resultado registrado")
             self._write(state)
             return item.copy()
+
+    def record_session(self, profile_id: int, action: str, run_id: str = ""):
+        if action not in ("starting", "ready", "closed", "error"):
+            raise LocalProfileError("Evento de sessão inválido.")
+        with _LOCK:
+            data = self._read()
+            item = next((p for p in data["profiles"] if p["id"] == profile_id), None)
+            if item is None:
+                raise LocalProfileError("Conta não encontrada.")
+            if action == "starting":
+                item["lastOpenedAt"] = self._now()
+                item["lastSessionId"] = run_id
+            item["sessionStatus"] = action
+            self._event(item, "session." + action, "Abertura " + action)
+            self._write(data)
 
     def configure_legacy_launch(self, profile_id: int, device_mode: str, start_url: str = "") -> dict:
         """Capture missing launch settings once for cards created before this fix."""
@@ -377,7 +481,15 @@ class LocalProfileStore:
                 "createdAt": datetime.now(timezone.utc).isoformat(),
                 "status": "pending",
                 "statusMessage": "Aguardando confirmação do cadastro pelo site.",
+                "accountId": str(uuid.uuid4()),
+                "deviceProfileId": str(uuid.uuid4()),
+                "profilePath": self._profile_path(origin, number),
+                "parentId": None,
+                "history": [],
+                "lastOpenedAt": None,
+                "sessionStatus": "closed",
             }
+            self._event(record, "profile.created", "Identidade interna reservada")
             if device_mode is not None:
                 record["deviceMode"] = device_mode
             if start_url is not None:
