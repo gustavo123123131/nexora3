@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 import nexora_accounts.local_profiles as profile_module
 import nexora_accounts.proxy_store as proxy_module
-from nexora_accounts.local_profiles import LocalProfileStore
+from nexora_accounts.local_profiles import LocalProfileStore, LocalProfileError
 from nexora_accounts.session_launcher import AccountLauncher
 from Settings.device_modes import account_profile_directory, profile_mode
 import servidor
