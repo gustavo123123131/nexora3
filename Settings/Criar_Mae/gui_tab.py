@@ -1457,6 +1457,21 @@ def run_instance(
                             try:
                                 clicked = fill_registration_form(page, profile, log, stop_event)
                                 if clicked:
+                                    # The click is NOT proof of creation. Persist
+                                    # only the session-bound waiting state first.
+                                    try:
+                                        LocalProfileStore().update_registration_result(
+                                            int(profile["id"]), str(profile["accountId"]),
+                                            str((instance_plan or {}).get("run_id") or ""),
+                                            "confirming",
+                                            "Registrar acionado; confirmando cadastro pelo site.",
+                                            site_origin=observer.origin,
+                                        )
+                                    except Exception as exc:
+                                        log(
+                                            f"[#{idx}] [Registro] Estado de confirmação não salvo "
+                                            f"({type(exc).__name__}); vínculo da execução inválido."
+                                        )
                                     result_status, reason = observer.finish(stop_event)
                                     if result_status == "created":
                                         remote_identity = identity_observer.identify(
