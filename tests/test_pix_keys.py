@@ -30,8 +30,8 @@ def _ambiguous_value():
 
 def test_normalization_of_four_types_and_ambiguity():
     assert normalize_key("529.982.247-25") == ("CPF", "52998224725")
-    assert normalize_key("(11) 98765-4321") == ("PHONE", "+5511987654321")
-    assert normalize_key("+55 (11) 98765-4321") == ("PHONE", "+5511987654321")
+    assert normalize_key("(11) 98765-4321") == ("PHONE", "11987654321")
+    assert normalize_key("+55 (11) 98765-4321") == ("PHONE", "11987654321")
     assert normalize_key("USUARIO@Exemplo.COM.BR") == ("EMAIL", "usuario@exemplo.com.br")
     uuid = "123E4567-E89B-12D3-A456-426655440000"
     assert normalize_key(uuid) == ("EVP", uuid.lower())
@@ -39,7 +39,7 @@ def test_normalization_of_four_types_and_ambiguity():
     with pytest.raises(PixKeyError, match="ambíguo"):
         normalize_key(ambiguous)
     assert normalize_key(ambiguous, "CPF") == ("CPF", ambiguous)
-    assert normalize_key(ambiguous, "PHONE") == ("PHONE", "+55" + ambiguous)
+    assert normalize_key(ambiguous, "PHONE") == ("PHONE", ambiguous)
 
 
 @pytest.mark.parametrize("value", [
@@ -68,7 +68,7 @@ def test_crud_normalized_duplicates_edit_id_and_restart(store):
     edited = store.update(a["id"], "(11) 98765-4321")["key"]
     assert edited["id"] == a["id"]
     assert edited["createdAt"] == a["createdAt"]
-    assert edited["value"] == "+5511987654321"
+    assert edited["value"] == "11987654321"
     assert PixKeyStore(store.path).list()["keys"] == [edited, b]
     assert store.delete(b["id"]) == {"ok": True, "id": b["id"]}
     assert PixKeyStore(store.path).list()["keys"] == [edited]
@@ -150,3 +150,40 @@ def test_type_mismatch_and_no_value_in_error(store):
             store.add(body["value"], body.get("type"))
         assert secret not in str(err.value)
     assert store.list()["keys"] == []
+
+
+def test_phone_registry_never_includes_country_prefix_and_rejects_duplicates(store):
+    phone = store.add("(11) 98765-4321")["key"]
+    assert phone["value"] == "11987654321"
+    assert phone["type"] == "PHONE"
+    with pytest.raises(PixKeyError, match="já está"):
+        store.add("+55 (11) 98765-4321")
+    assert PixKeyStore(store.path).list()["keys"] == [phone]
+    assert "+55" not in store.path.read_text(encoding="utf-8")
+
+
+def test_legacy_e164_phone_migrates_without_replacing_account_ids(store):
+    phone = store.add("11987654321")["key"]
+    email = store.add("contato@example.com")["key"]
+    before = json.loads(store.path.read_text(encoding="utf-8"))
+    # Simulate the file written by the previous release.
+    before["items"][0]["value"] = "+5511987654321"
+    store.path.write_text(json.dumps(before), encoding="utf-8")
+    after = PixKeyStore(store.path).list()["keys"]
+    assert after == [phone, email]
+    assert json.loads(store.path.read_text(encoding="utf-8"))["items"] == [phone, email]
+    assert PixKeyStore(store.path).list()["keys"] == after
+    with pytest.raises(PixKeyError, match="já está"):
+        store.add("+5511987654321")
+
+
+def test_invalid_preexisting_phone_file_is_never_overwritten(store):
+    saved = store.add("11987654321")["key"]
+    corrupt = json.loads(store.path.read_text(encoding="utf-8"))
+    corrupt["items"][0]["value"] = "+5511987654321"
+    corrupt["items"].append(dict(saved, id="invalid-uuid"))
+    original = json.dumps(corrupt).encode("utf-8")
+    store.path.write_bytes(original)
+    with pytest.raises(PixKeyError, match="inválido"):
+        store.list()
+    assert store.path.read_bytes() == original
