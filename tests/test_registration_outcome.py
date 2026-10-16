@@ -10,8 +10,8 @@ from Settings.registration_outcome import (
 def test_explicit_success_and_error_signals():
     assert classify_registration_reply(200, {"success": True})[0] == "created"
     assert classify_registration_reply(200, {"code": 0, "msg": "success"})[0] == "created"
-    assert classify_registration_reply(200, {"code": 0})[0] == "pending"
-    assert classify_registration_reply(200, {})[0] == "pending"
+    assert classify_registration_reply(200, {"code": 0})[0] == "unconfirmed"
+    assert classify_registration_reply(200, {})[0] == "unconfirmed"
     assert classify_registration_reply(200, {"success": False})[0] == "error"
     assert classify_registration_reply(200, {"code": 10004})[0] == "error"
     assert classify_registration_reply(403, {"success": True})[0] == "error"
@@ -61,7 +61,7 @@ def test_observer_tracks_only_known_registration_post():
     # First response is unrelated and ignored; test delivers more with polling.
     # A short timeout may expire before the last response; use a second
     # deterministic instance for success.
-    assert status in ("created", "pending")
+    assert status in ("created", "unconfirmed")
     assert not page.listeners
     assert all("password" not in msg for msg in messages)
 
@@ -78,8 +78,8 @@ def test_observer_records_missing_confirmation_without_claiming_success():
     watcher = RegistrationOutcomeObserver(page, messages.append, 7)
     watcher.start()
     status, reason = watcher.finish(threading.Event(), wait_seconds=0)
-    assert status == "pending"
-    assert "Sem resposta" in reason
+    assert status == "unconfirmed"
+    assert "Nenhuma resposta" in reason
 
 
 def test_observer_rejection_keeps_cause_safe():
