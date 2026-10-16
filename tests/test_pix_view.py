@@ -159,3 +159,29 @@ def test_telephone_key_renders_without_plus_55_and_can_be_edited():
             assert page.locator(".pix-simple-info code").inner_text() == "11912345678"
         finally:
             browser.close()
+
+
+def test_legacy_phone_display_is_national_during_agent_update():
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.set_content('<main id="root"></main>')
+            page.add_script_tag(path=str(ROOT / "webui/static/pix_view.js"))
+            page.evaluate("""() => {
+              const api = {
+                get: async () => ({keys: [{
+                  id: 'legacy', type: 'PHONE', value: '+5511987654321',
+                  createdAt: 'before', updatedAt: 'before'
+                }]}),
+                post: async () => { throw Error('Unexpected mutation'); }
+              };
+              const view = NexoraPixView.create(api);
+              document.querySelector('#root').append(view.node);
+              view.onShow();
+            }""")
+            assert page.locator(".pix-simple-info code").inner_text() == "11987654321"
+            page.get_by_role("button", name="Editar").click()
+            assert page.get_by_role("textbox", name="Chave Pix").input_value() == "11987654321"
+        finally:
+            browser.close()
