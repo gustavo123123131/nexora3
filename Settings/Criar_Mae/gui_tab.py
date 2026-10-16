@@ -1441,7 +1441,8 @@ def run_instance(
                             from nexora_accounts.local_profiles import LocalProfileStore
                             log(f"[#{idx}] [Registro] Preparando {profile['label']}.")
                             observer = RegistrationOutcomeObserver(
-                                page, log, int(profile["id"])
+                                page, log, int(profile["id"]),
+                                expected_origin=(instance_plan or {}).get("url") or page.url,
                             )
                             observer.start()
                             try:
@@ -1457,12 +1458,41 @@ def run_instance(
                                     )
                             finally:
                                 observer.close()
-                            LocalProfileStore().update_status(
-                                int(profile["id"]), result_status, reason,
-                            )
+                            # Commit only if this worker still owns the exact
+                            # account UUID and runId. Unverified HTTP fields cannot
+                            # provide a platform ID or mark the account created.
+                            try:
+                                LocalProfileStore().update_registration_result(
+                                    int(profile["id"]),
+                                    str(profile["accountId"]),
+                                    str((instance_plan or {}).get("run_id") or ""),
+                                    result_status, reason,
+                                    confirmation_source=(
+                                        observer.verdict.confirmation_source
+                                        if result_status == "created" else None
+                                    ),
+                                    site_origin=observer.origin,
+                                    platform_user_id=(
+                                        observer.verdict.platform_user_id
+                                        if result_status == "created" else None
+                                    ),
+                                    platform_id_source=(
+                                        observer.verdict.platform_id_source
+                                        if result_status == "created" else None
+                                    ),
+                                )
+                            except Exception as exc:
+                                log(f"[#{idx}] [Registro] Atualização ignorada por "
+                                    f"inconsistência da sessão ({type(exc).__name__}).")
+                            display_status = {
+                                "created": "Criada", "rejected": "Recusada",
+                                "verification_required": "Verificação necessária",
+                                "pending": "Pendente", "error": "Erro",
+                                "unconfirmed": "Não confirmada",
+                            }
                             log(
                                 f"[#{idx}] [Registro] {profile['label']}: "
-                                f"status { {'created':'Criada','error':'Erro','pending':'Pendente','unconfirmed':'Não confirmado'}[result_status] }. "
+                                f"status {display_status.get(result_status, 'Não confirmada')}. "
                                 f"Motivo: {reason}"
                             )
                         else:
