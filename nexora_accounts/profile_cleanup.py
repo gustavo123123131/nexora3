@@ -10,10 +10,10 @@ import shutil
 from nexora_accounts.browser_sessions import AccountSessionBusy, claim_account
 from nexora_accounts.local_profiles import LocalProfileError, LocalProfileStore
 from nexora_accounts.session_launcher import ACCOUNT_LAUNCHER
-from Settings.device_modes import account_profile_directory
+from Settings.device_modes import stored_profile_directory
 
 
-def delete_account(profile_id: int) -> dict:
+def delete_account(profile_id: int, *, remove_files: bool = True) -> dict:
     if type(profile_id) is not int or profile_id < 1:
         raise LocalProfileError("ID da conta inválido.")
     profile = LocalProfileStore().get(profile_id)
@@ -31,17 +31,20 @@ def delete_account(profile_id: int) -> dict:
                 from Settings.Criar_Filha.settings.utils import PROFILES_DIR
             else:
                 raise LocalProfileError("Origem da conta inválida.")
-            directory = account_profile_directory(PROFILES_DIR, origin, profile_id)
-            parent = (PROFILES_DIR / "accounts").resolve()
-            target = directory.resolve()
-            if target.parent != parent:
-                raise LocalProfileError("Diretório da conta inválido; exclusão cancelada.")
-            if directory.is_symlink():
-                raise LocalProfileError("O perfil usa um link simbólico; exclusão cancelada.")
-            if directory.exists():
-                if not directory.is_dir():
-                    raise LocalProfileError("Diretório do perfil inválido.")
-                shutil.rmtree(directory)
+            if remove_files:
+                if profile.get("legacySource"):
+                    raise LocalProfileError(
+                        "Pasta legada sem posse exclusiva comprovada. "
+                        "Exclua somente o cartão e preserve os arquivos."
+                    )
+                try:
+                    directory = stored_profile_directory(PROFILES_DIR, profile)
+                except ValueError as exc:
+                    raise LocalProfileError("Diretório original inválido; exclusão cancelada.") from exc
+                if directory.exists():
+                    if not directory.is_dir():
+                        raise LocalProfileError("Diretório do perfil inválido.")
+                    shutil.rmtree(directory)
             # Keep metadata if the folder cannot be deleted. Never remove any
             # legacy profile_1/profile_2 folders with unknown ownership.
             LocalProfileStore().delete(profile_id)
@@ -53,4 +56,4 @@ def delete_account(profile_id: int) -> dict:
         raise LocalProfileError(
             "Não foi possível apagar os arquivos do navegador. Feche a sessão e tente novamente."
         ) from exc
-    return {"ok": True, "profileId": profile_id}
+    return {"ok": True, "profileId": profile_id, "filesRemoved": remove_files}
