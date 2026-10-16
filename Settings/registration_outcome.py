@@ -1,11 +1,13 @@
-"""Conservative registration outcome observer for the observed browser route.
+"""Conservative, session-scoped observation of registration responses.
 
-The existing form is unchanged. An HTTP 200 or click alone is NEVER proof
-of account creation. Only explicit response fields on the observed
-/hall/api/member/register endpoint can set status to created.
+No production provider contract has been verified. The default path NEVER
+interprets generic success/uid/code fields as proof of registration or identity.
+A provider-specific, reviewed contract may be supplied in a later change.
+The existing DOM filling and submission flow is deliberately untouched.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 import time
 from urllib.parse import urlsplit
 
@@ -13,56 +15,113 @@ from urllib.parse import urlsplit
 KNOWN_REGISTER_PATH = "/hall/api/member/register"
 
 
-def classify_registration_reply(http_status, payload):
-    """Return (status, diagnostic). Never expose user data or server messages."""
-    if http_status >= 400:
-        return ("error", f"Servidor recusou envio: HTTP {http_status}.")
-    if not isinstance(payload, dict):
-        return ("unconfirmed", "Resposta recebida, mas não contém confirmação estruturada de cadastro.")
-    code = payload.get("code")
-    success = payload.get("success")
-    raw_status = payload.get("status")
-    raw_message = payload.get("message", payload.get("msg", ""))
-    status_text = str(raw_status).strip().lower() if isinstance(raw_status, str) else ""
-    msg = str(raw_message).strip().lower() if isinstance(raw_message, str) else ""
-    positive = msg in (
-        "success", "successful", "ok", "registro realizado",
-        "cadastro realizado", "cadastro concluído", "cadastro realizado com sucesso",
-        "registration successful", "registered successfully", "register success",
-        "registro exitoso", "注册成功",
+def _origin(value):
+    try:
+        p = urlsplit(str(value or ""))
+        if p.scheme.lower() not in ("https", "http") or not p.hostname:
+            return ""
+        host = p.hostname.lower()
+        port = p.port
+        standard = 443 if p.scheme.lower() == "https" else 80
+        return p.scheme.lower() + "://" + host + (
+            ":" + str(port) if port is not None and port != standard else ""
+        )
+    except (ValueError, TypeError):
+        return ""
+
+
+@dataclass(frozen=True)
+class RegistrationVerdict:
+    status: str
+    reason: str
+    confirmation_source: str | None = None
+    platform_user_id: str | None = None
+    platform_id_source: str | None = None
+
+
+def _unconfirmed():
+    return RegistrationVerdict(
+        "unconfirmed",
+        "Resposta observada, mas não existe contrato comprovado para confirmar cadastro ou identificar usuário.",
     )
-    nested = payload.get("data")
-    nested_confirm = isinstance(nested, dict) and nested.get("success") is True
-    # Only clear semantic confirmation is sufficient. HTTP 200/code 0 alone
-    # is NOT proof of an account being created.
-    if success is True or nested_confirm or (
-        status_text in ("success", "created", "registered") and code in (0, 200, None)
-    ) or (code in (0, 200) and positive):
-        return ("created", "Confirmação explícita de sucesso na resposta do cadastro.")
-    if success is False or (code is not None and isinstance(code, int) and code != 0):
-        return ("error", "O site retornou rejeição ou código de erro no cadastro.")
-    if status_text in ("error", "failed", "failure"):
-        return ("error", "O site indicou falha no cadastro.")
-    return ("unconfirmed", "Resposta recebida sem indicador inequívoco de cadastro concluído ou rejeitado.")
+
+
+def interpret_registration_reply(http_status, payload, *, origin="", contract=None):
+    """Interpret only through an explicitly verified per-origin contract.
+
+    Contract API reserved for a future reviewed, site-specific adapter:
+    .origin is the exact site origin; .interpret(status, payload) returns
+    RegistrationVerdict. No production adapters are bundled or enabled.
+    """
+    if contract is None or not origin or _origin(getattr(contract, "origin", "")) != _origin(origin):
+        return _unconfirmed()
+    try:
+        verdict = contract.interpret(int(http_status), payload)
+    except Exception:
+        return _unconfirmed()
+    if not isinstance(verdict, RegistrationVerdict) or verdict.status not in (
+        "unconfirmed", "verification_required", "created", "rejected",
+    ):
+        return _unconfirmed()
+    if verdict.status == "created" and not verdict.confirmation_source:
+        return _unconfirmed()
+    if verdict.status != "created" and (
+        verdict.platform_user_id is not None or verdict.platform_id_source is not None
+    ):
+        return _unconfirmed()
+    if verdict.platform_user_id is not None and (
+        not isinstance(verdict.platform_user_id, str)
+        or not verdict.platform_user_id
+        or len(verdict.platform_user_id) > 128
+        or not verdict.platform_user_id.isprintable()
+        or any(ch.isspace() for ch in verdict.platform_user_id)
+        or not verdict.platform_id_source
+    ):
+        return _unconfirmed()
+    # Contract diagnostics must not echo the server's message or payload.
+    safe = {
+        "verification_required": "O provedor solicitou verificação adicional comprovada.",
+        "created": "Cadastro confirmado pelo contrato verificado deste provedor.",
+        "rejected": "Cadastro recusado conforme o contrato verificado deste provedor.",
+        "unconfirmed": "Resposta sem conclusão verificável.",
+    }
+    return RegistrationVerdict(
+        verdict.status, safe[verdict.status],
+        verdict.confirmation_source if verdict.status == "created" else None,
+        verdict.platform_user_id if verdict.status == "created" else None,
+        verdict.platform_id_source if verdict.status == "created" else None,
+    )
+
+
+def classify_registration_reply(http_status, payload, *, origin="", contract=None):
+    """Legacy tuple API; generic HTTP 200/success/status/code never means created."""
+    verdict = interpret_registration_reply(http_status, payload, origin=origin, contract=contract)
+    return verdict.status, verdict.reason
 
 
 class RegistrationOutcomeObserver:
-    def __init__(self, page, log, profile_id):
+    def __init__(self, page, log, profile_id, *, expected_origin=None, contract=None):
         self.page = page
         self.log = log
         self.profile_id = profile_id
+        self.origin = _origin(expected_origin if expected_origin is not None else getattr(page, "url", ""))
+        self.contract = contract
         self.responses = []
         self.other_registration_posts = set()
         self._active = False
         self._context_registered = False
         self._seen = set()
+        self._next_response = 0
+        self.verdict = _unconfirmed()
 
     def _on_response(self, response):
         try:
             if response.request.method.upper() != "POST":
                 return
-            path = urlsplit(response.url).path.rstrip("/").lower()
-            # Never record payloads, query strings, tokens or credentials.
+            parsed = urlsplit(response.url)
+            if not self.origin or _origin(response.url) != self.origin:
+                return
+            path = parsed.path.rstrip("/").lower()
             if path == KNOWN_REGISTER_PATH:
                 key = id(response)
                 if key not in self._seen:
@@ -76,13 +135,11 @@ class RegistrationOutcomeObserver:
     def start(self):
         self.page.on("response", self._on_response)
         self._active = True
-        # A submit may trigger navigation or a popup. The browser context
-        # hears the response without guessing another endpoint contract.
         context = getattr(self.page, "context", None)
         if context is not None and hasattr(context, "on"):
             context.on("response", self._on_response)
             self._context_registered = True
-        self.log(f"[#{self.profile_id}] [Registro] Observando resposta POST de cadastro.")
+        self.log(f"[#{self.profile_id}] [Registro] Monitorando respostas da origem da conta.")
 
     def close(self):
         if self._active:
@@ -98,49 +155,64 @@ class RegistrationOutcomeObserver:
                 pass
             self._context_registered = False
 
-    def finish(self, stop_event, *, wait_seconds=15):
-        """Return a verified outcome and a specific, privacy-safe explanation."""
+    def finish(self, stop_event, *, wait_seconds=15, verification_wait_seconds=120):
+        """Follow multiple POST responses; never resend a registration request.
+
+        Without a proved contract we time out as unconfirmed, retaining the
+        original account and all browser data. A challenge is only recognized
+        by a verified site adapter. The extra wait gives the user time to
+        complete the site's official challenge.
+        """
         try:
+            if not self.origin:
+                return "unconfirmed", "Origem da plataforma não identificada; nenhuma resposta foi atribuída."
             deadline = time.monotonic() + max(0, wait_seconds)
-            while not self.responses and time.monotonic() < deadline and not stop_event.is_set():
-                self.page.wait_for_timeout(
-                    min(400, max(1, int((deadline - time.monotonic()) * 1000)))
-                )
+            challenged = False
+            saw_response = False
+            while not stop_event.is_set():
+                while self._next_response < len(self.responses):
+                    response = self.responses[self._next_response]
+                    self._next_response += 1
+                    saw_response = True
+                    try:
+                        finished = getattr(response, "finished", None)
+                        if callable(finished) and finished():
+                            raise ValueError("network_response_incomplete")
+                        status_code = int(response.status)
+                        payload = response.json()
+                    except Exception:
+                        status_code, payload = 0, None
+                    verdict = interpret_registration_reply(
+                        status_code, payload, origin=self.origin, contract=self.contract
+                    )
+                    # Never print body, decoded fields, messages or credentials.
+                    self.log(
+                        f"[#{self.profile_id}] [Registro] Resposta de cadastro #{self._next_response}: "
+                        f"HTTP {status_code}; resultado {verdict.status}."
+                    )
+                    if verdict.status == "verification_required":
+                        challenged = True
+                        self.verdict = verdict
+                        deadline = max(deadline, time.monotonic() + max(0, verification_wait_seconds))
+                    elif verdict.status in ("created", "rejected"):
+                        self.verdict = verdict
+                        return verdict.status, verdict.reason
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                self.page.wait_for_timeout(max(1, min(400, int(remaining * 1000))))
             if stop_event.is_set():
-                return ("unconfirmed", "Monitoramento interrompido antes de confirmar o cadastro.")
-            if not self.responses:
-                if self.other_registration_posts:
-                    paths = ", ".join(sorted(self.other_registration_posts)[:3])
-                    self.log(f"[#{self.profile_id}] [Registro] Outras rotas POST observadas: {paths}.")
-                    return ("unconfirmed",
-                            "O site utilizou uma rota de cadastro não identificada; "
-                            "resultado sem confirmação segura. Veja logs de registro.")
-                return ("unconfirmed",
-                        "Nenhuma resposta POST da rota de cadastro observada após 15 segundos.")
-            response = self.responses[-1]
-            status_code = int(response.status)
-            try:
-                payload = response.json()
-            except Exception:
-                payload = None
-            status, reason = classify_registration_reply(status_code, payload)
-            if isinstance(payload, dict):
-                keys = sorted(
-                    key for key in payload.keys()
-                    if key in ("code", "success", "status", "message", "msg", "data", "error")
-                )
-                self.log(
-                    f"[#{self.profile_id}] [Registro] HTTP {status_code}; "
-                    f"campos de resultado: {', '.join(keys) or 'nenhum'}."
-                )
-            else:
-                self.log(
-                    f"[#{self.profile_id}] [Registro] HTTP {status_code}; "
-                    "resposta sem objeto JSON verificável."
-                )
-            return status, reason
+                return "unconfirmed", "Monitoramento interrompido antes de confirmar o cadastro."
+            if challenged:
+                return "verification_required", "Verificação adicional pendente ou resultado final ainda não recebido."
+            if saw_response:
+                return "unconfirmed", "Resposta recebida, mas o resultado final do cadastro não foi comprovado."
+            if self.other_registration_posts:
+                paths = ", ".join(sorted(self.other_registration_posts)[:3])
+                self.log(f"[#{self.profile_id}] [Registro] Outras rotas POST observadas: {paths}.")
+                return "unconfirmed", "O site utilizou rota de cadastro ainda não documentada."
+            return "unconfirmed", "Nenhuma resposta da rota comprovada observada no período."
         except Exception as exc:
-            return ("unconfirmed",
-                    "Verificação da resposta não concluída (" + type(exc).__name__ + ").")
+            return "unconfirmed", "Monitoramento não concluído (" + type(exc).__name__ + ")."
         finally:
             self.close()
