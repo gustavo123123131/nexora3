@@ -1429,8 +1429,22 @@ def run_instance(
                         profile = (instance_plan or {}).get("registration_profile")
                         if profile:
                             from Settings.registration_autofill import fill_registration_form
+                            from Settings.platform_identity import PlatformIdentityObserver
                             from nexora_accounts.local_profiles import LocalProfileStore
                             log(f"[#{idx}] [Registro] Preparando {profile['label']}.")
+                            # Observe THIS page before Registrar is clicked.
+                            # An identity adapter is optional; no unverified
+                            # field or candidate endpoint is enabled by default.
+                            identity_observer = PlatformIdentityObserver(
+                                page, log,
+                                {**profile, "runId": str((instance_plan or {}).get("run_id") or "")},
+                                expected_origin=(instance_plan or {}).get("url") or page.url,
+                                contract=(
+                                    (instance_plan or {}).get("identity_contract")
+                                    or (instance_plan or {}).get("registration_contract")
+                                ),
+                            )
+                            identity_observer.start()
                             clicked = fill_registration_form(page, profile, log, stop_event)
                             try:
                                 store = LocalProfileStore()
@@ -1468,6 +1482,34 @@ def run_instance(
                                     f"[#{idx}] [Registro] Status não atualizado: "
                                     f"conta ou execução diferente ({type(exc).__name__})."
                                 )
+                            # Step 2: identity discovery is independent of
+                            # the click-based status. It NEVER changes Criada,
+                            # the reviewed flag, the form or the browser session.
+                            try:
+                                if clicked and stored.get("status") == "created":
+                                    identity = identity_observer.identify(
+                                        stop_event=stop_event, wait_seconds=10,
+                                    )
+                                    if identity is not None:
+                                        LocalProfileStore().save_verified_platform_id(
+                                            int(profile["id"]), str(profile["accountId"]),
+                                            str((instance_plan or {}).get("run_id") or ""),
+                                            site_origin=identity_observer.origin,
+                                            platform_user_id=identity.user_id,
+                                            platform_id_source=identity.source,
+                                            identity_evidence=identity,
+                                        )
+                                        log(
+                                            f"[#{idx}] [Registro] ID da plataforma "
+                                            f"validado e salvo para {profile['label']}."
+                                        )
+                            except Exception as exc:
+                                log(
+                                    f"[#{idx}] [Registro] ID remoto não identificado "
+                                    f"({type(exc).__name__}); status da conta preservado."
+                                )
+                            finally:
+                                identity_observer.close()
                         else:
                             log(f"[#{idx}] Navegador pronto; nenhum perfil designado a esta janela.")
 
