@@ -1467,6 +1467,10 @@ def run_instance(
                                         run_id,
                                         site_origin=(instance_plan or {}).get("url") or page.url,
                                     )
+                                    # Arm identity checking only AFTER the
+                                    # existing Criada-by-click write succeeds.
+                                    # No change to the registration click.
+                                    identity_observer.after_registration_click()
                                     log(
                                         f"[#{idx}] [Registro] {profile['label']}: "
                                         f"status Criada (clique em Registrar enviado)."
