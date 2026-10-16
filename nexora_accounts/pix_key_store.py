@@ -172,13 +172,15 @@ class PixKeyStore:
                 yield
 
     def _read(self) -> dict:
+        if self.path.is_symlink():
+            raise PixKeyError("Arquivo local de chaves Pix inválido. Preserve-o e faça backup antes de alterar.")
         if not self.path.exists():
             return {"version": 1, "items": []}
         try:
             if self.path.is_symlink():
                 raise ValueError("symbolic link")
             data = json.loads(self.path.read_text(encoding="utf-8"))
-            if (not isinstance(data, dict) or data.get("version") != 1
+            if (not isinstance(data, dict) or type(data.get("version")) is not int or data["version"] != 1
                     or not isinstance(data.get("items"), list)
                     or len(data["items"]) > 5000):
                 raise ValueError("shape")
