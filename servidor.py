@@ -200,6 +200,13 @@ async def index():
     return FileResponse(ROOT_DIR / 'webui' / 'static' / 'index.html')
 
 
+@app.get('/api/live-logs')
+async def live_logs(after: int = 0, limit: int = 500):
+    """Incremental application logs, protected by the existing agent pairing."""
+    from webui.live_logs import read
+    return read(after=after, limit=limit)
+
+
 @app.get('/api/state')
 async def state():
     gui = init_original_ui()
