@@ -406,6 +406,46 @@ async def close_local_profile(body: dict):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@app.get('/api/account-backups')
+async def list_account_backups():
+    from nexora_accounts.account_backups import list_snapshots
+    return {"backups": list_snapshots()}
+
+
+@app.post('/api/account-backups/restore')
+async def restore_account_backup(body: dict):
+    from nexora_accounts.local_profiles import LocalProfileError
+    from nexora_accounts.account_backups import restore_snapshot
+    if body.get("confirmed") is not True:
+        raise HTTPException(status_code=422, detail="Confirme a restauração.")
+    try:
+        return restore_snapshot(body.get("backupId"))
+    except LocalProfileError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post('/api/local-profiles/delete-batch')
+async def delete_selected_accounts(body: dict):
+    from nexora_accounts.local_profiles import LocalProfileError
+    from nexora_accounts.browser_sessions import AccountSessionBusy
+    from nexora_accounts.profile_cleanup import delete_account
+    ids = body.get("ids")
+    if body.get("confirmed") is not True or not isinstance(ids, list) or not 1 <= len(ids) <= 200:
+        raise HTTPException(status_code=422, detail="Selecione e confirme de 1 a 200 contas.")
+    if any(type(value) is not int or value < 1 for value in ids) or len(set(ids)) != len(ids):
+        raise HTTPException(status_code=422, detail="IDs de contas inválidos ou repetidos.")
+    deleted, errors = [], []
+    for profile_id in ids:
+        try:
+            result = delete_account(profile_id)
+            deleted.append(result)
+        except (LocalProfileError, AccountSessionBusy) as exc:
+            errors.append({"id": profile_id, "reason": str(exc)})
+        except OSError:
+            errors.append({"id": profile_id, "reason": "Falha ao salvar backup ou excluir arquivos."})
+    return {"deleted": deleted, "errors": errors}
+
+
 @app.post('/api/local-profiles/delete')
 async def delete_local_profile(body: dict):
     from nexora_accounts.local_profiles import LocalProfileError
