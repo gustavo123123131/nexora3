@@ -118,6 +118,13 @@ class RegistrationOutcomeObserver:
         try:
             if response.request.method.upper() != "POST":
                 return
+            # A context may have multiple tabs on the same domain. Only
+            # attribute framed responses to the page that registered.
+            frame = getattr(response.request, "frame", None)
+            if frame is not None:
+                source_page = getattr(frame, "page", None)
+                if source_page is not None and source_page is not self.page:
+                    return
             parsed = urlsplit(response.url)
             if not self.origin or _origin(response.url) != self.origin:
                 return

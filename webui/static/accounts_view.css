@@ -78,6 +78,7 @@
   flex: 0 0 auto;
 }
 .accounts-status-pending { color: #ffd27e; background: #493c27; }
+.accounts-status-confirming { color: #ffe2a8; background: #52452e; }
 .accounts-status-created { color: #8bdfab; background: #1a4533; }
 .accounts-status-error { color: #ffa3a3; background: #4b2a30; }
 .accounts-status-unconfirmed { color: #c5d2e1; background: #334355; }

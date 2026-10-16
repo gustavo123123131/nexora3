@@ -1436,6 +1436,7 @@ def run_instance(
                             observer = RegistrationOutcomeObserver(
                                 page, log, int(profile["id"]),
                                 expected_origin=(instance_plan or {}).get("url") or page.url,
+                                contract=(instance_plan or {}).get("registration_contract"),
                             )
                             identity_observer = PlatformIdentityObserver(
                                 page, log,
@@ -1449,12 +1450,37 @@ def run_instance(
                             try:
                                 clicked = fill_registration_form(page, profile, log, stop_event)
                                 if clicked:
+                                    # The click is NOT proof of creation. Persist
+                                    # only the session-bound waiting state first.
+                                    try:
+                                        LocalProfileStore().update_registration_result(
+                                            int(profile["id"]), str(profile["accountId"]),
+                                            str((instance_plan or {}).get("run_id") or ""),
+                                            "confirming",
+                                            "Registrar acionado; confirmando cadastro pelo site.",
+                                            site_origin=observer.origin,
+                                        )
+                                    except Exception as exc:
+                                        log(
+                                            f"[#{idx}] [Registro] Estado de confirmação não salvo "
+                                            f"({type(exc).__name__}); vínculo da execução inválido."
+                                        )
                                     result_status, reason = observer.finish(stop_event)
                                     if result_status == "created":
-                                        remote_identity = identity_observer.identify(
-                                            registration_verdict=observer.verdict,
-                                            stop_event=stop_event,
-                                        )
+                                        # Identity is optional. Its absence or a
+                                        # lookup error cannot discard verified
+                                        # registration success.
+                                        try:
+                                            remote_identity = identity_observer.identify(
+                                                registration_verdict=observer.verdict,
+                                                stop_event=stop_event,
+                                            )
+                                        except Exception as exc:
+                                            log(
+                                                f"[#{idx}] [Registro] Cadastro confirmado; "
+                                                f"identificação remota indisponível "
+                                                f"({type(exc).__name__})."
+                                            )
                                 else:
                                     observer.close()
                                     result_status, reason = (
@@ -1468,8 +1494,9 @@ def run_instance(
                             # Commit only if this worker still owns the exact
                             # account UUID and runId. Unverified HTTP fields cannot
                             # provide a platform ID or mark the account created.
+                            saved_status = None
                             try:
-                                LocalProfileStore().update_registration_result(
+                                saved_result = LocalProfileStore().update_registration_result(
                                     int(profile["id"]),
                                     str(profile["accountId"]),
                                     str((instance_plan or {}).get("run_id") or ""),
@@ -1484,6 +1511,7 @@ def run_instance(
                                     platform_user_id=None,
                                     platform_id_source=None,
                                 )
+                                saved_status = saved_result["status"]
                                 if result_status == "created" and remote_identity:
                                     LocalProfileStore().save_verified_platform_id(
                                         int(profile["id"]), str(profile["accountId"]),
@@ -1504,7 +1532,7 @@ def run_instance(
                             }
                             log(
                                 f"[#{idx}] [Registro] {profile['label']}: "
-                                f"status {display_status.get(result_status, 'Não confirmada')}. "
+                                f"status {display_status.get(saved_status, 'Não atualizado')}. "
                                 f"Motivo: {reason}"
                             )
                         else:

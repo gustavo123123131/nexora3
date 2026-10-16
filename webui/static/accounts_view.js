@@ -165,6 +165,8 @@
     });
     backupPanel.append(backupView.node);
     let showingBackups = false;
+    let generation = 0;
+    let lastSnapshot = null;
     function showSection(backups) {
       showingBackups = backups;
       accountsPanel.hidden = backups;
@@ -182,7 +184,8 @@
     showSection(false);
 
     const labels = {
-      pending: 'Pendente', created: 'Criada', error: 'Erro',
+      pending: 'Pendente', confirming: 'Confirmando cadastro',
+      created: 'Criada', error: 'Erro',
       rejected: 'Recusada', verification_required: 'Verificação necessária',
       unconfirmed: 'Não confirmada'
     };
@@ -415,19 +418,32 @@
         list.append(card);
       }
     }
-    let generation = 0;
     async function refresh() {
       const current = ++generation;
       try {
         const data = await get('/api/local-profiles');
         if (current !== generation) return;
-        render(Array.isArray(data.profiles) ? data.profiles : []);
+        const profiles = Array.isArray(data.profiles) ? data.profiles : [];
+        const snapshot = JSON.stringify(profiles);
+        // Do not rebuild cards when nothing changed: keep expanded details,
+        // selection and scrolling intact during background status checks.
+        if (snapshot !== lastSnapshot) {
+          lastSnapshot = snapshot;
+          render(profiles);
+        }
       } catch (error) {
         if (current === generation) {
           status.textContent = 'Não foi possível carregar as contas: ' + error.message;
         }
       }
     }
+    // Live status updates only while the accounts view is mounted/visible.
+    // The API returns the persisted status; no optimistic "Criada" labels.
+    setInterval(() => {
+      if (node.isConnected && !showingBackups && !document.hidden) {
+        refresh();
+      }
+    }, 1500);
     return {node, onShow: () => showingBackups ? backupView.onShow() : refresh()};
   }
   Object.defineProperty(window, 'NexoraAccountsView', {
