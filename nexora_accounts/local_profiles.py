@@ -213,6 +213,9 @@ class LocalProfileStore:
                 "accounts.json legado não pôde ser lido; arquivo original preservado."
             ) from exc
         existing = {p.get("accountId") for p in data["profiles"]}
+        # Preserve deleted imports even if the immutable old accounts.json
+        # remains on disk. Without tombstones they reappear at every restart.
+        deleted_legacy = set(data.get("deletedLegacyAccountIds", []))
         seen_numbers = {p["id"] for p in data["profiles"]}
         next_number = max(data["nextNumber"], max(seen_numbers, default=0) + 1)
         modified = False
@@ -226,7 +229,7 @@ class LocalProfileStore:
             except (ValueError, TypeError, AttributeError):
                 # Do not replace a bad original ID by a newly invented UUID.
                 continue
-            if account_id in existing:
+            if account_id in existing or account_id in deleted_legacy:
                 continue
             origin = entry.get("profileScope")
             mode = entry.get("profileMode")
@@ -349,6 +352,7 @@ class LocalProfileStore:
                 or not isinstance(data.get("profiles"), list)
                 or not isinstance(data.get("nextNumber"), int)
                 or data["nextNumber"] < 1
+                or not isinstance(data.get("deletedLegacyAccountIds", []), list)
             ):
                 raise ValueError("invalid profile file")
             return data
@@ -470,10 +474,15 @@ class LocalProfileStore:
             raise LocalProfileError("ID da conta inválido.")
         with _LOCK:
             data = self._read()
-            remaining = [p for p in data["profiles"] if p["id"] != profile_id]
-            if len(remaining) == len(data["profiles"]):
+            selected = next((p for p in data["profiles"] if p["id"] == profile_id), None)
+            if selected is None:
                 raise LocalProfileError("Conta não encontrada.")
+            remaining = [p for p in data["profiles"] if p["id"] != profile_id]
             self._backup("delete")
+            if selected.get("legacySource") == "accounts.json":
+                deleted = data.setdefault("deletedLegacyAccountIds", [])
+                if selected["accountId"] not in deleted:
+                    deleted.append(selected["accountId"])
             data["profiles"] = remaining
             if data.get("selectedProfileId") == profile_id:
                 data["selectedProfileId"] = None
@@ -660,6 +669,11 @@ class LocalProfileStore:
                    for p in data["profiles"]):
                 raise LocalProfileError("Índice, UUID ou pasta já ocupados.")
             item = original.copy()
+            if item.get("legacySource") == "accounts.json":
+                data["deletedLegacyAccountIds"] = [
+                    value for value in data.get("deletedLegacyAccountIds", [])
+                    if value != item["accountId"]
+                ]
             self._event(item, "profile.restored", "Conta e armazenamento restaurados")
             self._backup("restore")
             data["profiles"].append(item)

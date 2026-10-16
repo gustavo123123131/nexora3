@@ -35,12 +35,12 @@ def delete_account(profile_id: int, *, remove_files: bool = True) -> dict:
             # either the card or any Chromium directory. No backup = no delete.
             from nexora_accounts.account_backups import create_snapshot
             snapshot = create_snapshot(profile_id)
-            if remove_files:
-                if profile.get("legacySource"):
-                    raise LocalProfileError(
-                        "Pasta legada sem posse exclusiva comprovada. "
-                        "Exclua somente o cartão e preserve os arquivos."
-                    )
+            # Imported legacy profiles may share their Chromium directory
+            # with another historical account. Delete the card and retain the
+            # shared folder; the full snapshot above is still available in Backup.
+            # Never turn an explicit delete into a destructive shared-folder wipe.
+            remove_owned_files = bool(remove_files and not profile.get("legacySource"))
+            if remove_owned_files:
                 try:
                     directory = stored_profile_directory(PROFILES_DIR, profile)
                 except ValueError as exc:
@@ -60,5 +60,7 @@ def delete_account(profile_id: int, *, remove_files: bool = True) -> dict:
         raise LocalProfileError(
             "Falha ao preparar o backup ou excluir os arquivos. A conta foi preservada quando o backup falhou."
         ) from exc
-    return {"ok": True, "profileId": profile_id, "filesRemoved": remove_files,
+    return {"ok": True, "profileId": profile_id,
+            "filesRemoved": remove_owned_files,
+            "legacyFilesPreserved": bool(remove_files and profile.get("legacySource")),
             "backupId": snapshot["id"]}
