@@ -92,8 +92,25 @@
           open.disabled = true;
           try {
             await post('/api/local-profiles/open', {id: profile.id});
-            status.textContent = 'Abertura solicitada para ' + (profile.label || 'conta') +
-              '. Aguarde os logs do Chromium para confirmação.';
+            status.textContent = 'Inicializando navegador da ' + (profile.label || 'conta') + '...';
+            let confirmed = false;
+            for (let n = 0; n < 36; n++) {
+              await new Promise(resolve => setTimeout(resolve, 700));
+              const state = await get('/api/local-profiles/open-state?id=' + encodeURIComponent(profile.id));
+              if (state.state === 'ready') {
+                status.textContent = profile.label + ': navegador aberto com o perfil salvo.';
+                confirmed = true;
+                break;
+              }
+              if (state.state === 'error' || state.state === 'closed') {
+                status.textContent = profile.label + ': ' + state.message;
+                confirmed = true;
+                break;
+              }
+            }
+            if (!confirmed) {
+              status.textContent = profile.label + ': abertura ainda não confirmada. Consulte os logs.';
+            }
           } catch (error) {
             status.textContent = 'Não foi possível abrir ' + profile.label + ': ' + error.message;
           } finally {
