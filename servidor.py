@@ -314,6 +314,57 @@ async def proxy_check(body: dict):
     return _proxy_request(lambda: ProxyStore().test_authenticated(body.get('id')))
 
 
+
+# Local Pix key management. Uses existing origin, agent-key and CSRF middleware.
+# No bank lookups, Pix transfers or external calls.
+def _pix_action(operation):
+    from nexora_accounts.pix_key_store import PixKeyError
+    try:
+        return operation()
+    except PixKeyError as exc:
+        message = str(exc)
+        code = 409 if "já está cadastrada" in message else 422
+        raise HTTPException(status_code=code, detail=message) from exc
+
+
+@app.get('/api/pix-keys')
+async def list_pix_keys():
+    from nexora_accounts.pix_key_store import PixKeyStore
+    from starlette.concurrency import run_in_threadpool
+    return await run_in_threadpool(lambda: _pix_action(PixKeyStore().list))
+
+
+@app.post('/api/pix-keys/add')
+async def add_pix_key(body: dict):
+    from nexora_accounts.pix_key_store import PixKeyStore
+    from starlette.concurrency import run_in_threadpool
+    return await run_in_threadpool(
+        lambda: _pix_action(lambda: PixKeyStore().add(
+            body.get("value"), body.get("type")
+        ))
+    )
+
+
+@app.post('/api/pix-keys/update')
+async def update_pix_key(body: dict):
+    from nexora_accounts.pix_key_store import PixKeyStore
+    from starlette.concurrency import run_in_threadpool
+    return await run_in_threadpool(
+        lambda: _pix_action(lambda: PixKeyStore().update(
+            body.get("id"), body.get("value"), body.get("type")
+        ))
+    )
+
+
+@app.post('/api/pix-keys/delete')
+async def delete_pix_key(body: dict):
+    from nexora_accounts.pix_key_store import PixKeyStore
+    from starlette.concurrency import run_in_threadpool
+    return await run_in_threadpool(
+        lambda: _pix_action(lambda: PixKeyStore().delete(body.get("id")))
+    )
+
+
 @app.get('/api/local-profiles')
 async def list_local_profiles():
     from nexora_accounts.local_profiles import LocalProfileStore
