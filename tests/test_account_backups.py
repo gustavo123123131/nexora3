@@ -65,7 +65,7 @@ def test_unreadable_backup_blocks_deletion_and_preserves_profile(storage, monkey
     from nexora_accounts import account_backups
     monkeypatch.setattr(account_backups, "_seal",
                         lambda data: (_ for _ in ()).throw(OSError("disk full")))
-    with pytest.raises(OSError):
+    with pytest.raises(LocalProfileError, match="Falha ao preparar o backup"):
         delete_account(profile["id"])
     assert storage.get(profile["id"])["accountId"] == profile["accountId"]
     assert (path / "cookie").read_text() == "keep"
