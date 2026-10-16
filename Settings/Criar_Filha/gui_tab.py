@@ -1642,9 +1642,19 @@ def run_all(
             profile = session_plan.get("account_profile")
             if not profile:
                 return run_instance(*session_args)
+            from nexora_accounts.local_profiles import LocalProfileStore
             try:
                 with claim_account(profile["origin"], int(profile["id"])):
-                    return run_instance(*session_args)
+                    try:
+                        return run_instance(*session_args)
+                    finally:
+                        # 'ready' is recorded at actual browser startup.
+                        # On returning, mark the session closed, not the site
+                        # registration outcome.
+                        LocalProfileStore().record_session(
+                            int(profile["id"]), "closed",
+                            session_plan.get("run_id", "")
+                        )
             except AccountSessionBusy:
                 log(f"[Contas] {profile['label']} já está aberta; não será reutilizado o mesmo diretório.")
 
@@ -2693,13 +2703,39 @@ class FilhaTab(ctk.CTkFrame):
             )
             if not new_profile:
                 return
+            # Freeze the random Chromium UA/preset BEFORE opening the
+            # browser: an interrupted launch must not regenerate identity.
+            from nexora_accounts.local_profiles import LocalProfileStore
+            try:
+                from Settings.device_modes import stored_profile_directory
+                runtime_snapshot = asdict(make_config(device, None))
+                LocalProfileStore().set_runtime_config(new_profile["id"], runtime_snapshot)
+                stored_profile_directory(PROFILES_DIR, new_profile).mkdir(
+                    parents=True, exist_ok=True
+                )
+            except Exception as exc:
+                LocalProfileStore().update_status(
+                    new_profile["id"], "error",
+                    "Falha ao preparar o dispositivo original."
+                )
+                self._log(f"[Contas] {new_profile['label']}: erro ao preparar perfil ({type(exc).__name__}).")
+                return
             plan["account_profile"] = new_profile
             plan["device_mode"] = device
-            plan["initialize_runtime"] = True
+            plan["initialize_runtime"] = False
             plan["registration_profile"] = new_profile
+            session_id = str(uuid4())
+            plan["run_id"] = session_id
+            plan["browser_id"] = plan["idx"]
+            plan["on_browser_ready"] = (
+                lambda pid=new_profile["id"], run=session_id:
+                    LocalProfileStore().record_session(pid, "ready", run)
+            )
+            LocalProfileStore().record_session(new_profile["id"], "starting", session_id)
             if plan.get("proxy_id"):
                 try:
                     proxy_store.bind_profile(new_profile["id"], plan["proxy_id"])
+                    LocalProfileStore().associate_proxy(new_profile["id"], plan["proxy_id"])
                     self._log(f"[Proxy] {new_profile['label']}: associação persistente salva.")
                 except ProxyError:
                     self._set_status("Falha ao vincular a proxy à conta.")
