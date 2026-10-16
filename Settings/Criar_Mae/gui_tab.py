@@ -589,6 +589,10 @@ def _idle_wait_with_speed(
     last_game_launch_version = game_launch_controller.get().version
     last_verify_phone_version = verify_phone_controller.get_version()
     while not stop_event.is_set():
+        # A closed page must not stay in the idle loop indefinitely.
+        if page.is_closed():
+            log(f"[#{idx}] [Sessão] Página fechada durante espera; encerrando esta instância.")
+            return
         # ---- salvar posição individual por idx (1x por clique) ----
         try:
             v = winpos_controller.get_version()
@@ -1216,6 +1220,12 @@ def run_instance(
                     context.set_extra_http_headers(cfg.extra_headers)
 
                 page = context.pages[0] if context.pages else context.new_page()
+
+                # Lifecycle signals are scoped to this Chromium instance.
+                # Never log full URLs, request bodies, cookies or credentials.
+                page.on("close", lambda *_: log(f"[#{idx}] [Sessão] Evento page.close; stop_solicitado={stop_event.is_set()}."))
+                page.on("crash", lambda *_: log(f"[#{idx}] [Sessão] Evento page.crash."))
+                context.on("close", lambda *_: log(f"[#{idx}] [Sessão] Evento context.close; stop_solicitado={stop_event.is_set()}."))
 
                 browser_exit_ip = ""
                 if session_proxy:
