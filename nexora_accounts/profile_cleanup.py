@@ -31,6 +31,10 @@ def delete_account(profile_id: int, *, remove_files: bool = True) -> dict:
                 from Settings.Criar_Filha.settings.utils import PROFILES_DIR
             else:
                 raise LocalProfileError("Origem da conta inválida.")
+            # Account and browser files are snapshotted BEFORE removing
+            # either the card or any Chromium directory. No backup = no delete.
+            from nexora_accounts.account_backups import create_snapshot
+            snapshot = create_snapshot(profile_id)
             if remove_files:
                 if profile.get("legacySource"):
                     raise LocalProfileError(
@@ -56,4 +60,5 @@ def delete_account(profile_id: int, *, remove_files: bool = True) -> dict:
         raise LocalProfileError(
             "Não foi possível apagar os arquivos do navegador. Feche a sessão e tente novamente."
         ) from exc
-    return {"ok": True, "profileId": profile_id, "filesRemoved": remove_files}
+    return {"ok": True, "profileId": profile_id, "filesRemoved": remove_files,
+            "backupId": snapshot["id"]}
