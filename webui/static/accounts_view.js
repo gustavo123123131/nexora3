@@ -133,7 +133,10 @@
     toolbar.append(allLabel, selectedCount, removeSelected);
     node.append(top, status, toolbar, recovery, list);
 
-    const labels = {pending: 'Pendente', created: 'Criada', error: 'Erro'};
+    const labels = {
+      pending: 'Pendente', created: 'Criada', error: 'Erro',
+      unconfirmed: 'Não confirmado'
+    };
     function textRow(label, value) {
       const row = document.createElement('div');
       row.className = 'account-summary-row';
@@ -169,8 +172,8 @@
         const savedDevice = profile.hasRuntimeConfig === true;
         // Account creation status reflects *only* site registration events.
         // Older records lacking device snapshots are not failed sign-ups.
-        const currentStatus = profile.status === 'created' ||
-          profile.status === 'error' ? profile.status : 'pending';
+        const currentStatus = Object.prototype.hasOwnProperty.call(labels, profile.status)
+          ? profile.status : 'pending';
         const card = document.createElement('article');
         card.className = 'accounts-local-card';
         const head = document.createElement('header');
