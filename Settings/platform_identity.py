@@ -170,6 +170,7 @@ class PlatformIdentityObserver:
         self._request_listening = False
         self._context_request_listening = False
         self._navigation_listening = False
+        self._header_responses_checked = set()
 
     def _log_once(self, key, message):
         if key not in self._diagnosed:
@@ -385,6 +386,7 @@ class PlatformIdentityObserver:
         self._scanned_request_ids.clear()
         self._header_seen_uid = None
         self._header_conflict = False
+        self._header_responses_checked.clear()
 
     def _accept(self, candidate):
         if not isinstance(candidate, (list, tuple)) or len(candidate) != 2:
@@ -452,17 +454,16 @@ class PlatformIdentityObserver:
         return None
 
     def _identity_header(self):
-        """Check audited request UID against independent server-auth proof.
+        """Require an independent provider-specific authenticated identity.
 
-        A server's ordinary 200/err_code:0 isn't ownership proof. Production
-        5gbet has no verified response contract yet, so this deliberately
-        returns None until one is provided. No extra HTTP calls are made.
+        The x-object-id uid from an OUTGOING request is a candidate, not proof
+        of server acceptance. A non-2xx / err_code:41000 response is rejected;
+        a generic HTTP 200 / err_code:0 is still insufficient. No new traffic.
         """
-        if self._clicked_at is None or not self._header_routes or self._header_conflict:
+        if (self._clicked_at is None or not self._header_routes
+            or self._header_conflict or not self._official_site):
             return None
         verifier = getattr(self.contract, "verify_header_identity", None)
-        if not callable(verifier):
-            return None
         for response in self._responses:
             try:
                 request = response.request
@@ -470,13 +471,18 @@ class PlatformIdentityObserver:
                 if detail is None or detail[0] is not request:
                     continue
                 _, uid, seen_at = detail
-                # Registration click can cause a request before click()
-                # returns; keep only the short click-race window, not old
-                # requests from previous logins.
                 if seen_at < self._clicked_at - 3.0:
                     continue
+                response_key = id(response)
+                if response_key in self._header_responses_checked:
+                    continue
                 status = int(response.status)
-                if status < 200 or status >= 300:
+                if not 200 <= status < 300:
+                    self._log_once(
+                        "response-http-error",
+                        "Resposta da API com HTTP não 2xx; cabeçalho não comprova login.",
+                    )
+                    self._header_responses_checked.add(response_key)
                     continue
                 finished = getattr(response, "finished", None)
                 if callable(finished) and finished():
@@ -486,11 +492,33 @@ class PlatformIdentityObserver:
                     "err_code" in body
                     and (type(body["err_code"]) is not int or body["err_code"] != 0)
                 ):
-                    continue  # e.g. err_code 41000: not authenticated.
+                    self._log_once(
+                        "response-api-error",
+                        "Resposta da API contém erro; uid não verificado.",
+                    )
+                    self._header_responses_checked.add(response_key)
+                    continue
+                self._header_responses_checked.add(response_key)
+                if not callable(verifier):
+                    self._log_once(
+                        "missing-verifier",
+                        "ID observado; não salvo: falta contrato independente "
+                        "de autenticação do provedor.",
+                    )
+                    continue
                 if verifier(uid, response, body, dict(self.account)) is not True:
+                    self._log_once(
+                        "unverified-response",
+                        "ID observado; resposta sem prova independente "
+                        "da conta autenticada.",
+                    )
                     continue
                 accepted = self._accept((uid, "5gbet:x-object-id.uid:authenticated"))
                 if accepted:
+                    self._log_once(
+                        "verified",
+                        "ID verificado por fonte independente para a sessão.",
+                    )
                     return accepted
             except Exception:
                 continue
