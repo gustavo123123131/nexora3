@@ -25,6 +25,7 @@ def archive(extra=None):
         "webui/static/app.js": b"// updated\n",
         "webui/static/accounts_view.js": b"// modern accounts cards\n",
         "webui/static/accounts_view.css": b".accounts-local{}\n",
+        "webui/static/backup_view.js": b"// backup tab\n",
         "Settings/registration_autofill.py": b"# approved current registration routine\n",
         "Settings/Criar_Mae/extensao_recaptcha/LICENSE": b"license text\n",
         "Settings/Criar_Mae/extensao_recaptcha/src/font.woff2": b"fontdata",
