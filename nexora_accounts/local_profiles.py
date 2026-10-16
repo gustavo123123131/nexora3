@@ -757,15 +757,19 @@ class LocalProfileStore:
     def save_verified_platform_id(
         self, profile_id: int, account_id: str, run_id: str, *,
         site_origin: str, platform_user_id: str, platform_id_source: str,
+        identity_evidence=None,
     ) -> dict:
-        """Persist an independently validated remote ID after confirmed signup.
+        """Atomically save an authenticated, independently validated remote ID.
 
-        The only caller is the per-session identity observer after its audited
-        site adapter validates the source/ownership. The store repeats all
-        local identity, origin, state and uniqueness checks under the same
-        lock that protects the atomic JSON write.
+        Previously only provider-confirmed registrations were allowed. A
+        'Criada by click' record may now hold an independently verified ID,
+        but ONLY with identity_evidence returned by the account-bound
+        PlatformIdentityObserver and still keeps registrationReviewRequired.
+        The click itself never becomes evidence of provider signup.
         """
-        from Settings.platform_identity import site_origin as normalize_origin
+        from Settings.platform_identity import (
+            VerifiedPlatformIdentity, site_origin as normalize_origin,
+        )
 
         if type(profile_id) is not int or not isinstance(account_id, str) or not account_id:
             raise LocalProfileError("Identidade local inválida.")
@@ -789,14 +793,39 @@ class LocalProfileStore:
                 raise LocalProfileError("O ID local não corresponde à conta.")
             if item.get("lastSessionId") != run_id:
                 raise LocalProfileError("Execução expirada: ID remoto não será salvo.")
-            if (item.get("status") != "created"
-                or item.get("registrationReviewRequired")
-                or not item.get("registrationConfirmedAt")
-                or not item.get("registrationConfirmationSource")):
+            provider_confirmed = (
+                item.get("status") == "created"
+                and not item.get("registrationReviewRequired")
+                and bool(item.get("registrationConfirmedAt"))
+                and bool(item.get("registrationConfirmationSource"))
+            )
+            click_only = (
+                item.get("status") == "created"
+                and bool(item.get("registrationClickedAt"))
+                and item.get("registrationReviewRequired") is True
+                and not item.get("registrationConfirmedAt")
+            )
+            if not provider_confirmed and not click_only:
                 raise LocalProfileError("Cadastro não confirmado por uma fonte verificada.")
+            registered_origin = normalize_origin(item.get("platformOrigin"))
             if (not actual or actual != normalize_origin(item.get("startUrl"))
-                or actual != normalize_origin(item.get("platformOrigin"))):
+                or (registered_origin and actual != registered_origin)):
                 raise LocalProfileError("Origem da plataforma divergente.")
+            if click_only:
+                # An arbitrary string/ID cannot bypass review. Bind the
+                # validated observer result to this exact account and run.
+                if (
+                    not isinstance(identity_evidence, VerifiedPlatformIdentity)
+                    or identity_evidence.user_id != platform_user_id
+                    or identity_evidence.source != platform_id_source
+                    or identity_evidence.profile_id != profile_id
+                    or identity_evidence.account_id != account_id
+                    or identity_evidence.run_id != run_id
+                    or normalize_origin(identity_evidence.platform_origin) != actual
+                ):
+                    raise LocalProfileError(
+                        "Identificação independente não corresponde à sessão."
+                    )
             if platform_user_id in (
                 item.get("username"), account_id, run_id,
                 str(item.get("deviceProfileId") or ""),
@@ -817,6 +846,9 @@ class LocalProfileStore:
             item["platformUserId"] = platform_user_id
             item["platformIdSource"] = platform_id_source
             item["platformIdVerifiedAt"] = self._now()
+            item["platformOrigin"] = actual
+            # Keep the original click-based created status, review flag and
+            # provider confirmation fields EXACTLY as they were.
             self._event(item, "platform-id.verified", "Identidade remota validada")
             self._write(data)
             return item.copy()

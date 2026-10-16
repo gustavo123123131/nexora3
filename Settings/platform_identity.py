@@ -6,7 +6,7 @@ never sends HTTP requests, navigates, clicks, or logs personal values.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import time
 from urllib.parse import urlsplit
 
@@ -33,6 +33,12 @@ def _text(value, limit=128):
 class VerifiedPlatformIdentity:
     user_id: str
     source: str
+    # Filled only by PlatformIdentityObserver after a source-specific adapter
+    # checked the authenticated account. Defaults preserve the old return API.
+    profile_id: int | None = field(default=None, compare=False)
+    account_id: str | None = field(default=None, compare=False)
+    run_id: str | None = field(default=None, compare=False)
+    platform_origin: str | None = field(default=None, compare=False)
 
 
 class PlatformIdentityObserver:
@@ -72,11 +78,22 @@ class PlatformIdentityObserver:
         self._active = False
         self._context_listening = False
 
-    def _on_response(self, response):
+    def _collect_response(self, response, *, page_scoped):
         try:
             if site_origin(response.url) != self.origin:
                 return
-            # Store response handles, never bodies, headers, cookies or tokens.
+            if not page_scoped:
+                # A Chromium context may contain several tabs on the same
+                # origin. For context events require an exact frame->page
+                # match; unframed service workers are ambiguous and ignored.
+                try:
+                    frame = response.request.frame
+                    if frame is None or frame.page is not self.page:
+                        return
+                except Exception:
+                    return
+            # Keep only bounded response handles from the owning page; never
+            # retain payloads, cookies, request headers or token-bearing URLs.
             key = id(response)
             if key not in self._seen and len(self._responses) < 64:
                 self._seen.add(key)
@@ -84,12 +101,19 @@ class PlatformIdentityObserver:
         except Exception:
             pass
 
+    def _on_page_response(self, response):
+        # Playwright page.on('response') is already scoped to this page.
+        self._collect_response(response, page_scoped=True)
+
+    def _on_response(self, response):
+        self._collect_response(response, page_scoped=False)
+
     def start(self):
         if self._active:
             return
         if not self.origin:
             return
-        self.page.on("response", self._on_response)
+        self.page.on("response", self._on_page_response)
         self._active = True
         context = getattr(self.page, "context", None)
         if context is not None and hasattr(context, "on"):
@@ -99,7 +123,7 @@ class PlatformIdentityObserver:
     def close(self):
         if self._active:
             try:
-                self.page.remove_listener("response", self._on_response)
+                self.page.remove_listener("response", self._on_page_response)
             except Exception:
                 pass
             self._active = False
@@ -125,7 +149,13 @@ class PlatformIdentityObserver:
             if self.contract.validate_identity(
                 value, source, dict(self.account)
             ) is True:
-                return VerifiedPlatformIdentity(value, source)
+                return VerifiedPlatformIdentity(
+                    value, source,
+                    profile_id=self.account["profileId"],
+                    account_id=self.account["accountId"],
+                    run_id=self.account["runId"],
+                    platform_origin=self.origin,
+                )
         except Exception:
             pass
         return None
@@ -238,19 +268,26 @@ class PlatformIdentityObserver:
                 continue
         return None
 
-    def identify(self, *, registration_verdict, stop_event=None, wait_seconds=3):
-        """Search verified sources in priority order only after confirmed signup."""
+    def identify(self, *, registration_verdict=None, stop_event=None, wait_seconds=10):
+        """Read independently verified identity after the user's signup click.
+
+        A trusted registration verdict is OPTIONAL: the existing GUI labels
+        accounts Criada immediately after a click. That display status cannot
+        serve as identity proof. A per-origin adapter must validate the actual
+        authenticated identity and ownership from the selected source.
+        """
         if self.contract is None:
-            self.log("[Registro] ID da plataforma: não identificado (contrato não validado).")
-            return None
-        if (getattr(registration_verdict, "status", None) != "created"
-            or not getattr(registration_verdict, "confirmation_source", None)):
+            self.log("[Registro] ID da plataforma: não identificado (contrato de identidade ausente).")
             return None
         if stop_event is not None and stop_event.is_set():
             return None
-        result = self._registration_identity(registration_verdict)
-        if result:
-            return result
+        # Give an independently verified registration response first priority.
+        # Never trust a generic status/uid just because Registrar was clicked.
+        if (getattr(registration_verdict, "status", None) == "created"
+            and getattr(registration_verdict, "confirmation_source", None)):
+            result = self._registration_identity(registration_verdict)
+            if result:
+                return result
         deadline = time.monotonic() + max(0, wait_seconds)
         while True:
             result = self._identity_responses()
