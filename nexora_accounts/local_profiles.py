@@ -645,6 +645,28 @@ class LocalProfileStore:
                 continue
         return list(candidates.values())[:100]
 
+    def restore_full_record(self, original: dict) -> dict:
+        """Restore a deleted account without allocating a different identity."""
+        if not isinstance(original, dict) or type(original.get("id")) is not int:
+            raise LocalProfileError("Registro do backup inválido.")
+        try:
+            identity = str(uuid.UUID(str(original["accountId"])))
+        except (ValueError, TypeError, KeyError) as exc:
+            raise LocalProfileError("UUID do backup inválido.") from exc
+        with _LOCK:
+            data = self._read()
+            if any(p["id"] == original["id"] or p.get("accountId") == identity
+                   or p.get("profilePath") == original.get("profilePath")
+                   for p in data["profiles"]):
+                raise LocalProfileError("Índice, UUID ou pasta já ocupados.")
+            item = original.copy()
+            self._event(item, "profile.restored", "Conta e armazenamento restaurados")
+            self._backup("restore")
+            data["profiles"].append(item)
+            data["nextNumber"] = max(data["nextNumber"], item["id"] + 1)
+            self._write(data)
+            return self.public_view(item, details=True)
+
     def restore_account_from_backup(self, account_id: str) -> dict:
         """Recover metadata only, with exact UUID/index/path from a backup."""
         try:
