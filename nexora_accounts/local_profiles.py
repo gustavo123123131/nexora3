@@ -929,7 +929,9 @@ class LocalProfileStore:
             item["sessionStatus"] = action
             # A browser closed while awaiting the response cannot leave the
             # account permanently claiming that confirmation is in progress.
-            if action in ("closed", "error") and item.get("status") == "confirming":
+            if (action in ("closed", "error")
+                and item.get("status") == "confirming"
+                and item.get("lastSessionId") == run_id):
                 item["status"] = "unconfirmed"
                 item["statusMessage"] = (
                     "Sessão encerrada antes da confirmação do cadastro pelo site."
