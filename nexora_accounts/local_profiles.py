@@ -568,6 +568,79 @@ class LocalProfileStore:
             self._event(item, "proxy.assigned", "Vínculo persistente registrado")
             self._write(data)
 
+    def integrity_report(self):
+        """Read-only inventory; never invent a link for an orphaned folder."""
+        with _LOCK:
+            profiles = self._read()["profiles"]
+        registered = set()
+        missing = []
+        for profile in profiles:
+            raw = profile.get("profilePath")
+            if raw:
+                path = Path(raw).resolve()
+                registered.add(path)
+                if not path.is_dir():
+                    missing.append({
+                        "accountId": profile["accountId"],
+                        "label": profile["label"],
+                        "path": str(path),
+                    })
+        orphan = []
+        roots = [self._base_profile_dir(area) for area in ("mae", "filha")]
+        for root in roots:
+            if not root.is_dir():
+                continue
+            choices = list((root / "accounts").glob("account_*"))
+            choices.extend(root.glob("profile_*"))
+            for mode in ("android", "iphone", "mixed"):
+                choices.extend((root / mode).glob("profile_*"))
+            for path in choices:
+                if path.is_dir() and not path.is_symlink() and path.resolve() not in registered:
+                    orphan.append(str(path.resolve()))
+        return {"missing": missing[:100], "orphanFolders": sorted(set(orphan))[:100],
+                "recoveryNotice": self.recovery_notice}
+
+    def restore_account_from_backup(self, account_id: str) -> dict:
+        """Recover metadata only, with exact UUID/index/path from a backup."""
+        try:
+            account_id = str(uuid.UUID(str(account_id)))
+        except (TypeError, ValueError) as exc:
+            raise LocalProfileError("UUID da conta inválido.") from exc
+        with _LOCK:
+            state = self._read()
+            if any(p.get("accountId") == account_id for p in state["profiles"]):
+                raise LocalProfileError("A conta já está cadastrada.")
+            folder = self.path.parent / "profile-backups"
+            if not folder.is_dir():
+                raise LocalProfileError("Não existem backups disponíveis.")
+            from nexora_accounts import credential_vault
+            snapshots = sorted(
+                (p for p in folder.iterdir() if p.name.startswith(self.path.stem + ".")
+                 and p.name.endswith((".json", ".json.dpapi"))),
+                key=lambda p: p.stat().st_mtime_ns, reverse=True
+            )
+            for backup in snapshots:
+                try:
+                    contents = backup.read_bytes()
+                    if backup.name.endswith(".dpapi"):
+                        contents = credential_vault._crypt(contents, decrypt=True)
+                    snapshot = json.loads(contents.decode("utf-8"))
+                    item = next(p.copy() for p in snapshot["profiles"]
+                                if p.get("accountId") == account_id)
+                except (ValueError, KeyError, StopIteration, OSError, UnicodeError, TypeError):
+                    continue
+                if any(p["id"] == item["id"] for p in state["profiles"]):
+                    raise LocalProfileError("Índice da conta já ocupado; recuperação cancelada.")
+                if any(p.get("profilePath") == item.get("profilePath") for p in state["profiles"]):
+                    raise LocalProfileError("Diretório original já vinculado; recuperação cancelada.")
+                self._backup("before-restore")
+                self._event(item, "profile.restored", "Metadados recuperados de backup")
+                state["profiles"].append(item)
+                state["nextNumber"] = max(state["nextNumber"], item["id"] + 1)
+                self._write(state)
+                return self.public_view(item, details=True)
+            raise LocalProfileError("Conta não localizada nos backups, nenhuma alteração feita.")
+
     def record_session(self, profile_id: int, action: str, run_id: str = ""):
         if action not in ("starting", "ready", "closed", "error"):
             raise LocalProfileError("Evento de sessão inválido.")
