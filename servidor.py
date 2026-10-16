@@ -412,6 +412,16 @@ async def list_account_backups():
     return {"backups": list_snapshots()}
 
 
+@app.get('/api/account-backups/detail')
+async def account_backup_detail(backupId: str):
+    from nexora_accounts.local_profiles import LocalProfileError
+    from nexora_accounts.account_backups import snapshot_detail
+    try:
+        return snapshot_detail(backupId)
+    except LocalProfileError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @app.post('/api/account-backups/restore')
 async def restore_account_backup(body: dict):
     from nexora_accounts.local_profiles import LocalProfileError
