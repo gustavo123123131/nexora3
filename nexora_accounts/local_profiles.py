@@ -174,6 +174,15 @@ class LocalProfileStore:
             if "parentId" not in item:
                 item["parentId"] = None
                 changed = True
+            if "profileIndex" not in item:
+                item["profileIndex"] = item["id"]
+                changed = True
+            if "profileScope" not in item:
+                item["profileScope"] = item["origin"]
+                changed = True
+            if item.get("deviceMode") and "profileMode" not in item:
+                item["profileMode"] = item["deviceMode"]
+                changed = True
             from nexora_accounts import credential_vault
             if credential_vault.is_available() and item.get("password") and not item.get("credentialRef"):
                 # Migrate old local plaintext without changing the password.
@@ -236,7 +245,8 @@ class LocalProfileStore:
             next_number += 1
             item = {
                 "id": display, "label": f"Conta {display}",
-                "accountId": account_id,
+                "profileIndex": index, "profileScope": origin,
+                "profileMode": mode, "accountId": account_id,
                 "deviceProfileId": str(uuid.uuid4()),
                 "deviceProfileIdOrigin": "migration-internal-only",
                 "profilePath": original_path,
@@ -380,6 +390,12 @@ class LocalProfileStore:
         safe["hasRuntimeConfig"] = isinstance(item.get("runtimeConfig"), dict) and bool(
             item["runtimeConfig"].get("user_agent")
         )
+        safe["emulationType"] = (
+            "chromium-" + str(item.get("deviceMode"))
+            if item.get("deviceMode") in ("android", "iphone", "desktop")
+            else "not-configured"
+        )
+        # Internal UUID identifies a browser emulation, not physical hardware.
         for name in ("password", "confirmPassword", "credentialRef"):
             safe.pop(name, None)
         if details and isinstance(safe.get("runtimeConfig"), dict):
@@ -766,6 +782,8 @@ class LocalProfileStore:
             record = {
                 "id": number,
                 "label": f"Conta {number}",
+                "profileIndex": number,
+                "profileScope": origin,
                 "origin": origin,
                 "fullName": full_name,
                 "username": username,
@@ -788,6 +806,7 @@ class LocalProfileStore:
             self._event(record, "profile.created", "Identidade interna reservada")
             if device_mode is not None:
                 record["deviceMode"] = device_mode
+                record["profileMode"] = device_mode
             if start_url is not None:
                 record["startUrl"] = start_url
             if connection_mode is not None:
