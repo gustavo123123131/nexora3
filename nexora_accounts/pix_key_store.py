@@ -74,7 +74,9 @@ def _phone(raw: str) -> str | None:
         return None
     if len(set(normalized[2:])) == 1:
         return None
-    return "+55" + normalized
+    # Local registry uses BR DDD + mobile number (11 digits), without +55.
+    # Accept pasted international forms for backwards compatibility only.
+    return normalized
 
 
 def _email(raw: str) -> str | None:
@@ -185,6 +187,7 @@ class PixKeyStore:
                     or len(data["items"]) > 5000):
                 raise ValueError("shape")
             seen_ids, seen_values = set(), set()
+            migrate_international_phone = False
             for item in data["items"]:
                 if not isinstance(item, dict) or set(item) != {
                     "id", "type", "value", "createdAt", "updatedAt"
@@ -195,8 +198,16 @@ class PixKeyStore:
                 if not isinstance(item["value"], str) or not isinstance(item["type"], str):
                     raise ValueError("value")
                 kind, normalized = normalize_key(item["value"], item["type"])
-                if normalized != item["value"] or kind != item["type"]:
+                if kind != item["type"]:
                     raise ValueError("noncanonical")
+                if normalized != item["value"]:
+                    # Previous Nexora releases stored phone Pix records as
+                    # E.164 (+55DDDXXXXXXXXX). Convert existing entries
+                    # in place, preserving their IDs, timestamps and types.
+                    if kind != "PHONE" or item["value"] != "+55" + normalized:
+                        raise ValueError("noncanonical")
+                    item["value"] = normalized
+                    migrate_international_phone = True
                 if any(not isinstance(item[key], str) or not item[key]
                        for key in ("createdAt", "updatedAt")):
                     raise ValueError("timestamp")
@@ -204,6 +215,10 @@ class PixKeyStore:
                     raise ValueError("duplicate")
                 seen_ids.add(item["id"])
                 seen_values.add(normalized)
+            if migrate_international_phone:
+                # Only after validating EVERY record, atomically persist the
+                # new national format. Any invalid file stays untouched.
+                self._write(data)
             return data
         except (OSError, ValueError, TypeError, KeyError, UnicodeError) as exc:
             raise PixKeyError("Arquivo local de chaves Pix inválido. Preserve-o e faça backup antes de alterar.") from exc
