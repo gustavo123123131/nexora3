@@ -352,6 +352,17 @@ async def open_local_profile(body: dict):
 
 
 
+@app.get('/api/local-profiles/open-state')
+async def open_local_profile_state(id: int):
+    from nexora_accounts.local_profiles import LocalProfileStore, LocalProfileError
+    from nexora_accounts.session_launcher import ACCOUNT_LAUNCHER
+    try:
+        LocalProfileStore().get(id)
+    except LocalProfileError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return ACCOUNT_LAUNCHER.state(id)
+
+
 @app.post('/api/local-profiles/delete')
 async def delete_local_profile(body: dict):
     from nexora_accounts.local_profiles import LocalProfileError
