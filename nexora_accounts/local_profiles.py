@@ -101,11 +101,13 @@ class LocalProfileStore:
     def __init__(self, path: str | Path | None = None):
         self.path = Path(path) if path is not None else _default_path()
         with _LOCK:
-            if self.path.exists():
-                data = self._read()
-                if self._upgrade(data):
+            data = self._read()
+            changed = self._upgrade(data)
+            changed = self._import_legacy_registry(data) or changed
+            if changed:
+                if self.path.exists():
                     self._backup("migration")
-                    self._write(data)
+                self._write(data)
 
     @staticmethod
     def _now() -> str:
@@ -163,6 +165,80 @@ class LocalProfileStore:
                 item["parentId"] = None
                 changed = True
         return changed
+
+    def _import_legacy_registry(self, data: dict) -> bool:
+        """Read-only import from main-branch accounts.json.
+
+        The source JSON and old browser folders are never modified. Profiles
+        without a verified device runtime remain visible but cannot be reopened
+        until their original configuration is recovered.
+        """
+        source = self.path.with_name("accounts.json")
+        if not source.is_file():
+            return False
+        try:
+            legacy = json.loads(source.read_text(encoding="utf-8"))
+            if legacy.get("version") != 1 or not isinstance(legacy.get("accounts"), list):
+                raise ValueError("legacy format")
+        except (OSError, ValueError, AttributeError) as exc:
+            raise LocalProfileError(
+                "accounts.json legado não pôde ser lido; arquivo original preservado."
+            ) from exc
+        existing = {p.get("accountId") for p in data["profiles"]}
+        seen_numbers = {p["id"] for p in data["profiles"]}
+        next_number = max(data["nextNumber"], max(seen_numbers, default=0) + 1)
+        modified = False
+        from Settings.device_modes import profile_directory
+        for entry in legacy["accounts"]:
+            if not isinstance(entry, dict):
+                continue
+            account_id = entry.get("id")
+            try:
+                account_id = str(uuid.UUID(str(account_id)))
+            except (ValueError, TypeError, AttributeError):
+                # Do not replace a bad original ID by a newly invented UUID.
+                continue
+            if account_id in existing:
+                continue
+            origin = entry.get("profileScope")
+            mode = entry.get("profileMode")
+            index = entry.get("profileIndex")
+            if origin not in ("mae", "filha") or mode not in ("android","iphone","desktop","mixed"):
+                continue
+            if type(index) is not int or index < 1:
+                continue
+            try:
+                original_path = str(profile_directory(
+                    self._base_profile_dir(origin), mode, index
+                ).resolve())
+            except (ValueError, OSError):
+                continue
+            display = next_number
+            next_number += 1
+            item = {
+                "id": display, "label": f"Conta {display}",
+                "accountId": account_id,
+                "deviceProfileId": str(uuid.uuid4()),
+                "deviceProfileIdOrigin": "migration-internal-only",
+                "profilePath": original_path,
+                "origin": origin, "deviceMode": mode,
+                "originalProfileIndex": index,
+                "username": entry.get("loginIdentifier") or "",
+                "email": "", "fullName": "",
+                "createdAt": entry.get("createdAt") or self._now(),
+                "status": "pending",
+                "statusMessage": "Conta importada; confirmação e dispositivo originais não verificados.",
+                "history": [], "lastOpenedAt": None, "parentId": entry.get("parentId"),
+                "legacySource": "accounts.json",
+                "sessionStatus": "closed",
+            }
+            self._event(item, "profile.imported", "Origem legada preservada")
+            data["profiles"].append(item)
+            existing.add(account_id)
+            modified = True
+        if modified:
+            data["nextNumber"] = next_number
+        return modified
 
     def _backup(self, purpose="backup") -> None:
         """Copy intact JSON before any migration/deletion, with 5 rotations."""
@@ -452,7 +528,10 @@ class LocalProfileStore:
             raise LocalProfileError("Tipo de conexão inválido.")
         with _LOCK:
             data = self._read()
-            number = data["nextNumber"]
+            data["schemaVersion"] = 2
+            # IDs are display indexes and may not collide with imported rows.
+            occupied = {p["id"] for p in data["profiles"]}
+            number = max(data["nextNumber"], max(occupied, default=0) + 1)
             first = secrets.choice(_FIRST_NAMES)
             surname = secrets.choice(_LAST_NAMES)
             parts = [first]
