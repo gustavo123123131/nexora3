@@ -91,3 +91,55 @@ def test_delete_card_only_preserves_its_browser_files(store, tmp_path):
     assert store.list() == []
     backups = list((store.path.parent / "profile-backups").glob("*.json"))
     assert backups, "Metadata backup must exist before account removal"
+
+
+@pytest.mark.parametrize("batch", [False, True])
+def test_deletion_backup_does_not_block_agent_health(store, monkeypatch, batch):
+    """A slow Chromium backup cannot freeze unrelated requests to the agent."""
+    import asyncio
+    import threading
+    import time
+    import httpx
+    from nexora_accounts import profile_cleanup
+
+    item = store.create("mae", device_mode="android")
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_deletion(profile_id, *, remove_files=True):
+        assert profile_id == item["id"]
+        started.set()
+        release.wait(timeout=2.0)
+        return {"ok": True, "profileId": profile_id,
+                "filesRemoved": remove_files, "backupId": "test-snapshot"}
+
+    monkeypatch.setattr(profile_cleanup, "delete_account", slow_deletion)
+
+    async def check():
+        transport = httpx.ASGITransport(app=servidor.app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://testserver"
+        ) as client:
+            headers = {"X-LixoCPA-CSRF": servidor._CSRF_TOKEN}
+            url = "/api/local-profiles/delete-batch" if batch else "/api/local-profiles/delete"
+            data = ({"ids": [item["id"]], "confirmed": True} if batch else
+                    {"id": item["id"], "confirmed": True, "removeFiles": True})
+            start = time.monotonic()
+            task = asyncio.create_task(client.post(url, json=data, headers=headers))
+            try:
+                assert await asyncio.to_thread(started.wait, 1.0)
+                health = await asyncio.wait_for(client.get("/api/health"), timeout=0.75)
+                assert health.status_code == 200
+                # Without offloading the backup, the event loop freezes until
+                # the slow operation's timeout expires (~2 seconds).
+                assert time.monotonic() - start < 1.5
+            finally:
+                release.set()
+            response = await asyncio.wait_for(task, timeout=2)
+            assert response.status_code == 200
+            if batch:
+                assert response.json()["deleted"][0]["profileId"] == item["id"]
+            else:
+                assert response.json()["profileId"] == item["id"]
+
+    asyncio.run(check())

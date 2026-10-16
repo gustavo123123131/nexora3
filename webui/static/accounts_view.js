@@ -75,6 +75,10 @@
     const list = document.createElement('div');
     list.className = 'accounts-local-grid';
     const selection = new Set();
+    // Hide confirmed deletions immediately while the agent safely backs up
+    // Chromium files. Restore the cards if the server refuses the deletion.
+    const deleting = new Set();
+    let latestProfiles = [];
     const toolbar = document.createElement('div');
     toolbar.className = 'accounts-selection';
     const allLabel = document.createElement('label');
@@ -108,11 +112,14 @@
       updateSelection();
     });
     removeSelected.addEventListener('click', async () => {
-      const ids = [...selection];
+      const ids = [...selection].filter(id => !deleting.has(id));
       if (!ids.length) return;
       if (!window.confirm('Excluir ' + ids.length +
           ' conta(s) selecionada(s)? Um backup completo será criado automaticamente para cada uma.')) return;
-      removeSelected.disabled = true;
+      for (const id of ids) deleting.add(id);
+      status.textContent = 'Excluindo ' + ids.length +
+        ' conta(s): criando backups completos antes de remover os arquivos. Aguarde.';
+      render(latestProfiles);
       try {
         const result = await post('/api/local-profiles/delete-batch', {
           ids, confirmed: true
@@ -120,11 +127,15 @@
         const removed = result.deleted || [];
         const errors = result.errors || [];
         for (const item of removed) selection.delete(item.profileId);
+        for (const id of ids) deleting.delete(id);
+        await refresh();
         status.textContent = removed.length + ' conta(s) excluída(s) com backup. ' +
           (errors.length ? errors.length + ' não excluída(s): ' +
             errors.map(x => 'Conta ' + x.id + ' (' + x.reason + ')').join('; ') : '');
-        await refresh();
       } catch (error) {
+        for (const id of ids) deleting.delete(id);
+        render(latestProfiles);
+        await refresh();
         status.textContent = 'Falha na exclusão em lote: ' + error.message;
       } finally {
         updateSelection();
@@ -156,19 +167,21 @@
       return modes[profile.deviceMode] || 'Não registrado';
     }
     function render(profiles) {
+      latestProfiles = profiles;
+      const visible = profiles.filter(p => !deleting.has(p.id));
       selectable.clear();
-      for (const p of profiles) selectable.add(p.id);
+      for (const p of visible) selectable.add(p.id);
       updateSelection();
       list.replaceChildren();
-      count.textContent = profiles.length + (profiles.length === 1 ? ' conta' : ' contas');
-      if (!profiles.length) {
+      count.textContent = visible.length + (visible.length === 1 ? ' conta' : ' contas');
+      if (!visible.length) {
         const empty = document.createElement('p');
         empty.className = 'accounts-empty';
         empty.textContent = 'Nenhuma conta criada ainda. Use Abrir Navegadores para criar uma.';
         list.append(empty);
         return;
       }
-      for (const profile of profiles) {
+      for (const profile of visible) {
         const savedDevice = profile.hasRuntimeConfig === true;
         // Account creation status reflects *only* site registration events.
         // Older records lacking device snapshots are not failed sign-ups.
@@ -257,19 +270,27 @@
           const accountName = profile.label || 'esta conta';
           if (!window.confirm('Excluir ' + accountName +
               '? Um backup completo dos dados e cookies disponíveis será salvo na aba Backup.')) return;
-          open.disabled = true;
-          remove.disabled = true;
+          deleting.add(profile.id);
+          selection.delete(profile.id);
+          status.textContent = accountName +
+            ': exclusão em andamento. Criando backup completo antes de apagar os arquivos.';
+          render(latestProfiles);
           try {
-            await post('/api/local-profiles/delete', {
+            const result = await post('/api/local-profiles/delete', {
               id: profile.id, confirmed: true, removeFiles: true
             });
-            selection.delete(profile.id);
-            status.textContent = accountName + ' excluída, com backup disponível na aba Backup.';
+            if (result.ok !== true || result.profileId !== profile.id) {
+              throw new Error('O agente não confirmou a exclusão.');
+            }
+            deleting.delete(profile.id);
             await refresh();
+            status.textContent = accountName + ' excluída, com backup disponível na aba Backup.';
           } catch (error) {
-            status.textContent = 'Não foi possível excluir ' + accountName + ': ' + error.message;
-            remove.disabled = false;
-            open.disabled = !savedDevice;
+            deleting.delete(profile.id);
+            render(latestProfiles);
+            await refresh();
+            status.textContent = 'Não foi possível excluir ' + accountName +
+              ': ' + error.message + '. O cartão foi restaurado.';
           }
         });
         const view = document.createElement('button');

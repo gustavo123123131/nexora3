@@ -444,10 +444,13 @@ async def delete_selected_accounts(body: dict):
         raise HTTPException(status_code=422, detail="Selecione e confirme de 1 a 200 contas.")
     if any(type(value) is not int or value < 1 for value in ids) or len(set(ids)) != len(ids):
         raise HTTPException(status_code=422, detail="IDs de contas inválidos ou repetidos.")
+    from starlette.concurrency import run_in_threadpool
     deleted, errors = [], []
     for profile_id in ids:
         try:
-            result = delete_account(profile_id)
+            # Preserve per-account ordering and backups, but do not freeze
+            # other agent requests while a large Chromium profile is copied.
+            result = await run_in_threadpool(delete_account, profile_id)
             deleted.append(result)
         except (LocalProfileError, AccountSessionBusy) as exc:
             errors.append({"id": profile_id, "reason": str(exc)})
@@ -467,7 +470,12 @@ async def delete_local_profile(body: dict):
         remove_files = body.get('removeFiles', True)
         if type(remove_files) is not bool:
             raise LocalProfileError("Opção de exclusão inválida.")
-        return delete_account(body.get('id'), remove_files=remove_files)
+        # Full Chromium/DPAPI backup can take seconds or minutes. Never
+        # block the FastAPI event loop while files are copied/deleted.
+        from starlette.concurrency import run_in_threadpool
+        return await run_in_threadpool(
+            delete_account, body.get('id'), remove_files=remove_files
+        )
     except AccountSessionBusy as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except LocalProfileError as exc:
