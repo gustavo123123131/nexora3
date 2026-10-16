@@ -1,7 +1,7 @@
 /* Restore deleted accounts on the LOCAL Windows agent. Never load cookie data into DOM. */
 'use strict';
 (function () {
-  function create({get, post}) {
+  function create({get, post, onRestore = null}) {
     const node = document.createElement('section');
     node.className = 'accounts-local backup-local';
     const heading = document.createElement('header');
@@ -113,6 +113,7 @@
               });
               message.textContent = saved.label + ' restaurada como Conta ' + answer.profileId + '.';
               await refresh();
+              if (onRestore) await onRestore();
             } catch (error) {
               message.textContent = 'Não foi possível restaurar ' + saved.label + ': ' + error.message;
               open.disabled = false;
