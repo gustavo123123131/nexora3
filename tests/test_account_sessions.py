@@ -295,3 +295,82 @@ def test_account_with_managed_proxy_without_original_binding_is_blocked(isolated
             break
         time.sleep(0.01)
     assert any("vínculo da proxy original ausente" in msg for msg in messages)
+
+
+def test_open_state_is_confirmed_by_chromium_callback(isolated_profiles, monkeypatch):
+    from dataclasses import asdict
+    from Settings.Criar_Mae.settings.browser import ModeConfig
+    profile = isolated_profiles.create(
+        "mae", device_mode="android", start_url="https://example.org",
+        connection_mode="direct",
+    )
+    isolated_profiles.set_runtime_config(profile["id"], asdict(ModeConfig(
+        "android", "Android Browser User Agent", {"width": 412, "height": 915},
+        2.5, True, True, "Qualcomm", "Adreno", {},
+    )))
+    from nexora_accounts.session_launcher import AccountLauncher
+    initialized = threading.Event()
+    release = threading.Event()
+    messages = []
+
+    class Tab:
+        headless_var = SimpleNamespace(get=lambda: False)
+        winpos_controller = speed_controller = mirror = object()
+        verify_phone_controller = withdraw_controller = game_launch_controller = object()
+        instance_target_controller = object()
+        def after(self, _delay, callback):
+            callback()
+        def _log(self, message):
+            messages.append(message)
+
+    def simulate_browser(**kwargs):
+        plan = kwargs["instance_plans"][0]
+        assert plan["account_profile"]["id"] == profile["id"]
+        # The launcher has no reason to claim success before this callback.
+        plan["on_browser_ready"]()
+        initialized.set()
+        release.wait(timeout=2)
+
+    monkeypatch.setattr(AccountLauncher, "_controller",
+                        staticmethod(lambda gui, origin: (SimpleNamespace(run_all=simulate_browser), Tab())))
+    launcher = AccountLauncher()
+    assert launcher.state(profile["id"])["state"] == "idle"
+    launcher.launch(None, profile["id"])
+    assert initialized.wait(2)
+    assert launcher.state(profile["id"])["state"] == "ready"
+    release.set()
+
+
+def test_open_state_reports_real_failure_when_chromium_did_not_start(isolated_profiles, monkeypatch):
+    from dataclasses import asdict
+    from Settings.Criar_Mae.settings.browser import ModeConfig
+    from nexora_accounts.session_launcher import AccountLauncher
+    profile = isolated_profiles.create("mae", device_mode="android", connection_mode="direct")
+    isolated_profiles.set_runtime_config(profile["id"], asdict(ModeConfig(
+        "android", "Android Browser User Agent", {"width": 412, "height": 915},
+        2.5, True, True, "Qualcomm", "Adreno", {},
+    )))
+    completed = threading.Event()
+    class Tab:
+        headless_var = SimpleNamespace(get=lambda: False)
+        winpos_controller = speed_controller = mirror = object()
+        verify_phone_controller = withdraw_controller = game_launch_controller = object()
+        instance_target_controller = object()
+        def after(self, _delay, callback):
+            callback()
+        def _log(self, message):
+            pass
+    def simulate_failure(**kwargs):
+        completed.set()
+        raise RuntimeError("simulated browser failure")
+    monkeypatch.setattr(AccountLauncher, "_controller",
+                        staticmethod(lambda gui, origin: (SimpleNamespace(run_all=simulate_failure), Tab())))
+    launcher = AccountLauncher()
+    launcher.launch(None, profile["id"])
+    assert completed.wait(2)
+    import time
+    for _ in range(40):
+        if launcher.state(profile["id"])["state"] == "error":
+            break
+        time.sleep(.01)
+    assert launcher.state(profile["id"])["state"] == "error"
