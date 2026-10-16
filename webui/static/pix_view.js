@@ -54,7 +54,7 @@
   // older E.164 records. Keep the UI consistent without changing their IDs.
   function displayKey(item) {
     const value = String(item.value || '');
-    return item.type === 'PHONE' && /^\\+55\\d{11}$/.test(value)
+    return item.type === 'PHONE' && /^\+55\d{11}$/.test(value)
       ? value.slice(3) : value;
   }
 
