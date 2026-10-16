@@ -1416,21 +1416,34 @@ def run_instance(
                         profile = (instance_plan or {}).get("registration_profile")
                         if profile:
                             from Settings.registration_autofill import fill_registration_form
+                            from Settings.registration_outcome import RegistrationOutcomeObserver
+                            from nexora_accounts.local_profiles import LocalProfileStore
                             log(f"[#{idx}] [Registro] Preparando {profile['label']}.")
-                            clicked = fill_registration_form(page, profile, log, stop_event)
-                            if not clicked and not stop_event.is_set():
-                                from nexora_accounts.local_profiles import LocalProfileStore
-                                LocalProfileStore().update_status(
-                                    int(profile["id"]), "error",
-                                    "Falha ao preencher ou enviar o formulário.",
-                                )
-                                log(f"[#{idx}] [Registro] {profile['label']}: status Erro.")
-                            elif clicked:
-                                log(
-                                    f"[#{idx}] [Registro] {profile['label']}: "
-                                    "status Pendente — clique enviado, "
-                                    "aguardando confirmação comprovada pelo site."
-                                )
+                            observer = RegistrationOutcomeObserver(
+                                page, log, int(profile["id"])
+                            )
+                            observer.start()
+                            try:
+                                clicked = fill_registration_form(page, profile, log, stop_event)
+                                if clicked:
+                                    result_status, reason = observer.finish(stop_event)
+                                else:
+                                    observer.close()
+                                    result_status, reason = (
+                                        ("pending", "Envio interrompido; resultado não confirmado.")
+                                        if stop_event.is_set() else
+                                        ("error", "Formulário ou clique falhou; envio não concluído.")
+                                    )
+                            finally:
+                                observer.close()
+                            LocalProfileStore().update_status(
+                                int(profile["id"]), result_status, reason,
+                            )
+                            log(
+                                f"[#{idx}] [Registro] {profile['label']}: "
+                                f"status { {'created':'Criada','error':'Erro','pending':'Pendente'}[result_status] }. "
+                                f"Motivo: {reason}"
+                            )
                         else:
                             log(f"[#{idx}] Navegador pronto; nenhum perfil designado a esta janela.")
 
