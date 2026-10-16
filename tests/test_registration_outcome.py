@@ -93,3 +93,24 @@ def test_observer_rejection_keeps_cause_safe():
     status, reason = watcher.finish(threading.Event(), wait_seconds=1)
     assert status == "error"
     assert "not-for-logs" not in reason
+
+
+def test_other_registration_endpoint_is_logged_but_not_assumed_successful():
+    page = FakePage()
+    events = []
+    watcher = RegistrationOutcomeObserver(page, events.append, 23)
+    watcher.start()
+    page.responses = [
+        FakeResponse("https://a.test/other/register-submit?token=keep-private",
+                     {"success": True}),
+    ]
+    status, reason = watcher.finish(threading.Event(), wait_seconds=0.02)
+    assert status == "unconfirmed"
+    assert "rota" in reason
+    assert any("/other/register-submit" in msg for msg in events)
+    assert all("keep-private" not in msg for msg in events)
+
+
+def test_explicit_nested_success_marks_created_but_http_200_alone_does_not():
+    assert classify_registration_reply(200, {"data": {"success": True}})[0] == "created"
+    assert classify_registration_reply(200, {"code": 0, "data": {"id": "user42"}})[0] == "unconfirmed"
