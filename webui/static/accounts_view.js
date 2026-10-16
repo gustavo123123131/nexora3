@@ -253,6 +253,7 @@
         detail.append(
           textRow('Username', profile.username),
           textRow('E-mail', profile.email),
+          textRow('ID da plataforma', profile.platformUserId || 'Não identificado'),
           textRow('Tipo', profile.origin === 'mae' ? 'Mãe' : 'Filha'),
           textRow('Telefone', profile.phone),
           textRow('Dispositivo', deviceName(profile)),
@@ -353,6 +354,8 @@
               textRow('Nome', stored.fullName),
               textRow('Status do cadastro', labels[stored.status] || 'Não confirmada'),
               textRow('ID da plataforma', stored.platformUserId || 'Não identificado'),
+              textRow('Origem do ID remoto', stored.platformIdSource || 'Não comprovada'),
+              textRow('ID verificado em', stored.platformIdVerifiedAt || 'Não verificado'),
               textRow('Fonte da confirmação',
                 stored.registrationReviewRequired
                   ? 'Confirmação antiga — revisão necessária'
