@@ -318,7 +318,7 @@ async def proxy_check(body: dict):
 async def list_local_profiles():
     from nexora_accounts.local_profiles import LocalProfileStore
     store = LocalProfileStore()
-    return {'profiles': store.list(), 'selectedProfileId': store.selected_id()}
+    return {'profiles': store.public_list(), 'selectedProfileId': store.selected_id()}
 
 
 @app.post('/api/local-profiles/select')
@@ -329,6 +329,15 @@ async def select_local_profile(body: dict):
         return {'selectedProfileId': selected_id}
     except LocalProfileError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get('/api/local-profiles/detail')
+async def local_profile_details(id: int):
+    from nexora_accounts.local_profiles import LocalProfileStore, LocalProfileError
+    try:
+        return LocalProfileStore().public_detail(id)
+    except LocalProfileError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.post('/api/local-profiles/open')
@@ -363,6 +372,17 @@ async def open_local_profile_state(id: int):
     return ACCOUNT_LAUNCHER.state(id)
 
 
+@app.post('/api/local-profiles/close')
+async def close_local_profile(body: dict):
+    from nexora_accounts.local_profiles import LocalProfileStore, LocalProfileError
+    from nexora_accounts.session_launcher import ACCOUNT_LAUNCHER
+    try:
+        LocalProfileStore().get(body.get('id'))
+        return ACCOUNT_LAUNCHER.close(body.get('id'))
+    except LocalProfileError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @app.post('/api/local-profiles/delete')
 async def delete_local_profile(body: dict):
     from nexora_accounts.local_profiles import LocalProfileError
@@ -371,7 +391,10 @@ async def delete_local_profile(body: dict):
     if body.get('confirmed') is not True:
         raise HTTPException(status_code=422, detail="Confirme a exclusão da conta.")
     try:
-        return delete_account(body.get('id'))
+        remove_files = body.get('removeFiles', True)
+        if type(remove_files) is not bool:
+            raise LocalProfileError("Opção de exclusão inválida.")
+        return delete_account(body.get('id'), remove_files=remove_files)
     except AccountSessionBusy as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except LocalProfileError as exc:
