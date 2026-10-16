@@ -320,6 +320,9 @@ class LocalProfileStore:
     def public_view(item: dict, *, details=False) -> dict:
         """No secrets are serialized through the public panel API."""
         safe = item.copy()
+        safe["hasRuntimeConfig"] = isinstance(item.get("runtimeConfig"), dict) and bool(
+            item["runtimeConfig"].get("user_agent")
+        )
         for name in ("password", "confirmPassword", "credentialRef"):
             safe.pop(name, None)
         if not details:
