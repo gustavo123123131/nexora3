@@ -111,6 +111,13 @@ class ProxyStore:
             data = json.loads(self.path.read_text(encoding="utf-8"))
             if not isinstance(data, dict) or not isinstance(data.get("items"), list):
                 raise ValueError("bad shape")
+            from nexora_accounts import credential_vault
+            if credential_vault.is_available():
+                for item in data["items"]:
+                    if item.get("passwordRef"):
+                        item["password"] = credential_vault.read_secret(
+                            self.path, item["passwordRef"]
+                        )
             return data
         except (ValueError, OSError) as exc:
             raise ProxyError("Arquivo local de proxies inválido. Faça backup antes de alterar.") from exc
@@ -121,6 +128,20 @@ class ProxyStore:
             self.path.parent.chmod(0o700)
         except OSError:
             pass
+        from nexora_accounts import credential_vault
+        persisted = state
+        if credential_vault.is_available():
+            # Keep decrypted credentials in memory for existing operations.
+            # The JSON written to disk contains only DPAPI references.
+            persisted = json.loads(json.dumps(state))
+            for entry in persisted["items"]:
+                password = entry.pop("password", "")
+                if password:
+                    entry["passwordRef"] = credential_vault.write_secret(
+                        self.path, entry["id"], password
+                    )
+                else:
+                    entry.pop("passwordRef", None)
         temp_name = None
         try:
             with tempfile.NamedTemporaryFile(
@@ -128,7 +149,7 @@ class ProxyStore:
                 prefix=".proxies-", suffix=".tmp", delete=False,
             ) as tmp:
                 temp_name = tmp.name
-                json.dump(state, tmp, ensure_ascii=False, indent=2)
+                json.dump(persisted, tmp, ensure_ascii=False, indent=2)
             os.chmod(temp_name, 0o600)
             os.replace(temp_name, self.path)
             try:
