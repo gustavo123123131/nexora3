@@ -49,7 +49,7 @@ def test_nexora_visual_and_existing_controls(tmp_path):
             try:
                 page = browser.new_page(viewport={"width": 1440, "height": 900})
                 page.goto(URL, wait_until="domcontentloaded")
-                expect(page.locator(".tab-bar button")).to_have_count(5, timeout=15000)
+                expect(page.locator(".tab-bar button")).to_have_count(6, timeout=15000)
                 expect(page.locator(".brand-wordmark")).to_have_text("NEXORA")
                 expect(page.locator(".tab-bar button.active")).to_have_text("Mãe")
                 expect(page.get_by_role("button", name="Abrir Navegadores")).to_be_visible()
@@ -150,6 +150,35 @@ def test_nexora_visual_and_existing_controls(tmp_path):
                 assert "segredo-nao-exibir" not in page.locator(".proxy-simple-row").inner_text()
                 page.get_by_role("button", name="Excluir").click()
                 expect(page.locator(".proxy-simple-empty")).to_be_visible()
+
+                # New Pix tab uses this actual local FastAPI server and
+                # a temporary on-disk registry: add, reload, edit and delete.
+                page.get_by_role("button", name="Chave Pix").click()
+                expect(page.get_by_role("heading", name="Gerenciamento de Chaves Pix")).to_be_visible()
+                page.get_by_role("button", name="Adicionar Chave Pix").click()
+                pix_input = page.get_by_role("textbox", name="Chave Pix")
+                pix_input.fill("CONTATO@EXEMPLO.COM")
+                expect(page.locator(".pix-recognition")).to_have_text("Tipo identificado: E-mail")
+                page.get_by_role("button", name="Salvar", exact=True).click()
+                expect(page.locator(".pix-simple-row")).to_have_count(1)
+                expect(page.locator(".pix-simple-row")).to_contain_text("contato@exemplo.com")
+                page.reload()
+                expect(page.get_by_role("button", name="Chave Pix")).to_be_visible()
+                page.get_by_role("button", name="Chave Pix").click()
+                expect(page.locator(".pix-simple-row")).to_contain_text("contato@exemplo.com")
+                page.get_by_role("button", name="Editar").click()
+                page.get_by_role("textbox", name="Chave Pix").fill("novo@exemplo.org")
+                page.get_by_role("button", name="Salvar alteração").click()
+                expect(page.locator(".pix-simple-row")).to_contain_text("novo@exemplo.org")
+                for width in (960, 760, 420):
+                    page.set_viewport_size({"width": width, "height": 900})
+                    expect(page.locator(".pix-simple-row")).to_be_visible()
+                    overflow = page.evaluate("document.documentElement.scrollWidth - innerWidth")
+                    assert overflow <= 2, f"Pix horizontal overflow at {width}px: {overflow}"
+                page.screenshot(path=str(screenshot_dir / "nexora-pix-mobile.png"), full_page=True)
+                page.locator(".pix-remove").click()
+                expect(page.locator(".pix-simple-empty")).to_be_visible()
+                page.set_viewport_size({"width": 1440, "height": 900})
 
                 # Contas tab is preserved and renders minimal cards.
                 page.get_by_role("button", name="Contas", exact=True).click()
