@@ -173,7 +173,7 @@ def test_no_contract_no_id_and_no_storage_read():
         watcher.close()
 
 
-def test_unconfirmed_signup_never_extracts_identity():
+def test_independent_identity_may_be_validated_without_registration_verdict():
     page = Page()
     contract = Contract()
     contract.identity_storage_fields = (
@@ -182,12 +182,17 @@ def test_unconfirmed_signup_never_extracts_identity():
     page.storage_result = "000079"
     watcher = new(page, account(79, "user79", "run-79"), contract)
     try:
-        assert watcher.identify(
+        identity = watcher.identify(
             registration_verdict=SimpleNamespace(
                 status="unconfirmed", confirmation_source=None
             ), wait_seconds=0
-        ) is None
-        assert page.storage_calls == 0
+        )
+        assert identity == VerifiedPlatformIdentity("000079", "synthetic-storage")
+        assert identity.profile_id == 79
+        assert identity.account_id == "local-79"
+        assert identity.run_id == "run-79"
+        assert identity.platform_origin == "https://platform.example.test"
+        assert page.storage_calls == 1
     finally:
         watcher.close()
 
