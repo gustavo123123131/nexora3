@@ -50,6 +50,72 @@ def _unseal(payload, *, protected):
     return credential_vault._crypt(payload, decrypt=True) if protected else payload
 
 
+_CHUNK_SIZE = 1024 * 1024
+
+
+def _copy_into_backup(source, target, *, protected):
+    """Stream all browser data without loading large Chromium caches in RAM."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    digest = hashlib.sha256()
+    with source.open("rb") as src, target.open("wb") as dest:
+        while True:
+            block = src.read(_CHUNK_SIZE)
+            if not block:
+                break
+            digest.update(block)
+            if protected:
+                sealed = _seal(block)
+                dest.write(len(sealed).to_bytes(4, "big"))
+                dest.write(sealed)
+            else:
+                dest.write(block)
+        dest.flush()
+        os.fsync(dest.fileno())
+    try:
+        target.chmod(0o600)
+    except OSError:
+        pass
+    return digest.hexdigest()
+
+
+def _restore_browser_file(stored, destination, *, protected, format_version, expected):
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    digest = hashlib.sha256()
+    with stored.open("rb") as source, destination.open("wb") as target:
+        if protected and format_version >= 2:
+            while True:
+                frame = source.read(4)
+                if not frame:
+                    break
+                if len(frame) != 4:
+                    raise LocalProfileError("Backup criptografado truncado.")
+                amount = int.from_bytes(frame, "big")
+                if amount < 1 or amount > _CHUNK_SIZE + 100_000:
+                    raise LocalProfileError("Tamanho de bloco do backup inválido.")
+                ciphertext = source.read(amount)
+                if len(ciphertext) != amount:
+                    raise LocalProfileError("Bloco protegido do backup incompleto.")
+                chunk = _unseal(ciphertext, protected=True)
+                digest.update(chunk)
+                target.write(chunk)
+        elif protected:
+            # Backwards compatibility with v1 backups sealed as a whole file.
+            chunk = _unseal(source.read(), protected=True)
+            digest.update(chunk)
+            target.write(chunk)
+        else:
+            while True:
+                chunk = source.read(_CHUNK_SIZE)
+                if not chunk:
+                    break
+                digest.update(chunk)
+                target.write(chunk)
+        target.flush()
+        os.fsync(target.fileno())
+    if digest.hexdigest() != expected:
+        raise LocalProfileError("Arquivo do backup não passou na verificação de integridade.")
+
+
 def _read_manifest(snapshot):
     meta = json.loads((snapshot / "index.json").read_text(encoding="utf-8"))
     payload = (snapshot / "payload.bin").read_bytes()
@@ -105,9 +171,10 @@ def create_snapshot(profile_id, *, store=None):
                         raise LocalProfileError("Arquivo especial no perfil; backup interrompido.")
                     relative = source.relative_to(original).as_posix()
                     safe = _safe_relative(relative)
-                    data = source.read_bytes()
-                    digest = hashlib.sha256(data).hexdigest()
-                    _private_write(staging / "browser" / (str(safe) + ".dat"), _seal(data))
+                    digest = _copy_into_backup(
+                        source, staging / "browser" / (str(safe) + ".dat"),
+                        protected=protected,
+                    )
                     file_entries.append({"path": relative, "sha256": digest})
         # Preserve the existing Windows DPAPI credential reference and its
         # ciphertext, so restoring still works even if the original file goes.
@@ -129,7 +196,7 @@ def create_snapshot(profile_id, *, store=None):
             "origin": profile["origin"], "device": profile.get("deviceLabel") or profile.get("deviceMode"),
             "createdAt": datetime.now(timezone.utc).isoformat(),
             "fileCount": len(file_entries), "hasBrowserData": original.is_dir(),
-            "encrypted": protected,
+            "encrypted": protected, "formatVersion": 2,
         }
         _private_write(staging / "index.json", json.dumps(index).encode("utf-8"))
         os.replace(staging, final)
@@ -215,10 +282,12 @@ def restore_snapshot(snapshot_id, *, store=None):
             for entry in manifest["files"]:
                 relative = _safe_relative(entry["path"])
                 stored = snapshot / "browser" / (str(relative) + ".dat")
-                data = _unseal(stored.read_bytes(), protected=index["encrypted"])
-                if hashlib.sha256(data).hexdigest() != entry["sha256"]:
-                    raise LocalProfileError("Arquivo do backup não passou na verificação de integridade.")
-                _private_write(working / relative, data)
+                _restore_browser_file(
+                    stored, working / relative,
+                    protected=index["encrypted"],
+                    format_version=index.get("formatVersion", 1),
+                    expected=entry["sha256"],
+                )
             credential = record.get("credentialRef")
             if credential and credential.startswith("dpapi:"):
                 from nexora_accounts.credential_vault import _folder
