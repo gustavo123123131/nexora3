@@ -74,7 +74,64 @@
     status.setAttribute('role', 'status');
     const list = document.createElement('div');
     list.className = 'accounts-local-grid';
-    node.append(top, status, recovery, list);
+    const selection = new Set();
+    const toolbar = document.createElement('div');
+    toolbar.className = 'accounts-selection';
+    const allLabel = document.createElement('label');
+    allLabel.className = 'accounts-select-all';
+    const allBox = document.createElement('input');
+    allBox.type = 'checkbox';
+    const allText = document.createElement('span');
+    allText.textContent = 'Selecionar todas';
+    allLabel.append(allBox, allText);
+    const selectedCount = document.createElement('span');
+    selectedCount.className = 'accounts-count-selected';
+    const removeSelected = document.createElement('button');
+    removeSelected.type = 'button';
+    removeSelected.className = 'accounts-delete';
+    removeSelected.textContent = 'Excluir selecionadas';
+    removeSelected.disabled = true;
+    const selectable = new Set();
+    function updateSelection() {
+      for (const id of [...selection]) if (!selectable.has(id)) selection.delete(id);
+      selectedCount.textContent = selection.size + ' selecionada(s)';
+      removeSelected.disabled = selection.size === 0;
+      allBox.checked = !!selectable.size && selection.size === selectable.size;
+      allBox.indeterminate = !!selection.size && selection.size < selectable.size;
+    }
+    allBox.addEventListener('change', () => {
+      selection.clear();
+      if (allBox.checked) for (const id of selectable) selection.add(id);
+      for (const checkbox of list.querySelectorAll('input[data-account-id]')) {
+        checkbox.checked = selection.has(Number(checkbox.dataset.accountId));
+      }
+      updateSelection();
+    });
+    removeSelected.addEventListener('click', async () => {
+      const ids = [...selection];
+      if (!ids.length) return;
+      if (!window.confirm('Excluir ' + ids.length +
+          ' conta(s) selecionada(s)? Um backup completo será criado automaticamente para cada uma.')) return;
+      removeSelected.disabled = true;
+      try {
+        const result = await post('/api/local-profiles/delete-batch', {
+          ids, confirmed: true
+        });
+        const removed = result.deleted || [];
+        const errors = result.errors || [];
+        for (const item of removed) selection.delete(item.profileId);
+        status.textContent = removed.length + ' conta(s) excluída(s) com backup. ' +
+          (errors.length ? errors.length + ' não excluída(s): ' +
+            errors.map(x => 'Conta ' + x.id + ' (' + x.reason + ')').join('; ') : '');
+        await refresh();
+      } catch (error) {
+        status.textContent = 'Falha na exclusão em lote: ' + error.message;
+      } finally {
+        updateSelection();
+      }
+    });
+    toolbar.append(allLabel, selectedCount, removeSelected);
+    node.append(top, status, toolbar, recovery, list);
 
     const labels = {pending: 'Pendente', created: 'Criada', error: 'Erro'};
     function textRow(label, value) {
@@ -96,6 +153,9 @@
       return modes[profile.deviceMode] || 'Não registrado';
     }
     function render(profiles) {
+      selectable.clear();
+      for (const p of profiles) selectable.add(p.id);
+      updateSelection();
       list.replaceChildren();
       count.textContent = profiles.length + (profiles.length === 1 ? ' conta' : ' contas');
       if (!profiles.length) {
@@ -119,7 +179,20 @@
         const badge = document.createElement('span');
         badge.className = 'accounts-status-label accounts-status-' + currentStatus;
         badge.textContent = labels[currentStatus];
-        head.append(name, badge);
+        const selectLabel = document.createElement('label');
+        selectLabel.className = 'accounts-select-one';
+        const selectBox = document.createElement('input');
+        selectBox.type = 'checkbox';
+        selectBox.dataset.accountId = String(profile.id);
+        selectBox.checked = selection.has(profile.id);
+        selectBox.setAttribute('aria-label', 'Selecionar ' + (profile.label || 'conta'));
+        selectBox.addEventListener('change', () => {
+          if (selectBox.checked) selection.add(profile.id);
+          else selection.delete(profile.id);
+          updateSelection();
+        });
+        selectLabel.append(selectBox, name);
+        head.append(selectLabel, badge);
 
         const detail = document.createElement('div');
         detail.className = 'accounts-summary';
@@ -179,19 +252,16 @@
         remove.title = 'Excluir esta conta e seus dados locais de navegador';
         remove.addEventListener('click', async () => {
           const accountName = profile.label || 'esta conta';
-          if (!window.confirm('Excluir o cartão de ' + accountName +
-              '? Uma cópia de segurança dos dados da lista será preservada.')) return;
-          const removeFiles = window.confirm(
-            'Apagar TAMBÉM os cookies, histórico e arquivos Chromium desta conta? ' +
-            'OK = apagar arquivos. Cancelar = conservar os arquivos.'
-          );
+          if (!window.confirm('Excluir ' + accountName +
+              '? Um backup completo dos dados e cookies disponíveis será salvo na aba Backup.')) return;
           open.disabled = true;
           remove.disabled = true;
           try {
             await post('/api/local-profiles/delete', {
-              id: profile.id, confirmed: true, removeFiles
+              id: profile.id, confirmed: true, removeFiles: true
             });
-            status.textContent = accountName + ' excluída com sucesso.';
+            selection.delete(profile.id);
+            status.textContent = accountName + ' excluída, com backup disponível na aba Backup.';
             await refresh();
           } catch (error) {
             status.textContent = 'Não foi possível excluir ' + accountName + ': ' + error.message;
