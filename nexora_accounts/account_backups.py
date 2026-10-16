@@ -278,7 +278,20 @@ def restore_snapshot(snapshot_id, *, store=None):
         base = MAE_DIR if record["origin"] == "mae" else FILHA_DIR
         original = stored_profile_directory(base, record)
         if original.exists() or original.is_symlink():
-            raise LocalProfileError("A pasta original já existe; não será substituída.")
+            # Imported legacy accounts can use a shared Chromium folder.
+            # Deleting their card leaves that folder intact. Recreate ONLY
+            # their metadata; never overwrite the existing browser files.
+            if (not record.get("legacySource") or original.is_symlink()
+                    or not original.is_dir() or record.get("credentialRef")):
+                raise LocalProfileError("A pasta original já existe; não será substituída.")
+            store.restore_full_record(record)
+            proxy_id = manifest.get("proxyBindingId") or record.get("proxyId")
+            if proxy_id:
+                from nexora_accounts.proxy_store import ProxyStore
+                pool = ProxyStore()
+                if any(p["id"] == proxy_id for p in pool.list()["proxies"]):
+                    pool.bind_profile(record["id"], proxy_id)
+            return {"ok": True, "profileId": record["id"], "accountId": record["accountId"]}
         parent = original.parent
         parent.mkdir(parents=True, exist_ok=True)
         working = Path(tempfile.mkdtemp(prefix=".restore-incomplete-", dir=parent))
