@@ -602,6 +602,54 @@ class LocalProfileStore:
             self._write(state)
             return item.copy()
 
+    def mark_registration_clicked(
+        self, profile_id: int, account_id: str, run_id: str, *,
+        site_origin: str,
+    ) -> dict:
+        """Show 'Criada' as soon as this account's Registrar click is sent.
+
+        This is the operator-requested LOCAL display rule, not proof that the
+        remote provider created an account. Keep provider confirmation fields
+        empty and registrationReviewRequired=True so later identity checks
+        cannot mistake a click for a verified registration.
+        """
+        from Settings.registration_outcome import _origin
+
+        if type(profile_id) is not int or not isinstance(account_id, str) or not account_id:
+            raise LocalProfileError("Conta de cadastro inválida.")
+        if not isinstance(run_id, str) or not run_id:
+            raise LocalProfileError("Execução de cadastro não identificada.")
+        with _LOCK:
+            data = self._read()
+            item = next((p for p in data["profiles"] if p["id"] == profile_id), None)
+            if item is None or item.get("accountId") != account_id:
+                raise LocalProfileError("Clique pertence a outra conta.")
+            if item.get("lastSessionId") != run_id:
+                raise LocalProfileError("Clique de execução antiga ignorado.")
+            expected = _origin(item.get("startUrl"))
+            observed = _origin(site_origin)
+            if not expected or expected != observed:
+                raise LocalProfileError("Origem do clique diferente da conta.")
+            # Never downgrade an independently provider-verified registration.
+            if (item.get("status") == "created"
+                and item.get("registrationConfirmedAt")
+                and item.get("registrationConfirmationSource")
+                and not item.get("registrationReviewRequired")):
+                return item.copy()
+            item["status"] = "created"
+            item["statusMessage"] = (
+                "Registrar acionado; status Criada pelo clique, "
+                "sem confirmação de sucesso do site."
+            )
+            item["registrationClickedAt"] = item.get("registrationClickedAt") or self._now()
+            item["registrationReviewRequired"] = True
+            # A click never writes platform confirmation/identity evidence.
+            item["registrationConfirmedAt"] = None
+            item["registrationConfirmationSource"] = None
+            self._event(item, "registration.click-recorded", "Clique enviado pela sessão da conta")
+            self._write(data)
+            return item.copy()
+
     def update_registration_result(
         self, profile_id: int, account_id: str, run_id: str,
         status: str, message: str = "", *, confirmation_source=None,
