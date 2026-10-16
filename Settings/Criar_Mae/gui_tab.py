@@ -1438,17 +1438,31 @@ def run_instance(
                         if profile:
                             from Settings.registration_autofill import fill_registration_form
                             from Settings.registration_outcome import RegistrationOutcomeObserver
+                            from Settings.platform_identity import PlatformIdentityObserver
                             from nexora_accounts.local_profiles import LocalProfileStore
                             log(f"[#{idx}] [Registro] Preparando {profile['label']}.")
                             observer = RegistrationOutcomeObserver(
                                 page, log, int(profile["id"]),
                                 expected_origin=(instance_plan or {}).get("url") or page.url,
                             )
+                            identity_observer = PlatformIdentityObserver(
+                                page, log,
+                                {**profile, "runId": str((instance_plan or {}).get("run_id") or "")},
+                                expected_origin=observer.origin,
+                                contract=observer.contract,
+                            )
                             observer.start()
+                            identity_observer.start()
+                            remote_identity = None
                             try:
                                 clicked = fill_registration_form(page, profile, log, stop_event)
                                 if clicked:
                                     result_status, reason = observer.finish(stop_event)
+                                    if result_status == "created":
+                                        remote_identity = identity_observer.identify(
+                                            registration_verdict=observer.verdict,
+                                            stop_event=stop_event,
+                                        )
                                 else:
                                     observer.close()
                                     result_status, reason = (
@@ -1458,6 +1472,7 @@ def run_instance(
                                     )
                             finally:
                                 observer.close()
+                                identity_observer.close()
                             # Commit only if this worker still owns the exact
                             # account UUID and runId. Unverified HTTP fields cannot
                             # provide a platform ID or mark the account created.
@@ -1472,15 +1487,20 @@ def run_instance(
                                         if result_status == "created" else None
                                     ),
                                     site_origin=observer.origin,
-                                    platform_user_id=(
-                                        observer.verdict.platform_user_id
-                                        if result_status == "created" else None
-                                    ),
-                                    platform_id_source=(
-                                        observer.verdict.platform_id_source
-                                        if result_status == "created" else None
-                                    ),
+                                    # The separate identity observer validates
+                                    # ownership before saving any platform ID.
+                                    platform_user_id=None,
+                                    platform_id_source=None,
                                 )
+                                if result_status == "created" and remote_identity:
+                                    LocalProfileStore().save_verified_platform_id(
+                                        int(profile["id"]), str(profile["accountId"]),
+                                        str((instance_plan or {}).get("run_id") or ""),
+                                        site_origin=observer.origin,
+                                        platform_user_id=remote_identity.user_id,
+                                        platform_id_source=remote_identity.source,
+                                    )
+                                    log(f"[#{idx}] [Registro] ID remoto validado e salvo na conta correta.")
                             except Exception as exc:
                                 log(f"[#{idx}] [Registro] Atualização ignorada por "
                                     f"inconsistência da sessão ({type(exc).__name__}).")
