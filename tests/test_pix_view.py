@@ -115,3 +115,73 @@ def test_pix_client_flags_ambiguous_numeric_key():
             assert page.evaluate("window.actions[0].type") == "CPF"
         finally:
             browser.close()
+
+
+def test_telephone_key_renders_without_plus_55_and_can_be_edited():
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.set_content('<main id="root"></main>')
+            page.add_script_tag(path=str(ROOT / "webui/static/pix_view.js"))
+            page.evaluate("""() => {
+              let records = [];
+              window.sentPhone = '';
+              const api = {
+                get: async () => ({keys: [...records]}),
+                post: async (path, body) => {
+                  window.sentPhone = body.value;
+                  const value = body.type === 'PHONE'
+                    ? body.value.replace(/^\\+55/, '').replace(/\\D/g, '')
+                    : body.value;
+                  const record = {
+                    id: path.endsWith('/update') ? body.id : 'phone-1',
+                    type: body.type, value, createdAt: 'before', updatedAt: 'now'
+                  };
+                  records = [record];
+                  return {key: record};
+                }
+              };
+              const view = NexoraPixView.create(api);
+              document.querySelector('#root').append(view.node);
+              view.onShow();
+            }""")
+            page.get_by_role("button", name="Adicionar Chave Pix").click()
+            field = page.get_by_role("textbox", name="Chave Pix")
+            field.fill("+55 (11) 98765-4321")
+            assert page.get_by_text("Tipo identificado: Telefone").is_visible()
+            page.get_by_role("button", name="Salvar", exact=True).click()
+            assert page.locator(".pix-simple-info code").inner_text() == "11987654321"
+            page.get_by_role("button", name="Editar").click()
+            assert field.input_value() == "11987654321"
+            field.fill("(11) 91234-5678")
+            page.get_by_role("button", name="Salvar alteração").click()
+            assert page.locator(".pix-simple-info code").inner_text() == "11912345678"
+        finally:
+            browser.close()
+
+
+def test_legacy_phone_display_is_national_during_agent_update():
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.set_content('<main id="root"></main>')
+            page.add_script_tag(path=str(ROOT / "webui/static/pix_view.js"))
+            page.evaluate("""() => {
+              const api = {
+                get: async () => ({keys: [{
+                  id: 'legacy', type: 'PHONE', value: '+5511987654321',
+                  createdAt: 'before', updatedAt: 'before'
+                }]}),
+                post: async () => { throw Error('Unexpected mutation'); }
+              };
+              const view = NexoraPixView.create(api);
+              document.querySelector('#root').append(view.node);
+              view.onShow();
+            }""")
+            assert page.locator(".pix-simple-info code").inner_text() == "11987654321"
+            page.get_by_role("button", name="Editar").click()
+            assert page.get_by_role("textbox", name="Chave Pix").input_value() == "11987654321"
+        finally:
+            browser.close()

@@ -35,7 +35,8 @@
       else if (phone.length === 13 && phone.startsWith('55')) phone = phone.slice(2);
       if (/^\d{11}$/.test(phone) && ddds.has(Number(phone.slice(0, 2))) &&
           phone[2] === '9' && !/^(\d)\1+$/.test(phone.slice(2))) {
-        found.PHONE = '+55' + phone;
+        // Chaves de telefone são exibidas com DDD + 9 dígitos, sem +55.
+        found.PHONE = phone;
       }
     }
     const email = raw.toLowerCase();
@@ -47,6 +48,14 @@
     }
     if (evpPattern.test(raw.toLowerCase())) found.EVP = raw.toLowerCase();
     return found;
+  }
+
+  // During an automatic Windows-agent update, the browser may briefly read
+  // older E.164 records. Keep the UI consistent without changing their IDs.
+  function displayKey(item) {
+    const value = String(item.value || '');
+    return item.type === 'PHONE' && /^\+55\d{11}$/.test(value)
+      ? value.slice(3) : value;
   }
 
   function create(api) {
@@ -67,7 +76,7 @@
     form.hidden = true;
     const field = document.createElement('input');
     field.type = 'text';
-    field.placeholder = 'CPF, celular, e-mail ou UUID da chave aleatória';
+    field.placeholder = 'CPF, celular com DDD (11 dígitos), e-mail ou UUID';
     field.autocomplete = 'off';
     field.spellcheck = false;
     field.maxLength = 128;
@@ -126,7 +135,7 @@
           choose.append(option);
         }
         // A saved account's type is known when opening the editor.
-        if (editing && field.value.trim() === editing.value) {
+        if (editing && field.value.trim() === displayKey(editing)) {
           choose.value = editing.type;
         } else if (kinds.includes(previouslySelected)) {
           choose.value = previouslySelected;
@@ -147,7 +156,7 @@
     function showForm(item) {
       if (busy) return;
       editing = item || null;
-      field.value = item ? item.value : '';
+      field.value = item ? displayKey(item) : '';
       save.textContent = item ? 'Salvar alteração' : 'Salvar';
       form.hidden = false;
       addButton.hidden = true;
@@ -173,7 +182,7 @@
         const kind = document.createElement('small');
         kind.textContent = labels[item.type] || item.type;
         const value = document.createElement('code');
-        value.textContent = item.value;
+        value.textContent = displayKey(item);
         info.append(kind, value);
         const actions = document.createElement('div');
         actions.className = 'pix-row-actions';
