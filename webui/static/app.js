@@ -8,6 +8,15 @@ const shownDialogs = new Set();
 // Proxy workspace uses local-agent endpoints and does not change existing GUI callbacks.
 const PROXY_PREVIEW_ID = '__nexora_proxy_visual__';
 const ACCOUNTS_VIEW_ID = '__nexora_accounts_local__';
+const BACKUP_VIEW_ID = '__nexora_backup_local__';
+let backupViewInstance = null;
+function backupView() {
+  if (!backupViewInstance) {
+    backupViewInstance = window.NexoraBackupView.create({get: getRegistration, post});
+  }
+  backupViewInstance.onShow();
+  return backupViewInstance.node;
+}
 let accountsViewInstance = null;
 function accountsView() {
   if (!accountsViewInstance) {
@@ -426,7 +435,8 @@ function renderNode(obj) {
     if (obj.type === 'tabs') {
       const tabs = obj.children || [];
       let active = selectedTabs.get(obj.id);
-      if (active !== PROXY_PREVIEW_ID && active !== ACCOUNTS_VIEW_ID && !tabs.some(tab => tab.id === active)) active = tabs[0]?.id;
+      if (active !== PROXY_PREVIEW_ID && active !== ACCOUNTS_VIEW_ID &&
+          active !== BACKUP_VIEW_ID && !tabs.some(tab => tab.id === active)) active = tabs[0]?.id;
       selectedTabs.set(obj.id, active);
       const bar = el.querySelector('.tab-bar');
       const oldButtons = new Map([...bar.children].map(button => [button.dataset.tabid, button]));
@@ -473,14 +483,28 @@ function renderNode(obj) {
       }
       accountsButton.textContent = 'Contas';
       accountsButton.classList.toggle('active', active === ACCOUNTS_VIEW_ID);
-      patchChildren(bar, [...buttons, proxyButton, accountsButton]);
+      let backupButton = oldButtons.get(BACKUP_VIEW_ID);
+      if (!backupButton) {
+        backupButton = document.createElement('button');
+        backupButton.type = 'button';
+        backupButton.dataset.tabid = BACKUP_VIEW_ID;
+        backupButton.addEventListener('click', () => {
+          selectedTabs.set(obj.id, BACKUP_VIEW_ID);
+          if (currentState) updateTree(currentState.tree);
+        });
+      }
+      backupButton.textContent = 'Backup';
+      backupButton.classList.toggle('active', active === BACKUP_VIEW_ID);
+      patchChildren(bar, [...buttons, proxyButton, accountsButton, backupButton]);
       const activeTab = tabs.find(tab => tab.id === active);
-      el.dataset.activeView = active === ACCOUNTS_VIEW_ID ? 'Contas' :
+      el.dataset.activeView = active === BACKUP_VIEW_ID ? 'Backup' :
+        active === ACCOUNTS_VIEW_ID ? 'Contas' :
         active === PROXY_PREVIEW_ID ? 'Proxy' : (activeTab?.options?._tab_label || '');
       const content = el.querySelector('.tab-content');
       patchChildren(content, active === PROXY_PREVIEW_ID
         ? [proxyPreview()] : active === ACCOUNTS_VIEW_ID
-        ? [accountsView()] : (activeTab ? [renderNode(activeTab)] : []));
+        ? [accountsView()] : active === BACKUP_VIEW_ID
+        ? [backupView()] : (activeTab ? [renderNode(activeTab)] : []));
     } else {
       renderContainerLayout(el, obj);
       const children = obj.children || [];
