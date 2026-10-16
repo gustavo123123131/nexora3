@@ -257,6 +257,15 @@ class ProxyStore:
             self._write(state)
             return {"profileId": profile_id, "proxyId": proxy_id}
 
+    def unbind_deleted_profile(self, profile_id: int):
+        """Remove only this account's association, not the shared proxy."""
+        if type(profile_id) is not int or profile_id < 1:
+            raise ProxyError("ID do perfil inválido.")
+        with _LOCK:
+            state = self._read()
+            state.setdefault("profileProxies", {}).pop(str(profile_id), None)
+            self._write(state)
+
     def profile_bindings(self):
         with _LOCK:
             return dict(self._read().get("profileProxies", {}))
