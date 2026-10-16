@@ -144,7 +144,9 @@ class AccountLauncher:
 
         def worker():
             try:
-                LocalProfileStore().record_session(profile_id, "starting", run_id)
+                LocalProfileStore().record_session(
+                    profile_id, "starting", run_id, instance_idx
+                )
             except Exception:
                 pass
             def fail(message):
