@@ -103,6 +103,16 @@ class AccountLauncher:
                 "Esta conta não possui o perfil técnico original registrado. "
                 "Não é seguro recriar seu user-agent ou dispositivo automaticamente."
             )
+        from pathlib import Path
+        if (
+            any(event.get("event") == "session.ready"
+                for event in profile.get("history", []))
+            and not Path(profile.get("profilePath") or "").is_dir()
+        ):
+            raise ValueError(
+                "A pasta original desta conta não foi encontrada. "
+                "Abra os detalhes e verifique a recuperação antes de reabrir."
+            )
         url = str(profile.get("startUrl") or "").strip()
         if url and not url.startswith(("https://", "http://")):
             raise ValueError("URL salva na conta é inválida.")
