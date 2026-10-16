@@ -164,6 +164,15 @@ class LocalProfileStore:
             if "parentId" not in item:
                 item["parentId"] = None
                 changed = True
+            from nexora_accounts import credential_vault
+            if credential_vault.is_available() and item.get("password") and not item.get("credentialRef"):
+                # Migrate old local plaintext without changing the password.
+                item["credentialRef"] = credential_vault.write_secret(
+                    self.path, item["accountId"], item["password"]
+                )
+                item.pop("password", None)
+                item.pop("confirmPassword", None)
+                changed = True
         return changed
 
     def _import_legacy_registry(self, data: dict) -> bool:
@@ -307,6 +316,28 @@ class LocalProfileStore:
         with _LOCK:
             return [p.copy() for p in self._read()["profiles"]]
 
+    @staticmethod
+    def public_view(item: dict, *, details=False) -> dict:
+        """No secrets are serialized through the public panel API."""
+        safe = item.copy()
+        for name in ("password", "confirmPassword", "credentialRef"):
+            safe.pop(name, None)
+        if not details:
+            safe.pop("history", None)
+            safe.pop("runtimeConfig", None)
+            safe.pop("profilePath", None)
+        return safe
+
+    def public_list(self) -> list[dict]:
+        return [self.public_view(p) for p in self.list()]
+
+    def public_detail(self, profile_id: int) -> dict:
+        with _LOCK:
+            found = next((p.copy() for p in self._read()["profiles"] if p["id"] == profile_id), None)
+        if found is None:
+            raise LocalProfileError("Conta não encontrada.")
+        return self.public_view(found, details=True)
+
     def selected_id(self) -> int | None:
         with _LOCK:
             value = self._read().get("selectedProfileId")
@@ -342,6 +373,14 @@ class LocalProfileStore:
             )
         if profile is None:
             raise LocalProfileError("Conta não encontrada.")
+        if profile.get("credentialRef"):
+            from nexora_accounts.credential_vault import read_secret
+            try:
+                password = read_secret(self.path, profile["credentialRef"])
+            except (OSError, ValueError, UnicodeError) as exc:
+                raise LocalProfileError("Não foi possível recuperar a credencial da conta.") from exc
+            profile["password"] = password
+            profile["confirmPassword"] = password
         return profile
 
     def delete(self, profile_id: int) -> dict:
@@ -575,7 +614,15 @@ class LocalProfileStore:
                 record["startUrl"] = start_url
             if connection_mode is not None:
                 record["connectionMode"] = connection_mode
-            data["profiles"].append(record)
+            from nexora_accounts import credential_vault
+            persisted = record.copy()
+            if credential_vault.is_available():
+                persisted["credentialRef"] = credential_vault.write_secret(
+                    self.path, record["accountId"], password
+                )
+                persisted.pop("password", None)
+                persisted.pop("confirmPassword", None)
+            data["profiles"].append(persisted)
             data["nextNumber"] = number + 1
             self._write(data)
             return record.copy()
