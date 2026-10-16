@@ -66,8 +66,39 @@
             row('Arquivos Chromium', saved.hasBrowserData ? saved.fileCount + ' salvos' : 'Não disponíveis'),
             row('Salvo em', saved.createdAt ? new Date(saved.createdAt).toLocaleString('pt-BR') : '')
           );
+          const extra = document.createElement('div');
+          extra.className = 'accounts-expanded';
+          extra.hidden = true;
           const footer = document.createElement('div');
           footer.className = 'accounts-card-footer';
+          const inspect = document.createElement('button');
+          inspect.type = 'button';
+          inspect.className = 'accounts-details';
+          inspect.textContent = 'Detalhes';
+          inspect.addEventListener('click', async () => {
+            if (!extra.hidden) {
+              extra.hidden = true;
+              inspect.textContent = 'Detalhes';
+              return;
+            }
+            try {
+              const record = await get('/api/account-backups/detail?backupId=' + encodeURIComponent(saved.id));
+              extra.replaceChildren(
+                row('Username', record.username),
+                row('E-mail', record.email),
+                row('Telefone', record.phone),
+                row('Nome', record.fullName),
+                row('UUID do dispositivo', record.deviceProfileId),
+                row('Pasta original', record.profilePath),
+                row('Status', record.statusMessage || record.status),
+                row('Proxy', record.proxyId ? 'Vinculada' : 'Não vinculada')
+              );
+              extra.hidden = false;
+              inspect.textContent = 'Ocultar detalhes';
+            } catch (error) {
+              message.textContent = 'Não foi possível visualizar: ' + error.message;
+            }
+          });
           const open = document.createElement('button');
           open.type = 'button';
           open.className = 'accounts-open';
@@ -87,8 +118,8 @@
               open.disabled = false;
             }
           });
-          footer.append(open);
-          card.append(header, detail, footer);
+          footer.append(inspect, open);
+          card.append(header, detail, extra, footer);
           list.append(card);
         }
       } catch (error) {
