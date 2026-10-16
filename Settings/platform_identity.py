@@ -475,13 +475,14 @@ class PlatformIdentityObserver:
             if result:
                 return result
         deadline = time.monotonic() + max(0, wait_seconds)
+        pending_header = None
         while True:
             result = self._identity_responses()
             if result:
                 return result
             result = self._identity_header()
             if result:
-                return result
+                pending_header = result
             if (time.monotonic() >= deadline or
                 (stop_event is not None and stop_event.is_set())):
                 break
@@ -493,6 +494,12 @@ class PlatformIdentityObserver:
                 break
         if stop_event is not None and stop_event.is_set():
             return None
+        # Check the whole observation window for conflicting UIDs. Never
+        # persist the first acceptable UID if another API request in that
+        # same session claims a different one moments later.
+        if (pending_header is not None and not self._header_conflict
+            and pending_header.user_id == self._header_seen_uid):
+            return pending_header
         for check in (self._identity_storage, self._identity_profile):
             result = check()
             if result:
