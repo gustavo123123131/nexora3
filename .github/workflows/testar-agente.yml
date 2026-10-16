@@ -45,6 +45,11 @@ jobs:
     timeout-minutes: 4
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Testar credenciais locais Windows DPAPI
+        run: python -m unittest -q tests/test_windows_dpapi.py
       - name: Validar sintaxe do PowerShell sem executar instalacao
         shell: powershell
         run: |
