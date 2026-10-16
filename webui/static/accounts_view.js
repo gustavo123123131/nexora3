@@ -360,9 +360,11 @@
               textRow('Origem do ID remoto', stored.platformIdSource || 'Não comprovada'),
               textRow('ID verificado em', stored.platformIdVerifiedAt || 'Não verificado'),
               textRow('Fonte da confirmação',
-                stored.registrationReviewRequired
-                  ? 'Confirmação antiga — revisão necessária'
-                  : (stored.registrationConfirmationSource || 'Não comprovada')),
+                stored.registrationClickedAt && stored.registrationReviewRequired
+                  ? 'Clique em Registrar (sem confirmação do site)'
+                  : stored.registrationReviewRequired
+                    ? 'Confirmação antiga — revisão necessária'
+                    : (stored.registrationConfirmationSource || 'Não comprovada')),
               textRow('UUID da conta', stored.accountId),
               textRow(
                 stored.deviceProfileIdOrigin === 'migration-internal-only'
