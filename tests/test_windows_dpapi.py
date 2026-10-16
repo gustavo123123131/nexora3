@@ -41,5 +41,32 @@ class WindowsDpapiTests(unittest.TestCase):
             self.assertEqual(assigned[0]["id"], item["id"])
 
 
+    def test_deleted_account_cookies_are_encrypted_and_recoverable(self):
+        from unittest.mock import patch
+        import nexora_accounts.local_profiles as local_profiles
+        import nexora_accounts.proxy_store as proxy_store
+        from nexora_accounts.local_profiles import LocalProfileStore
+        from nexora_accounts.profile_cleanup import delete_account
+        from nexora_accounts.account_backups import restore_snapshot
+        from Settings.Criar_Mae.settings import utils as mae
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            with patch.object(local_profiles, "_default_path", lambda: root / "Nexora" / "generated_profiles.json"):
+                with patch.object(proxy_store, "_default_path", lambda: root / "Nexora" / "proxies.json"):
+                    with patch.object(mae, "PROFILES_DIR", root / "browser-profiles"):
+                        store = LocalProfileStore()
+                        profile = store.create("mae", device_mode="android")
+                        folder = Path(profile["profilePath"])
+                        folder.mkdir(parents=True, exist_ok=True)
+                        (folder / "Cookies").write_bytes(b"secret-cookie-fixture-test")
+                        result = delete_account(profile["id"])
+                        archived = (store.path.parent / "deleted-account-backups" /
+                                    result["backupId"] / "browser" / "Cookies.dat")
+                        self.assertNotIn(b"secret-cookie-fixture-test", archived.read_bytes())
+                        restored = restore_snapshot(result["backupId"])
+                        self.assertEqual(restored["accountId"], profile["accountId"])
+                        self.assertEqual((folder / "Cookies").read_bytes(), b"secret-cookie-fixture-test")
+
+
 if __name__ == "__main__":
     unittest.main()
