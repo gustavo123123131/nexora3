@@ -66,8 +66,12 @@ def test_saved_cookies_and_local_storage_survive_reopen_and_isolate_accounts(tmp
 
             context_a, page_a = open_saved(one["id"])
             page_a.evaluate("localStorage.setItem('owner', 'Conta 1')")
+            from time import time
+            # Session-only cookies may expire on browser shutdown by design.
+            # Persisted cookies with an explicit expiry must survive restarts.
             context_a.add_cookies([{
-                "name": "accountCookie", "value": "from-account-1", "url": url,
+                "name": "accountCookie", "value": "from-account-1",
+                "url": url, "expires": time() + 3600,
             }])
             assert "Android" in page_a.evaluate("navigator.userAgent")
             context_a.close()
