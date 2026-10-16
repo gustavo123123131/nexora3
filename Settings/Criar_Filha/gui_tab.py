@@ -560,12 +560,14 @@ def _idle_wait_with_speed(
     idx: int,
     shared_phone_key: str = "",
     ip_refresh_callback=None,
+    identity_poll_callback=None,
 ):
     last_version = -1
 
     last_heartbeat = 0.0
     HEARTBEAT_EVERY = 8.0
     last_ip_check = time.time()
+    last_identity_check = 0.0
     IP_REFRESH_EVERY = 45.0
 
     last_popup_sweep = 0.0
@@ -705,6 +707,15 @@ def _idle_wait_with_speed(
             if now - last_heartbeat >= HEARTBEAT_EVERY:
                 last_heartbeat = now
                 page.evaluate("()=>0")
+        except Exception:
+            pass
+
+        # Identity stays passive while this SAME Chromium page is open.
+        try:
+            if (identity_poll_callback is not None
+                and time.time() - last_identity_check >= 1.0):
+                last_identity_check = time.time()
+                identity_poll_callback()
         except Exception:
             pass
 
@@ -1005,6 +1016,7 @@ def run_instance(
         shared_phone_key = ""
 
     for attempt in range(1, MAX_BROWSER_RESTARTS + 1):
+        identity_observer = None
         if stop_event.is_set():
             log(f"[#{idx}] ⏹️ Parado antes de iniciar.")
             return
@@ -1209,6 +1221,57 @@ def run_instance(
 
                 page = context.pages[0] if context.pages else context.new_page()
 
+                # Observe BEFORE proxy checks and initial navigation.
+                candidate_profile = (
+                    (instance_plan or {}).get("registration_profile")
+                    or (instance_plan or {}).get("account_profile")
+                )
+                if candidate_profile is not None:
+                    from Settings.platform_identity import PlatformIdentityObserver
+                    identity_observer = PlatformIdentityObserver(
+                        page, log,
+                        {**candidate_profile,
+                         "runId": str((instance_plan or {}).get("run_id") or "")},
+                        expected_origin=(instance_plan or {}).get("url") or url,
+                        contract=(
+                            (instance_plan or {}).get("identity_contract")
+                            or (instance_plan or {}).get("registration_contract")
+                        ),
+                    )
+                    try:
+                        identity_observer.start()
+                    except Exception as exc:
+                        log(f"[#{idx}] [Registro] Monitor de ID indisponível "
+                            f"({type(exc).__name__}); cadastro preservado.")
+                        identity_observer.close()
+                        identity_observer = None
+
+                identity_saved_this_run = False
+
+                def _poll_identity():
+                    nonlocal identity_saved_this_run
+                    if (identity_saved_this_run or identity_observer is None
+                        or identity_observer._clicked_at is None):
+                        return
+                    verified_id = identity_observer.identify(
+                        stop_event=stop_event, wait_seconds=0,
+                    )
+                    if verified_id is None:
+                        return
+                    from nexora_accounts.local_profiles import LocalProfileStore
+                    LocalProfileStore().save_verified_platform_id(
+                        int(candidate_profile["id"]),
+                        str(candidate_profile["accountId"]),
+                        str((instance_plan or {}).get("run_id") or ""),
+                        site_origin=identity_observer.origin,
+                        platform_user_id=verified_id.user_id,
+                        platform_id_source=verified_id.source,
+                        identity_evidence=verified_id,
+                    )
+                    identity_saved_this_run = True
+                    log(f"[#{idx}] [Registro] ID remoto comprovado e salvo "
+                        f"para {candidate_profile['label']}.")
+
                 browser_exit_ip = ""
                 if session_proxy:
                     # A TCP or separate Python proxy test cannot prove the
@@ -1364,6 +1427,8 @@ def run_instance(
                         try:
                             log(f"[#{idx}] [Navegação] HTTPS: solicitando {destination_hostname or '(host inválido)'}.")
                             page.goto(url, wait_until="domcontentloaded", timeout=15000)
+                            if identity_observer is not None:
+                                identity_observer.note_navigation(page.url)
                             log(f"[#{idx}] [Navegação] HTTPS: carregamento concluído para {destination_hostname}.")
                         except Exception as exc:
                             error_code, error_stage, error_message, transient = classify_error(exc)
@@ -1432,28 +1497,9 @@ def run_instance(
                             from Settings.platform_identity import PlatformIdentityObserver
                             from nexora_accounts.local_profiles import LocalProfileStore
                             log(f"[#{idx}] [Registro] Preparando {profile['label']}.")
-                            # Observe THIS page before Registrar is clicked.
-                            # An identity adapter is optional; no unverified
-                            # field or candidate endpoint is enabled by default.
-                            identity_observer = PlatformIdentityObserver(
-                                page, log,
-                                {**profile, "runId": str((instance_plan or {}).get("run_id") or "")},
-                                expected_origin=(instance_plan or {}).get("url") or page.url,
-                                contract=(
-                                    (instance_plan or {}).get("identity_contract")
-                                    or (instance_plan or {}).get("registration_contract")
-                                ),
-                            )
-                            try:
-                                identity_observer.start()
-                            except Exception as exc:
-                                # Identity observation is optional and must
-                                # never block the working Registrar click.
-                                log(
-                                    f"[#{idx}] [Registro] Observação de ID indisponível "
-                                    f"({type(exc).__name__}); cadastro preservado."
-                                )
-                                identity_observer.close()
+                            # Listener was installed before the first page.goto.
+                            if identity_observer is not None:
+                                identity_observer.note_navigation(page.url)
                             clicked = fill_registration_form(page, profile, log, stop_event)
                             try:
                                 store = LocalProfileStore()
@@ -1470,7 +1516,8 @@ def run_instance(
                                     # Arm identity checking only AFTER the
                                     # existing Criada-by-click write succeeds.
                                     # No change to the registration click.
-                                    identity_observer.after_registration_click()
+                                    if identity_observer is not None:
+                                        identity_observer.after_registration_click()
                                     log(
                                         f"[#{idx}] [Registro] {profile['label']}: "
                                         f"status Criada (clique em Registrar enviado)."
@@ -1495,36 +1542,27 @@ def run_instance(
                                     f"[#{idx}] [Registro] Status não atualizado: "
                                     f"conta ou execução diferente ({type(exc).__name__})."
                                 )
-                            # Step 2: identity discovery is independent of
-                            # the click-based status. It NEVER changes Criada,
-                            # the reviewed flag, the form or the browser session.
+                            # No ten-second blocking wait: poll while the page lives.
                             try:
-                                if clicked and stored.get("status") == "created":
-                                    identity = identity_observer.identify(
-                                        stop_event=stop_event, wait_seconds=10,
-                                    )
-                                    if identity is not None:
-                                        LocalProfileStore().save_verified_platform_id(
-                                            int(profile["id"]), str(profile["accountId"]),
-                                            str((instance_plan or {}).get("run_id") or ""),
-                                            site_origin=identity_observer.origin,
-                                            platform_user_id=identity.user_id,
-                                            platform_id_source=identity.source,
-                                            identity_evidence=identity,
-                                        )
-                                        log(
-                                            f"[#{idx}] [Registro] ID da plataforma "
-                                            f"validado e salvo para {profile['label']}."
-                                        )
+                                if clicked:
+                                    _poll_identity()
                             except Exception as exc:
-                                log(
-                                    f"[#{idx}] [Registro] ID remoto não identificado "
-                                    f"({type(exc).__name__}); status da conta preservado."
-                                )
-                            finally:
-                                identity_observer.close()
+                                log(f"[#{idx}] [Registro] ID ainda pendente "
+                                    f"({type(exc).__name__}); Criada preservado.")
                         else:
                             log(f"[#{idx}] Navegador pronto; nenhum perfil designado a esta janela.")
+                            if identity_observer is not None and candidate_profile is not None:
+                                from nexora_accounts.local_profiles import LocalProfileStore
+                                try:
+                                    current_profile = LocalProfileStore().get(
+                                        int(candidate_profile["id"])
+                                    )
+                                    if current_profile.get("status") == "created":
+                                        # A reopened Chromium run must obtain fresh
+                                        # authenticated requests, not reuse old UID.
+                                        identity_observer.after_registration_click()
+                                except Exception:
+                                    pass
 
                         success_finished = True
                         _idle_wait_with_speed(
@@ -1543,6 +1581,7 @@ def run_instance(
                             ip_refresh_callback=(
                                 _periodic_proxy_ip_refresh if session_proxy else None
                             ),
+                            identity_poll_callback=_poll_identity,
                         )
 
                     else:
@@ -1568,6 +1607,7 @@ def run_instance(
                             ip_refresh_callback=(
                                 _periodic_proxy_ip_refresh if session_proxy else None
                             ),
+                            identity_poll_callback=_poll_identity,
                         )
 
                 except HttpsNavigationError:
@@ -1585,6 +1625,11 @@ def run_instance(
                     log(f"[#{idx}] 💀 Reiniciando ciclo...")
 
                 finally:
+                    if identity_observer is not None:
+                        try:
+                            identity_observer.close()
+                        except Exception:
+                            pass
                     try:
                         mirror.unregister(idx)
                     except Exception:
