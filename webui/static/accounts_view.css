@@ -185,3 +185,28 @@
   border-bottom: 1px solid #2a3c51;
 }
 .accounts-recovery-row span { overflow-wrap: anywhere; }
+
+.accounts-selection {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0 0 14px;
+  color: #aebed0;
+  font-size: 12px;
+}
+.accounts-selection .accounts-delete:disabled { opacity: .48; }
+.accounts-select-all, .accounts-select-one {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+}
+.accounts-select-one { min-width: 0; }
+.accounts-select-one input, .accounts-select-all input {
+  accent-color: #338978;
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+.accounts-count-selected { flex: 1; }
