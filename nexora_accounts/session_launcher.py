@@ -23,6 +23,7 @@ class AccountLauncher:
     def __init__(self):
         self._lock = threading.RLock()
         self._running = {}
+        self._results = {}
         self._instance_numbers = itertools.count(2000001)
 
     def active_count(self):
@@ -32,6 +33,16 @@ class AccountLauncher:
     def is_running(self, profile_id: int) -> bool:
         with self._lock:
             return profile_id in self._running
+
+    def state(self, profile_id: int) -> dict:
+        with self._lock:
+            return dict(self._results.get(profile_id, {
+                "state": "idle", "message": "Nenhuma abertura solicitada."
+            }))
+
+    def _set_state(self, profile_id: int, state: str, message: str):
+        with self._lock:
+            self._results[profile_id] = {"state": state, "message": message[:220]}
 
     def stop_all(self):
         with self._lock:
@@ -92,6 +103,9 @@ class AccountLauncher:
                     f"{profile['label']} já está aberta. Feche a janela antes de abrir novamente."
                 )
             self._running[profile_id] = {"stop": stop_event}
+            self._results[profile_id] = {
+                "state": "starting", "message": "Inicializando a sessão da conta."
+            }
 
         def log(message):
             # Logs remain visible even if the CTk UI adapter cannot schedule
@@ -106,6 +120,9 @@ class AccountLauncher:
                     pass
 
         def worker():
+            def fail(message):
+                log(message)
+                self._set_state(profile_id, "error", message)
             try:
                 store = ProxyStore()
                 listing = store.list()["proxies"]
@@ -117,23 +134,23 @@ class AccountLauncher:
                 assigned_id = bindings.get(str(profile_id))
                 connection_mode = profile.get("connectionMode")
                 if connection_mode not in ("managed", "direct"):
-                    log(
+                    fail(
                         f"[Contas] {profile['label']}: modo de conexão original "
                         "indisponível ou legado; não será atribuído outro endereço automaticamente."
                     )
                     return
                 if connection_mode == "managed" and not assigned_id:
-                    log(f"[Contas] {profile['label']}: vínculo da proxy original ausente; abertura cancelada.")
+                    fail(f"[Contas] {profile['label']}: vínculo da proxy original ausente; abertura cancelada.")
                     return
                 if connection_mode == "direct" and assigned_id:
-                    log(f"[Contas] {profile['label']}: vínculo inesperado de proxy; abertura cancelada.")
+                    fail(f"[Contas] {profile['label']}: vínculo inesperado de proxy; abertura cancelada.")
                     return
                 if assigned_id:
                     # A reopened account must NEVER use round-robin fallback.
                     # Deleted/missing bound proxy means a hard failure.
                     selected = next((p for p in listing if p["id"] == assigned_id), None)
                     if selected is None:
-                        log(f"[Contas] {profile['label']}: proxy original não disponível; abertura bloqueada.")
+                        fail(f"[Contas] {profile['label']}: proxy original não disponível; abertura bloqueada.")
                         return
                     result = store.test_authenticated(selected["id"])
                     if not result.get("reachable"):
@@ -144,7 +161,7 @@ class AccountLauncher:
                             and result.get("browserVerificationRequired") is True
                         )
                         if not deferred_browser_check:
-                            log(f"[Contas] {profile['label']}: proxy original inválida ou indisponível ({result.get('status', 'erro')}).")
+                            fail(f"[Contas] {profile['label']}: proxy original inválida ou indisponível ({result.get('status', 'erro')}).")
                             return
                         log(f"[Contas] {profile['label']}: CONNECT aceito; HTTPS e IP serão verificados no Chromium.")
                     session_proxy = ProxyConfig(
@@ -163,6 +180,9 @@ class AccountLauncher:
                     "url": url or "about:blank",
                     "device_mode": mode,
                     "account_profile": profile,
+                    "on_browser_ready": lambda: self._set_state(
+                        profile_id, "ready", "Chromium abriu a sessão desta conta."
+                    ),
                 }
                 if session_proxy_id:
                     plan["proxy_config"] = session_proxy
@@ -198,12 +218,22 @@ class AccountLauncher:
                     automation_callback=None,
                 )
             except Exception as exc:
-                log(
+                fail(
                     f"[Contas] {profile['label']}: não foi possível iniciar "
                     f"({type(exc).__name__})."
                 )
             finally:
                 with self._lock:
+                    if self._results.get(profile_id, {}).get("state") == "starting":
+                        self._results[profile_id] = {
+                            "state": "error",
+                            "message": "O navegador não confirmou a abertura. Consulte os logs."
+                        }
+                    elif self._results.get(profile_id, {}).get("state") == "ready":
+                        self._results[profile_id] = {
+                            "state": "closed",
+                            "message": "A sessão da conta foi encerrada."
+                        }
                     self._running.pop(profile_id, None)
 
         try:
