@@ -26,5 +26,20 @@ class WindowsDpapiTests(unittest.TestCase):
             self.assertFalse(vault.exists())
 
 
+    def test_proxy_password_stays_out_of_json_and_survives_reload(self):
+        from nexora_accounts.proxy_store import ProxyStore
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "proxies.json"
+            store = ProxyStore(path)
+            item = store.save_line("proxy.example.test:8312:demo:secret-proxy-test")
+            raw = path.read_text(encoding="utf-8")
+            self.assertNotIn("secret-proxy-test", raw)
+            self.assertIn("passwordRef", raw)
+            self.assertTrue(ProxyStore(path).list()["proxies"][0]["hasPassword"])
+            assigned = ProxyStore(path).assign(1)
+            self.assertEqual(assigned[0]["password"], "secret-proxy-test")
+            self.assertEqual(assigned[0]["id"], item["id"])
+
+
 if __name__ == "__main__":
     unittest.main()
