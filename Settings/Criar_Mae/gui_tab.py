@@ -1070,11 +1070,19 @@ def run_instance(
         if account_profile is not None:
             # Each account keeps one *exclusive* on-disk Chromium directory.
             # New accounts never inherit old profile_1 / profile_2 cookies.
-            user_data_dir = account_profile_directory(
-                PROFILES_DIR, AREA_PIX_SCOPE, int(account_profile["id"])
-            )
+            from Settings.device_modes import stored_profile_directory
+            try:
+                user_data_dir = stored_profile_directory(PROFILES_DIR, account_profile)
+            except ValueError as exc:
+                log(f"[#{idx}] [Contas] Caminho do perfil inválido ({type(exc).__name__}); abertura cancelada.")
+                return
             ensure_clean_profile_dir(user_data_dir, keep=True)
-            log(f"[#{idx}] [Sessão] {account_profile['label']} — diretório individual, dispositivo {cfg.mode}.")
+            log(
+                f"[#{idx}] [Sessão] {account_profile['label']} "
+                f"accountId={account_profile.get('accountId', 'legado')} "
+                f"runId={(instance_plan or {}).get('run_id', 'local')} "
+                f"— perfil persistente, dispositivo {cfg.mode}."
+            )
         else:
             # Legacy paths are never used by a fresh unassociated session.
             user_data_dir = PROFILES_DIR / "sessions" / uuid4().hex
