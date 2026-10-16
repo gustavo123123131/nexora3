@@ -66,3 +66,32 @@ def account_profile_directory(base, origin: str, account_id: int):
     if origin not in ("mae", "filha") or type(account_id) is not int or account_id < 1:
         raise ValueError("Identificador de conta inválido.")
     return base / "accounts" / f"account_{account_id}"
+
+
+def stored_profile_directory(base, profile: dict):
+    """Resolve a persisted Chromium profile without assigning a new path.
+
+    For current accounts require the exact historical account_N location.
+    Legacy main-branch paths must stay beneath their original __profiles root.
+    """
+    from pathlib import Path
+    root = Path(base).resolve()
+    origin = profile["origin"]
+    if origin not in ("mae", "filha"):
+        raise ValueError("Origem da conta inválida.")
+    stored = profile.get("profilePath")
+    if not isinstance(stored, str) or not stored.strip():
+        raise ValueError("Diretório original não foi registrado.")
+    path = Path(stored)
+    if not path.is_absolute():
+        raise ValueError("Caminho do perfil deve ser absoluto.")
+    resolved = path.resolve()
+    if resolved != root and root not in resolved.parents:
+        raise ValueError("O perfil está fora do diretório reservado.")
+    if path.is_symlink():
+        raise ValueError("O perfil não pode ser um link simbólico.")
+    if not profile.get("legacySource"):
+        expected = account_profile_directory(base, origin, int(profile["id"])).resolve()
+        if expected != resolved:
+            raise ValueError("O caminho persistido não pertence a esta conta.")
+    return path
