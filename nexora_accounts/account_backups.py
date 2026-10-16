@@ -186,7 +186,12 @@ def create_snapshot(profile_id, *, store=None):
             if not original_secret.is_file():
                 raise LocalProfileError("Credencial protegida da conta ausente; backup incompleto.")
             _private_write(staging / "credential.bin", _seal(original_secret.read_bytes()))
-        manifest = {"profile": raw, "directories": dir_entries, "files": file_entries}
+        from nexora_accounts.proxy_store import ProxyStore
+        binding_id = ProxyStore().profile_bindings().get(str(profile_id))
+        manifest = {
+            "profile": raw, "directories": dir_entries, "files": file_entries,
+            "proxyBindingId": binding_id or raw.get("proxyId"),
+        }
         _private_write(staging / "payload.bin", _seal(json.dumps(
             manifest, ensure_ascii=False
         ).encode("utf-8")))
@@ -260,7 +265,9 @@ def restore_snapshot(snapshot_id, *, store=None):
         raise LocalProfileError("Backup não encontrado.")
     try:
         index, manifest = _read_manifest(snapshot)
-        record = manifest["profile"]
+        record = manifest["profile"].copy()
+        if manifest.get("proxyBindingId") and not record.get("proxyId"):
+            record["proxyId"] = manifest["proxyBindingId"]
         if index["id"] != key or record["accountId"] != index["accountId"]:
             raise LocalProfileError("Identidade do backup não corresponde.")
         if any(p["id"] == record["id"] or p["accountId"] == record["accountId"]
@@ -303,7 +310,7 @@ def restore_snapshot(snapshot_id, *, store=None):
             completed = True
             # Commit metadata only AFTER all browser and credential files exist.
             store.restore_full_record(record)
-            proxy_id = record.get("proxyId")
+            proxy_id = manifest.get("proxyBindingId") or record.get("proxyId")
             if proxy_id:
                 from nexora_accounts.proxy_store import ProxyStore
                 pool = ProxyStore()
