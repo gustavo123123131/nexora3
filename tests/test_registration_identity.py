@@ -93,6 +93,8 @@ def test_late_run_wrong_uuid_and_cross_origin_cannot_write(store):
             platform_user_id="5", platform_id_source="synthetic-id",
         )
     verified(store, q, "test-run-4", "000004")
+    with pytest.raises(LocalProfileError, match="outra conta"):
+        verified(store, p, "new-run-3", "000004")
     assert store.get(p["id"])["platformUserId"] is None
     assert store.get(q["id"])["platformUserId"] == "000004"
 
