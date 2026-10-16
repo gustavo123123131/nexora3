@@ -164,3 +164,24 @@
   cursor: pointer;
 }
 .accounts-details:hover, .accounts-close:hover { background: #21344a; }
+
+.accounts-recovery {
+  margin: 8px 0 16px;
+  padding: 12px;
+  border: 1px solid #34485d;
+  border-radius: 9px;
+  background: #152232;
+  color: #bcd0e4;
+  font-size: 12px;
+}
+.accounts-recovery[hidden] { display: none; }
+.accounts-recovery-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid #2a3c51;
+}
+.accounts-recovery-row span { overflow-wrap: anywhere; }
