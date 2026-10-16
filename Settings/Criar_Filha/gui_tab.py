@@ -2003,6 +2003,13 @@ class FilhaTab(ctk.CTkFrame):
         self.log_text.insert("end", msg)
         self.log_text.see("end")
         self.log_text.configure(state="disabled")
+        # Publish the same event once to the cross-tab panel. Failure to
+        # deliver diagnostics must never interrupt browser operations.
+        try:
+            from webui.live_logs import publish
+            publish("Filha", msg)
+        except Exception:
+            pass
 
     def _get_float(self, var: ctk.StringVar, default: float = 1.0, min_v: float = 0.0, max_v: float = 9999.0) -> float:
         s = (var.get() or "").strip().replace(",", ".")
