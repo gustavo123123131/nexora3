@@ -57,6 +57,19 @@ def test_backup_contains_browser_cookies_and_preserves_all_account_ids(storage):
     assert list_snapshots(store=storage)[0]["restored"]
 
 
+def test_large_browser_data_is_streamed_and_restored(storage):
+    profile = storage.create("mae", device_mode="android")
+    root = Path(profile["profilePath"])
+    cache = root / "Default" / "Cache"
+    cache.mkdir(parents=True)
+    original_bytes = (b"chromium-data-" * 100000)
+    (cache / "blob").write_bytes(original_bytes)
+    info = delete_account(profile["id"])
+    assert info["backupId"]
+    restore_snapshot(info["backupId"], store=storage)
+    assert (cache / "blob").read_bytes() == original_bytes
+
+
 def test_unreadable_backup_blocks_deletion_and_preserves_profile(storage, monkeypatch):
     profile = storage.create("filha", device_mode="android")
     path = Path(profile["profilePath"])
