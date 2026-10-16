@@ -1444,7 +1444,16 @@ def run_instance(
                                     or (instance_plan or {}).get("registration_contract")
                                 ),
                             )
-                            identity_observer.start()
+                            try:
+                                identity_observer.start()
+                            except Exception as exc:
+                                # Identity observation is optional and must
+                                # never block the working Registrar click.
+                                log(
+                                    f"[#{idx}] [Registro] Observação de ID indisponível "
+                                    f"({type(exc).__name__}); cadastro preservado."
+                                )
+                                identity_observer.close()
                             clicked = fill_registration_form(page, profile, log, stop_event)
                             try:
                                 store = LocalProfileStore()
