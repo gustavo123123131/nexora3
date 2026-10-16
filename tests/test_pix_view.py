@@ -69,7 +69,7 @@ def test_pix_view_add_edit_delete_validation_and_proxy_style():
             page.get_by_role("button", name="Salvar alteração").click()
             assert page.get_by_text("user@example.org", exact=True).is_visible()
             assert page.get_by_text("contato@example.com", exact=True).count() == 0
-            page.get_by_role("button", name="X").click()
+            page.locator(".pix-remove").click()
             assert page.get_by_text("Nenhuma chave Pix cadastrada.").is_visible()
             assert page.evaluate("window.calls") == [
                 "/api/pix-keys/add", "/api/pix-keys/update", "/api/pix-keys/delete"
@@ -80,7 +80,11 @@ def test_pix_view_add_edit_delete_validation_and_proxy_style():
 
 def test_pix_client_flags_ambiguous_numeric_key():
     # Using the same shape with mathematically valid CPF digits.
-    from tests.test_pix_keys import _ambiguous_value
+    seed = "119123456"
+    for length in (9, 10):
+        total = sum(int(seed[i]) * (length + 1 - i) for i in range(length))
+        check = total * 10 % 11
+        seed += str(0 if check == 10 else check)
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         try:
@@ -102,7 +106,7 @@ def test_pix_client_flags_ambiguous_numeric_key():
               );
             }""")
             page.get_by_role("button", name="Adicionar Chave Pix").click()
-            page.get_by_role("textbox", name="Chave Pix").fill(_ambiguous_value())
+            page.get_by_role("textbox", name="Chave Pix").fill(seed)
             assert page.get_by_text("A chave pode ser CPF ou Telefone. Escolha o tipo:").is_visible()
             page.get_by_role("button", name="Salvar", exact=True).click()
             assert page.evaluate("window.actions.length") == 0
