@@ -2632,6 +2632,23 @@ class FilhaTab(ctk.CTkFrame):
             # "Abrir Navegadores" always creates new accounts; a globally
             # selected card must never inject an old identity into this action.
             launch_plans = _build_instance_plans(normalized_urls or ["about:blank"], count, use_same_identity)
+            if proxy is not None and not managed_proxies and launch_plans:
+                # Save the legacy one-line endpoint as a persistent reference.
+                # The current launch still uses its existing network path;
+                # later opens resolve the exact same upstream by proxyId.
+                from urllib.parse import urlsplit
+                parsed_proxy = urlsplit(proxy.server)
+                saved_legacy = proxy_store.save({
+                    "name": "Proxy de sessão",
+                    "host": parsed_proxy.hostname,
+                    "port": parsed_proxy.port,
+                    "protocol": parsed_proxy.scheme or "http",
+                    "username": proxy.username or "",
+                    "password": proxy.password or "",
+                })
+                for plan in launch_plans:
+                    plan["proxy_id"] = saved_legacy["id"]
+                self._log("[Proxy] Endpoint da sessão vinculado e salvo para reabertura.")
             if saved_proxies and launch_plans:
                 assignments = proxy_store.assign(len(launch_plans))
                 checked = set()
