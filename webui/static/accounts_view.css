@@ -100,6 +100,7 @@
   margin-top: auto;
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
   border-top: 1px solid #293b4f;
   padding-top: 11px;
 }
@@ -114,6 +115,18 @@
   font-weight: 740;
   cursor: pointer;
 }
+.accounts-delete {
+  border: 1px solid #704250;
+  background: #3a2831;
+  color: #ffced4;
+  border-radius: 8px;
+  padding: 8px 13px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.accounts-delete:hover:not(:disabled) { filter: brightness(1.14); }
+.accounts-delete:disabled { opacity: .5; cursor: not-allowed; }
 .accounts-open:hover:not(:disabled) { filter: brightness(1.14); }
 .accounts-open:disabled { opacity: 0.48; cursor: not-allowed; }
 .accounts-empty {
