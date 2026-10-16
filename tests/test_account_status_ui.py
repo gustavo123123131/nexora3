@@ -30,7 +30,7 @@ def test_live_status_refresh_tracks_each_account_without_reload():
                   }
                   if (url === '/api/account-backups') return {backups:[]};
                   if (url.startsWith('/api/local-profiles/detail')) {
-                    const id = Number(new URL(url,location.href).searchParams.get('id'));
+                    const id = Number(new URL(url,'http://localhost').searchParams.get('id'));
                     return {...window.accounts.find(x => x.id === id)};
                   }
                   throw Error('Unexpected GET');
