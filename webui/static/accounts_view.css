@@ -211,3 +211,31 @@
   flex: 0 0 auto;
 }
 .accounts-count-selected { flex: 1; }
+
+/* Backup is a section of Contas, not a separate workspace tab. */
+.accounts-inner-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid #304157;
+  padding-bottom: 10px;
+}
+.accounts-inner-tabs button {
+  border: 1px solid #3a4f65;
+  background: #192637;
+  color: #c7daed;
+  padding: 9px 16px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.accounts-inner-tabs button.active {
+  border-color: #516aaa;
+  background: #304776;
+  color: #fff;
+}
+.accounts-current-panel[hidden],
+.accounts-backup-panel[hidden] { display: none; }
+.accounts-backup-panel .backup-local { padding: 0; min-height: auto; }
