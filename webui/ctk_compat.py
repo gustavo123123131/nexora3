@@ -372,7 +372,13 @@ def serialize(widget: Widget) -> dict:
         if widget.widget_type in ('entry', 'option'):
             options['value'] = widget.get()
         if widget.widget_type == 'textbox':
-            options['value'] = widget._text
+            # The consolidated live feed transports its log text separately.
+            # Preserve ordinary textboxes; only tagged diagnostic buffers
+            # omit their duplicate contents from high-frequency UI snapshots.
+            options['value'] = (
+                '' if getattr(widget, '_nexora_logs_live_only', False)
+                else widget._text
+            )
         return {
             'id': widget.id,
             'type': widget.widget_type,
