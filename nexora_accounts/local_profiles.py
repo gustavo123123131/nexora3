@@ -180,6 +180,21 @@ class LocalProfileStore:
             raise LocalProfileError("Conta não encontrada.")
         return profile
 
+    def delete(self, profile_id: int) -> dict:
+        """Remove one account record; preserve numbering and other profiles."""
+        if type(profile_id) is not int or profile_id < 1:
+            raise LocalProfileError("ID da conta inválido.")
+        with _LOCK:
+            data = self._read()
+            remaining = [p for p in data["profiles"] if p["id"] != profile_id]
+            if len(remaining) == len(data["profiles"]):
+                raise LocalProfileError("Conta não encontrada.")
+            data["profiles"] = remaining
+            if data.get("selectedProfileId") == profile_id:
+                data["selectedProfileId"] = None
+            self._write(data)
+            return {"ok": True, "profileId": profile_id}
+
     def set_runtime_config(self, profile_id: int, runtime: dict) -> dict:
         """Store the exact device configuration *once*; never regenerate on reopen."""
         if type(profile_id) is not int or not isinstance(runtime, dict):
