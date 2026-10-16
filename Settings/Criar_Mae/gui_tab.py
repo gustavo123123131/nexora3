@@ -1421,6 +1421,11 @@ def run_instance(
                         except Exception:
                             pass
 
+                        on_browser_ready = (instance_plan or {}).get("on_browser_ready")
+                        if callable(on_browser_ready):
+                            on_browser_ready()
+                            log(f"[#{idx}] [Contas] Chromium pronto com a sessão salva.")
+
                         profile = (instance_plan or {}).get("registration_profile")
                         if profile:
                             from Settings.registration_autofill import fill_registration_form
@@ -1476,6 +1481,10 @@ def run_instance(
 
                     else:
                         success_finished = True
+                        on_browser_ready = (instance_plan or {}).get("on_browser_ready")
+                        if callable(on_browser_ready):
+                            on_browser_ready()
+                            log(f"[#{idx}] [Contas] Chromium pronto com a sessão salva (sem URL inicial).")
                         log(f"[#{idx}] Navegador aberto (Sem URL).")
                         _idle_wait_with_speed(
                             page,
