@@ -74,13 +74,15 @@ def test_saved_cookies_and_local_storage_survive_reopen_and_isolate_accounts(tmp
                 "url": url, "expires": time() + 3600,
             }])
             assert "Android" in page_a.evaluate("navigator.userAgent")
-            context_a.close()
 
+            # Both browsers are open concurrently but their storage differs.
             context_b, page_b = open_saved(two["id"])
             assert page_b.evaluate("localStorage.getItem('owner')") is None
             assert not any(c["name"] == "accountCookie" for c in context_b.cookies(url))
             page_b.evaluate("localStorage.setItem('owner', 'Conta 2')")
+            assert page_a.evaluate("localStorage.getItem('owner')") == "Conta 1"
             context_b.close()
+            context_a.close()
 
             again, page_again = open_saved(one["id"])
             assert page_again.evaluate("localStorage.getItem('owner')") == "Conta 1"
