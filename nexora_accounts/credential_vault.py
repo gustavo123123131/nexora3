@@ -34,6 +34,8 @@ def _crypt(data: bytes, *, decrypt=False) -> bytes:
     outbound = BLOB()
     crypt32 = ctypes.WinDLL("crypt32", use_last_error=True)
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel32.LocalFree.restype = ctypes.c_void_p
     method = crypt32.CryptUnprotectData if decrypt else crypt32.CryptProtectData
     method.restype = wintypes.BOOL
     method.argtypes = (
