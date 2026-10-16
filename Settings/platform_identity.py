@@ -139,6 +139,7 @@ class PlatformIdentityObserver:
         if self._header_routes:
             self._response_origins.add("https://cdnapiif.ppa5g.net")
         self._header_requests = {}
+        self._scanned_request_ids = set()
         self._header_seen_uid = None
         self._header_conflict = False
         self._clicked_at = None
@@ -169,6 +170,13 @@ class PlatformIdentityObserver:
                         return
                 except Exception:
                     return
+            # The same request is emitted by page and context listeners.
+            # Deduplicate BEFORE reading all_headers() (including invalid
+            # or missing x-object-id) to avoid duplicate sensitive reads.
+            key = id(request)
+            if key in self._scanned_request_ids or len(self._scanned_request_ids) >= 128:
+                return
+            self._scanned_request_ids.add(key)
             # all_headers() is invoked ONLY for the exact allowed URL. Never
             # persist or print headers, tokens, JWTs or request bodies.
             headers = request.all_headers()
@@ -274,6 +282,7 @@ class PlatformIdentityObserver:
         self._responses.clear()
         self._seen.clear()
         self._header_requests.clear()
+        self._scanned_request_ids.clear()
         self._header_seen_uid = None
         self._header_conflict = False
 
