@@ -52,9 +52,7 @@
         return;
       }
       for (const profile of profiles) {
-        const savedDevice = profile.runtimeConfig
-          && profile.runtimeConfig.mode === profile.deviceMode
-          && !!profile.runtimeConfig.user_agent;
+        const savedDevice = profile.hasRuntimeConfig === true;
         // Account creation status reflects *only* site registration events.
         // Older records lacking device snapshots are not failed sign-ups.
         const currentStatus = profile.status === 'created' ||
@@ -74,7 +72,10 @@
         detail.append(
           textRow('Username', profile.username),
           textRow('E-mail', profile.email),
-          textRow('Dispositivo', deviceName(profile))
+          textRow('Tipo', profile.origin === 'mae' ? 'Mãe' : 'Filha'),
+          textRow('Telefone', profile.phone),
+          textRow('Dispositivo', deviceName(profile)),
+          textRow('Criada em', profile.createdAt ? new Date(profile.createdAt).toLocaleDateString('pt-BR') : '')
         );
 
         const footer = document.createElement('div');
@@ -124,13 +125,17 @@
         remove.title = 'Excluir esta conta e seus dados locais de navegador';
         remove.addEventListener('click', async () => {
           const accountName = profile.label || 'esta conta';
-          if (!window.confirm('Excluir ' + accountName +
-              '? Os dados locais do navegador serão apagados. Esta ação não pode ser desfeita.')) return;
+          if (!window.confirm('Excluir o cartão de ' + accountName +
+              '? Uma cópia de segurança dos dados da lista será preservada.')) return;
+          const removeFiles = window.confirm(
+            'Apagar TAMBÉM os cookies, histórico e arquivos Chromium desta conta? ' +
+            'OK = apagar arquivos. Cancelar = conservar os arquivos.'
+          );
           open.disabled = true;
           remove.disabled = true;
           try {
             await post('/api/local-profiles/delete', {
-              id: profile.id, confirmed: true
+              id: profile.id, confirmed: true, removeFiles
             });
             status.textContent = accountName + ' excluída com sucesso.';
             await refresh();
@@ -140,7 +145,57 @@
             open.disabled = !savedDevice;
           }
         });
-        footer.append(open, remove);
+        const view = document.createElement('button');
+        view.type = 'button';
+        view.className = 'accounts-details';
+        view.textContent = 'Detalhes';
+        const expanded = document.createElement('div');
+        expanded.className = 'accounts-expanded';
+        expanded.hidden = true;
+        view.addEventListener('click', async () => {
+          if (!expanded.hidden) {
+            expanded.hidden = true;
+            view.textContent = 'Detalhes';
+            return;
+          }
+          try {
+            const stored = await get('/api/local-profiles/detail?id=' + encodeURIComponent(profile.id));
+            expanded.replaceChildren();
+            expanded.append(
+              textRow('Nome', stored.fullName),
+              textRow('UUID da conta', stored.accountId),
+              textRow('UUID da emulação', stored.deviceProfileId),
+              textRow('Diretório Chromium', stored.profilePath),
+              textRow('Sessão', stored.sessionStatus || 'closed'),
+              textRow('Última abertura', stored.lastOpenedAt),
+              textRow('Proxy', stored.proxyId ? 'Vinculada' : (stored.connectionMode === 'managed' ? 'Configuração vinculada' : 'Não vinculada'))
+            );
+            if (stored.runtimeConfig) {
+              expanded.append(textRow('User-Agent salvo', stored.runtimeConfig.user_agent));
+              expanded.append(textRow('Viewport', JSON.stringify(stored.runtimeConfig.viewport)));
+            }
+            for (const entry of (stored.history || []).slice(-8).reverse()) {
+              expanded.append(textRow('Histórico', (entry.at || '') + ' — ' + (entry.event || '')));
+            }
+            expanded.hidden = false;
+            view.textContent = 'Ocultar';
+          } catch (error) {
+            status.textContent = 'Falha ao carregar detalhes: ' + error.message;
+          }
+        });
+        const close = document.createElement('button');
+        close.type = 'button';
+        close.className = 'accounts-close';
+        close.textContent = 'Fechar';
+        close.addEventListener('click', async () => {
+          try {
+            const result = await post('/api/local-profiles/close', {id: profile.id});
+            status.textContent = (profile.label || 'Conta') + ': ' + result.message;
+          } catch (error) {
+            status.textContent = 'Falha ao fechar conta: ' + error.message;
+          }
+        });
+        footer.append(view, open, close, remove);
 
         // Lack of technical history prevents an *exact* reopen, but does
         // not provide evidence that external registration failed.
@@ -152,9 +207,9 @@
           explanation.className = 'accounts-card-note';
           explanation.textContent = issue;
           explanation.title = issue;
-          card.append(head, detail, explanation, footer);
+          card.append(head, detail, explanation, expanded, footer);
         } else {
-          card.append(head, detail, footer);
+          card.append(head, detail, expanded, footer);
         }
         list.append(card);
       }
