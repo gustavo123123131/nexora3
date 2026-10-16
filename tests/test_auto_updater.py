@@ -23,6 +23,9 @@ def archive(extra=None):
         "Settings/Criar_Mae/gui_tab.py": "text='Abrir Navegadores'\n".encode(),
         "Settings/Criar_Filha/gui_tab.py": "text='Abrir Navegadores'\n".encode(),
         "webui/static/app.js": b"// updated\n",
+        "webui/static/accounts_view.js": b"// modern accounts cards\n",
+        "webui/static/accounts_view.css": b".accounts-local{}\n",
+        "Settings/registration_autofill.py": b"# approved current registration routine\n",
         "Settings/Criar_Mae/extensao_recaptcha/LICENSE": b"license text\n",
         "Settings/Criar_Mae/extensao_recaptcha/src/font.woff2": b"fontdata",
     }
@@ -39,6 +42,8 @@ def test_extracts_full_source_only_with_extension_assets():
     assert "Settings/Criar_Mae/extensao_recaptcha/LICENSE" in files
     assert "Settings/Criar_Mae/extensao_recaptcha/src/font.woff2" in files
     assert files["webui/static/app.js"] == b"// updated\n"
+    assert files["webui/static/accounts_view.js"] == b"// modern accounts cards\n"
+    assert "Settings/registration_autofill.py" in files
 
 
 @pytest.mark.parametrize("extra", [
@@ -50,6 +55,28 @@ def test_refuses_code_that_reintroduces_old_registration(extra):
     with pytest.raises(ValueError):
         updater.collect_sources(archive(extra))
 
+
+
+
+def test_update_keeps_current_accounts_ui_and_registration_module(tmp_path):
+    # A previous updater wrongly marked these live files as obsolete.
+    old_card = tmp_path / "webui/static/accounts_view.js"
+    old_card.parent.mkdir(parents=True, exist_ok=True)
+    old_card.write_bytes(b"old cards")
+    old_form = tmp_path / "Settings/registration_autofill.py"
+    old_form.parent.mkdir(parents=True, exist_ok=True)
+    old_form.write_bytes(b"old form")
+    updater.install_release(tmp_path, updater.collect_sources(archive()), "f" * 40)
+    assert old_card.read_bytes() == b"// modern accounts cards\n"
+    assert old_form.read_bytes() == b"# approved current registration routine\n"
+
+
+def test_current_modules_required_for_auto_update():
+    for missing in ("webui/static/accounts_view.js", "Settings/registration_autofill.py"):
+        # An explicitly absent source cannot be accepted as an update package.
+        package = archive({missing: b""})
+        assert missing in updater.collect_sources(package)
+        assert missing in updater.REQUIRED
 
 def test_archive_path_traversal_cannot_escape_destination(tmp_path):
     sources = updater.collect_sources(archive({
