@@ -70,6 +70,21 @@ def test_large_browser_data_is_streamed_and_restored(storage):
     assert (cache / "blob").read_bytes() == original_bytes
 
 
+def test_original_proxy_assignment_is_preserved_on_restore(storage):
+    from nexora_accounts.proxy_store import ProxyStore
+    account = storage.create("mae", connection_mode="managed")
+    proxy = ProxyStore().save_line("http://demo:pass@proxy.test:8123")
+    ProxyStore().bind_profile(account["id"], proxy["id"])
+    # Simulate a profile created before proxyId was also written into
+    # the account record; the separate persistent binding is authoritative.
+    assert not storage.get(account["id"]).get("proxyId")
+    result = delete_account(account["id"])
+    assert str(account["id"]) not in ProxyStore().profile_bindings()
+    restore_snapshot(result["backupId"], store=storage)
+    assert ProxyStore().profile_bindings()[str(account["id"])] == proxy["id"]
+    assert storage.get(account["id"])["proxyId"] == proxy["id"]
+
+
 def test_unreadable_backup_blocks_deletion_and_preserves_profile(storage, monkeypatch):
     profile = storage.create("filha", device_mode="android")
     path = Path(profile["profilePath"])
