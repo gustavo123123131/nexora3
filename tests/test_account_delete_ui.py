@@ -94,3 +94,61 @@ def test_one_click_delete_hides_card_and_backup_is_nested():
             expect(page.get_by_text("Feche a sessão desta conta", exact=False)).to_be_visible()
         finally:
             browser.close()
+
+
+def test_account_detail_shows_remote_id_separate_from_local_uuid():
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.set_content('<main id="mount"></main>')
+            page.add_script_tag(path=str(ROOT / "webui/static/backup_view.js"))
+            page.add_script_tag(path=str(ROOT / "webui/static/accounts_view.js"))
+            page.evaluate("""() => {
+              const list = [
+                {id:79, label:'Conta 79', accountId:'uuid-interno-79',
+                 username:'first', email:'first@example.test', origin:'mae',
+                 status:'created', deviceMode:'android',
+                 registrationReviewRequired:true, platformUserId:null},
+                {id:80, label:'Conta 80', accountId:'uuid-interno-80',
+                 username:'second', email:'second@example.test', origin:'filha',
+                 status:'created', deviceMode:'android',
+                 registrationReviewRequired:false, platformUserId:'000042',
+                 registrationConfirmationSource:'synthetic-test-source'}
+              ];
+              const api = {
+                get: async (url) => {
+                  if (url === '/api/local-profiles') return {profiles:list};
+                  if (url === '/api/account-backups') return {backups:[]};
+                  if (url.startsWith('/api/local-profiles/detail')) {
+                    const id = Number(new URL(url,'http://localhost').searchParams.get('id'));
+                    return list.find(item => item.id === id);
+                  }
+                  throw Error('Unknown endpoint');
+                },
+                post: async () => { throw Error('Unexpected mutation'); }
+              };
+              const view = NexoraAccountsView.create(api);
+              document.querySelector('#mount').append(view.node);
+              view.onShow();
+            }""")
+            cards = page.locator(".accounts-current-panel .accounts-local-card")
+            expect(cards).to_have_count(2)
+            cards.nth(0).get_by_role("button", name="Detalhes").click()
+            expect(cards.nth(0).locator(".accounts-expanded")).to_contain_text(
+                "Confirmação antiga — revisão necessária")
+            expect(cards.nth(0).locator(".accounts-expanded")).to_contain_text(
+                "Não identificado")
+            expect(cards.nth(0).locator(".accounts-expanded")).to_contain_text(
+                "uuid-interno-79")
+            cards.nth(1).get_by_role("button", name="Detalhes").click()
+            expect(cards.nth(1).locator(".accounts-expanded")).to_contain_text(
+                "ID da plataforma")
+            expect(cards.nth(1).locator(".accounts-expanded")).to_contain_text(
+                "000042")
+            expect(cards.nth(1).locator(".accounts-expanded")).to_contain_text(
+                "synthetic-test-source")
+            expect(cards.nth(1).locator(".accounts-expanded")).to_contain_text(
+                "uuid-interno-80")
+        finally:
+            browser.close()
