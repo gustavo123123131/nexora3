@@ -168,7 +168,7 @@ def test_integer_header_parsing_preserves_digits_without_fixed_id():
 
 def test_builtin_contract_restricted_to_official_origin():
     assert isinstance(provider_identity_contract(PAGE), FiveGBetIdentityContract)
-    assert provider_identity_contract("https://5gbet.com") is None
+    assert isinstance(provider_identity_contract("https://5gbet.com"), FiveGBetIdentityContract)
     assert provider_identity_contract("https://fake-5gbet.com") is None
 
 
