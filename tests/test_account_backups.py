@@ -140,3 +140,33 @@ def test_single_and_bulk_delete_endpoint_require_confirm_and_create_backups(stor
         assert recovered.status_code == 200
         assert recovered.json()["profileId"] == a["id"]
         assert storage.get(a["id"])["accountId"] == a["accountId"]
+
+
+def test_delete_imported_card_keeps_shared_folder_and_restores_metadata(storage, tmp_path):
+    """Legacy browser folders can be shared; removing one card must not wipe them."""
+    imported = storage.create("mae", device_mode="android")
+    from Settings.Criar_Mae.settings.utils import PROFILES_DIR
+    legacy_path = PROFILES_DIR / "android" / "profile_7"
+    legacy_path.mkdir(parents=True)
+    cookie = legacy_path / "Cookies"
+    cookie.write_bytes(b"keep-legacy-cookies")
+    data = storage._read()
+    record = next(p for p in data["profiles"] if p["id"] == imported["id"])
+    record["legacySource"] = "accounts.json"
+    record["profilePath"] = str(legacy_path.resolve())
+    storage._write(data)
+
+    result = delete_account(imported["id"])
+    assert result["ok"] is True
+    assert result["filesRemoved"] is False
+    assert result["legacyFilesPreserved"] is True
+    assert storage.list() == []
+    assert cookie.read_bytes() == b"keep-legacy-cookies"
+    # The backup should remain browseable/restorable inside the Contas section.
+    snapshot = next(x for x in list_snapshots(store=storage)
+                    if x["id"] == result["backupId"])
+    assert snapshot["fileCount"] == 1
+    restored = restore_snapshot(result["backupId"], store=storage)
+    assert restored["profileId"] == imported["id"]
+    assert storage.get(imported["id"])["profilePath"] == str(legacy_path.resolve())
+    assert cookie.read_bytes() == b"keep-legacy-cookies"
