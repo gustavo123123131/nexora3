@@ -17,7 +17,7 @@
     if (typeof value !== 'string' || value.length > 128 || !value.trim() ||
         [...value].some(ch => ch.charCodeAt(0) < 32 || ch.charCodeAt(0) === 127)) return found;
     const raw = value.trim();
-    if (/^[0-9.\-]+$/.test(raw)) {
+    if (/^(?:\d{11}|\d{3}\.\d{3}\.\d{3}-\d{2})$/.test(raw)) {
       const cpf = raw.replace(/\D/g, '');
       if (cpf.length === 11 && !/^(\d)\1+$/.test(cpf)) {
         const ok = [9, 10].every(length => {
