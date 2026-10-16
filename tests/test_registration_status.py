@@ -209,3 +209,16 @@ def test_observer_does_not_accept_post_from_another_page_same_origin(store):
     assert result == "unconfirmed"
     assert watch.verdict.platform_user_id is None
     assert not page.listeners
+
+
+def test_stale_window_close_cannot_end_new_confirmation(store):
+    p = create(store, "mae", "old-run")
+    store.record_session(p["id"], "starting", "new-run")
+    store.update_registration_result(
+        p["id"], p["accountId"], "new-run", "confirming",
+        site_origin=ORIGIN,
+    )
+    store.record_session(p["id"], "closed", "old-run")
+    assert store.get(p["id"])["status"] == "confirming"
+    store.record_session(p["id"], "closed", "new-run")
+    assert store.get(p["id"])["status"] == "unconfirmed"
