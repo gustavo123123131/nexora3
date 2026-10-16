@@ -49,7 +49,7 @@ def test_nexora_visual_and_existing_controls(tmp_path):
             try:
                 page = browser.new_page(viewport={"width": 1440, "height": 900})
                 page.goto(URL, wait_until="domcontentloaded")
-                expect(page.locator(".tab-bar button")).to_have_count(6, timeout=15000)
+                expect(page.locator(".tab-bar button")).to_have_count(5, timeout=15000)
                 expect(page.locator(".brand-wordmark")).to_have_text("NEXORA")
                 expect(page.locator(".tab-bar button.active")).to_have_text("Mãe")
                 expect(page.get_by_role("button", name="Abrir Navegadores")).to_be_visible()
@@ -181,8 +181,14 @@ def test_nexora_visual_and_existing_controls(tmp_path):
                 page.set_viewport_size({"width": 1440, "height": 900})
 
                 # Contas tab is preserved and renders minimal cards.
-                page.get_by_role("button", name="Contas", exact=True).click()
+                page.locator(".tab-bar").get_by_role("button", name="Contas", exact=True).click()
                 expect(page.get_by_role("heading", name="Contas")).to_be_visible()
+                expect(page.locator(".accounts-local-grid")).to_be_visible()
+                assert page.locator(".tab-bar").get_by_role("button", name="Backup").count() == 0
+                page.locator(".accounts-inner-tabs").get_by_role("button", name="Backup").click()
+                expect(page.locator(".accounts-backup-panel")).to_be_visible()
+                expect(page.locator(".backup-local")).to_be_visible()
+                page.locator(".accounts-inner-tabs").get_by_role("button", name="Contas").click()
                 expect(page.locator(".accounts-local-grid")).to_be_visible()
                 assert page.get_by_role("button", name="Selecionar").count() == 0
                 assert page.get_by_role("button", name="Escolher dispositivo").count() == 0
