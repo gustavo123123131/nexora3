@@ -160,6 +160,27 @@ def list_snapshots(*, store=None):
     return sorted(output, key=lambda x: x["createdAt"], reverse=True)
 
 
+def snapshot_detail(snapshot_id, *, store=None):
+    """Authenticated metadata preview; never serve cookie bytes or credentials."""
+    store = store or LocalProfileStore()
+    try:
+        key = str(uuid.UUID(str(snapshot_id)))
+        source = _root(store) / key
+        if source.is_symlink() or not source.is_dir():
+            raise LocalProfileError("Backup não encontrado.")
+        index, manifest = _read_manifest(source)
+        if index["id"] != key or manifest["profile"]["accountId"] != index["accountId"]:
+            raise LocalProfileError("Backup não corresponde à identidade salva.")
+        profile = LocalProfileStore.public_view(manifest["profile"], details=True)
+        profile["history"] = profile.get("history", [])[-15:]
+        profile["browserFileCount"] = len(manifest.get("files", []))
+        return profile
+    except (OSError, TypeError, KeyError, UnicodeError, ValueError) as exc:
+        if isinstance(exc, LocalProfileError):
+            raise
+        raise LocalProfileError("Metadados do backup inválidos ou inacessíveis.") from exc
+
+
 def restore_snapshot(snapshot_id, *, store=None):
     """Restore the same UUID/ID/path, original cookies, and saved proxy link."""
     store = store or LocalProfileStore()
@@ -198,10 +219,6 @@ def restore_snapshot(snapshot_id, *, store=None):
                 if hashlib.sha256(data).hexdigest() != entry["sha256"]:
                     raise LocalProfileError("Arquivo do backup não passou na verificação de integridade.")
                 _private_write(working / relative, data)
-            os.replace(working, original)
-            completed = True
-            # Commit metadata only AFTER all browser files were restored.
-            store.restore_full_record(record)
             credential = record.get("credentialRef")
             if credential and credential.startswith("dpapi:"):
                 from nexora_accounts.credential_vault import _folder
@@ -213,6 +230,10 @@ def restore_snapshot(snapshot_id, *, store=None):
                     _folder(store.path) / (key_secret + ".dpapi"),
                     _unseal(sealed_credential.read_bytes(), protected=index["encrypted"])
                 )
+            os.replace(working, original)
+            completed = True
+            # Commit metadata only AFTER all browser and credential files exist.
+            store.restore_full_record(record)
             proxy_id = record.get("proxyId")
             if proxy_id:
                 from nexora_accounts.proxy_store import ProxyStore
