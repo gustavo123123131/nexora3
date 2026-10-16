@@ -2415,6 +2415,10 @@ class FilhaTab(ctk.CTkFrame):
         ctk.CTkLabel(top_logs, textvariable=self.status_var, text_color="#9CA3AF").pack(side="right")
 
         self.log_text = ctk.CTkTextbox(logs_card, corner_radius=14)
+        # The web panel reads these messages from the incremental shared feed.
+        # Keep this widget for the original desktop UI, but do not resend its
+        # full history in every serialized /api/state response.
+        self.log_text._nexora_logs_live_only = True
         self.log_text.pack(fill="both", expand=True, padx=16, pady=(0, 16))
         self.log_text.configure(state="disabled")
 
