@@ -183,13 +183,13 @@ def test_nexora_visual_and_existing_controls(tmp_path):
                 # Contas tab is preserved and renders minimal cards.
                 page.locator(".tab-bar").get_by_role("button", name="Contas", exact=True).click()
                 expect(page.get_by_role("heading", name="Contas")).to_be_visible()
-                expect(page.locator(".accounts-local-grid")).to_be_visible()
+                expect(page.locator(".accounts-current-panel .accounts-local-grid")).to_be_visible()
                 assert page.locator(".tab-bar").get_by_role("button", name="Backup").count() == 0
                 page.locator(".accounts-inner-tabs").get_by_role("button", name="Backup").click()
                 expect(page.locator(".accounts-backup-panel")).to_be_visible()
                 expect(page.locator(".backup-local")).to_be_visible()
                 page.locator(".accounts-inner-tabs").get_by_role("button", name="Contas").click()
-                expect(page.locator(".accounts-local-grid")).to_be_visible()
+                expect(page.locator(".accounts-current-panel .accounts-local-grid")).to_be_visible()
                 assert page.get_by_role("button", name="Selecionar").count() == 0
                 assert page.get_by_role("button", name="Escolher dispositivo").count() == 0
                 for label in ("Mãe", "Filha"):
