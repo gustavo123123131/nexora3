@@ -16,6 +16,11 @@ Settings/**/settings/settings.json
 Settings/**/extensao_recaptcha/secrets.txt
 Settings/extensao_pix/chavepix.txt
 Settings/cpf.json
+# Chaves Pix são dados locais do usuário; nunca versionar
+pix_keys.json
+pix_keys.json.lock
+Nexora/pix_keys.json
+Nexora/pix_keys.json.lock
 Settings/convite.json
 *.sqlite
 *.sqlite3
