@@ -170,3 +170,43 @@ def test_delete_imported_card_keeps_shared_folder_and_restores_metadata(storage,
     assert restored["profileId"] == imported["id"]
     assert storage.get(imported["id"])["profilePath"] == str(legacy_path.resolve())
     assert cookie.read_bytes() == b"keep-legacy-cookies"
+
+
+def test_deleted_legacy_import_does_not_reappear_on_store_restart(storage, tmp_path):
+    """An immutable old accounts.json must not resurrect deleted imported cards."""
+    from uuid import uuid4
+    from nexora_accounts.local_profiles import LocalProfileStore
+    legacy_uuid = str(uuid4())
+    source = storage.path.with_name("accounts.json")
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text(json.dumps({
+        "version": 1,
+        "accounts": [{
+            "id": legacy_uuid, "profileScope": "mae",
+            "profileMode": "android", "profileIndex": 7,
+            "loginIdentifier": "legacyuser"
+        }]
+    }))
+    imported = LocalProfileStore().list()
+    assert len(imported) == 1
+    account = imported[0]
+    folder = Path(account["profilePath"])
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "Cookies").write_bytes(b"legacy-saved")
+
+    deletion = delete_account(account["id"])
+    assert deletion["legacyFilesPreserved"] is True
+    assert source.exists()
+    assert (folder / "Cookies").read_bytes() == b"legacy-saved"
+    assert LocalProfileStore().list() == []
+    data = json.loads(storage.path.read_text())
+    assert legacy_uuid in data["deletedLegacyAccountIds"]
+    # The legacy import source is still present but does not recreate the card.
+    assert LocalProfileStore().list() == []
+
+    restore_snapshot(deletion["backupId"], store=storage)
+    assert [p["accountId"] for p in LocalProfileStore().list()] == [legacy_uuid]
+    assert legacy_uuid not in json.loads(storage.path.read_text()).get(
+        "deletedLegacyAccountIds", []
+    )
+    assert (folder / "Cookies").read_bytes() == b"legacy-saved"
