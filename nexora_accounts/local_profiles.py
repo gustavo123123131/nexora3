@@ -100,8 +100,18 @@ class LocalProfileStore:
 
     def __init__(self, path: str | Path | None = None):
         self.path = Path(path) if path is not None else _default_path()
+        self.recovery_notice = ""
         with _LOCK:
-            data = self._read()
+            try:
+                data = self._read()
+            except LocalProfileError:
+                if not self._restore_valid_backup():
+                    raise
+                self.recovery_notice = (
+                    "Arquivo de contas danificado: backup recuperado; "
+                    "original corrompido preservado."
+                )
+                data = self._read()
             changed = self._upgrade(data)
             changed = self._import_legacy_registry(data) or changed
             if changed:
@@ -255,11 +265,58 @@ class LocalProfileStore:
             return
         backup_dir = self.path.parent / "profile-backups"
         backup_dir.mkdir(parents=True, exist_ok=True)
-        backup = backup_dir / (self.path.stem + "." + uuid.uuid4().hex + ".json")
-        shutil.copy2(self.path, backup)
-        files = sorted(backup_dir.glob(self.path.stem + ".*.json"), key=lambda x: x.stat().st_mtime_ns)
+        from nexora_accounts import credential_vault
+        suffix = ".json.dpapi" if credential_vault.is_available() else ".json"
+        backup = backup_dir / (self.path.stem + "." + uuid.uuid4().hex + suffix)
+        if credential_vault.is_available():
+            protected = credential_vault._crypt(self.path.read_bytes())
+            backup.write_bytes(protected)
+        else:
+            shutil.copy2(self.path, backup)
+            try:
+                backup.chmod(0o600)
+            except OSError:
+                pass
+        files = sorted(
+            (file for file in backup_dir.iterdir()
+             if file.name.startswith(self.path.stem + ".") and
+             file.name.endswith((".json", ".json.dpapi"))),
+            key=lambda x: x.stat().st_mtime_ns
+        )
         for old in files[:-5]:
             old.unlink()
+
+    def _restore_valid_backup(self) -> bool:
+        """Keep damaged bytes and restore only a valid, readable backup."""
+        folder = self.path.parent / "profile-backups"
+        if not folder.is_dir():
+            return False
+        from nexora_accounts import credential_vault
+        candidates = sorted(
+            (file for file in folder.iterdir()
+             if file.name.startswith(self.path.stem + ".") and
+             file.name.endswith((".json", ".json.dpapi"))),
+            key=lambda x: x.stat().st_mtime_ns, reverse=True
+        )
+        for backup in candidates:
+            try:
+                payload = backup.read_bytes()
+                if backup.name.endswith(".dpapi"):
+                    payload = credential_vault._crypt(payload, decrypt=True)
+                parsed = json.loads(payload.decode("utf-8"))
+                if not isinstance(parsed, dict) or type(parsed.get("nextNumber")) is not int or not isinstance(parsed.get("profiles"), list):
+                    continue
+                damaged = self.path.with_name(self.path.name + ".corrupt-" + uuid.uuid4().hex)
+                os.replace(self.path, damaged)
+                try:
+                    self.path.write_bytes(payload)
+                except OSError:
+                    os.replace(damaged, self.path)
+                    raise
+                return True
+            except (OSError, ValueError, UnicodeError):
+                continue
+        return False
 
     @staticmethod
     def _event(item: dict, action: str, detail: str = "") -> None:
