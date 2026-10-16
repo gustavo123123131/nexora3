@@ -141,3 +141,26 @@
   .accounts-page-heading h1 { font-size: 22px; }
   .accounts-local-grid { grid-template-columns: 1fr; }
 }
+
+.accounts-expanded {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #32475d;
+  background: #111e2d;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 0;
+}
+.accounts-expanded[hidden] { display: none; }
+.accounts-expanded .account-summary-row { grid-template-columns: 110px minmax(0,1fr); }
+.accounts-card-footer { flex-wrap: wrap; }
+.accounts-details, .accounts-close {
+  background: transparent;
+  border: 1px solid #3a4f65;
+  border-radius: 8px;
+  color: #c7daed;
+  padding: 8px 11px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.accounts-details:hover, .accounts-close:hover { background: #21344a; }
