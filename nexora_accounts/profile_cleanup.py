@@ -58,7 +58,7 @@ def delete_account(profile_id: int, *, remove_files: bool = True) -> dict:
         raise
     except OSError as exc:
         raise LocalProfileError(
-            "Não foi possível apagar os arquivos do navegador. Feche a sessão e tente novamente."
+            "Falha ao preparar o backup ou excluir os arquivos. A conta foi preservada quando o backup falhou."
         ) from exc
     return {"ok": True, "profileId": profile_id, "filesRemoved": remove_files,
             "backupId": snapshot["id"]}
