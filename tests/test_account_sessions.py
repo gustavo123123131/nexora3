@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 import nexora_accounts.local_profiles as profile_module
 import nexora_accounts.proxy_store as proxy_module
-from nexora_accounts.local_profiles import LocalProfileStore
+from nexora_accounts.local_profiles import LocalProfileStore, LocalProfileError
 from nexora_accounts.session_launcher import AccountLauncher
 from Settings.device_modes import account_profile_directory, profile_mode
 import servidor
@@ -210,12 +210,20 @@ def test_runtime_snapshot_is_immutable_and_survives_restart(isolated_profiles):
 
 def test_status_is_pending_until_site_confirms(isolated_profiles):
     store = isolated_profiles
-    p = store.create("filha", device_mode="android")
+    p = store.create("filha", device_mode="android",
+                     start_url="https://platform.example.test/register")
     assert p["status"] == "pending"
     store.update_status(p["id"], "error", "Falha ao enviar.")
     assert store.get(p["id"])["status"] == "error"
-    # Only an explicit confirmed-success event may call 'created'.
-    store.update_status(p["id"], "created", "Cadastro confirmado pelo site.")
+    # A bare created update has no evidence or run association.
+    with pytest.raises(LocalProfileError, match="evidência"):
+        store.update_status(p["id"], "created", "Cadastro confirmado pelo site.")
+    store.record_session(p["id"], "starting", "synthetic-test-run")
+    store.update_registration_result(
+        p["id"], p["accountId"], "synthetic-test-run", "created",
+        "Somente teste de persistência", confirmation_source="synthetic-contract",
+        site_origin="https://platform.example.test",
+    )
     assert store.get(p["id"])["status"] == "created"
     # Later navigation errors do not incorrectly revoke a confirmed account.
     store.update_status(p["id"], "error", "Proxy indisponível.")

@@ -171,6 +171,21 @@ class LocalProfileStore:
             if "lastOpenedAt" not in item:
                 item["lastOpenedAt"] = None
                 changed = True
+            for key in (
+                "platformUserId", "platformIdSource", "platformIdVerifiedAt",
+                "registrationConfirmedAt", "registrationConfirmationSource",
+            ):
+                if key not in item:
+                    item[key] = None
+                    changed = True
+            # Preserve old 'created' state, but do not falsely certify a
+            # legacy status based on the old generic success heuristics.
+            if "registrationReviewRequired" not in item:
+                item["registrationReviewRequired"] = (
+                    item.get("status") == "created"
+                    and not item.get("registrationConfirmationSource")
+                )
+                changed = True
             if "parentId" not in item:
                 item["parentId"] = None
                 changed = True
@@ -564,8 +579,13 @@ class LocalProfileStore:
 
     def update_status(self, profile_id: int, status: str, message: str = "") -> dict:
         """Never infer success from form filling, click or an HTTP 200 alone."""
-        if status not in ("pending", "created", "error", "unconfirmed"):
+        if status not in ("pending", "created", "error", "unconfirmed",
+                          "verification_required", "rejected"):
             raise LocalProfileError("Status inválido.")
+        if status == "created":
+            raise LocalProfileError(
+                "Confirmação exige evidência vinculada à sessão e origem do provedor."
+            )
         if type(profile_id) is not int:
             raise LocalProfileError("ID da conta inválido.")
         with _LOCK:
@@ -579,6 +599,107 @@ class LocalProfileStore:
             item["status"] = status
             item["statusMessage"] = str(message or "")[:220]
             self._event(item, "registration." + status, "Resultado registrado")
+            self._write(state)
+            return item.copy()
+
+    def update_registration_result(
+        self, profile_id: int, account_id: str, run_id: str,
+        status: str, message: str = "", *, confirmation_source=None,
+        site_origin=None, platform_user_id=None, platform_id_source=None,
+    ) -> dict:
+        """Atomic, session-bound registration update. No guessed remote ID.
+
+        A verified provider adapter must supply the confirmation source.
+        Generic HTTP responses cannot call this method to mark 'created'.
+        Check the immutable account UUID AND lastSessionId under one lock to
+        prevent an old worker from overwriting a newer session's result.
+        """
+        from urllib.parse import urlsplit
+
+        allowed = (
+            "pending", "verification_required", "created", "rejected",
+            "error", "unconfirmed",
+        )
+        if status not in allowed or type(profile_id) is not int:
+            raise LocalProfileError("Resultado do registro inválido.")
+        if not isinstance(account_id, str) or not account_id:
+            raise LocalProfileError("UUID interno não informado.")
+        if not isinstance(run_id, str) or not run_id:
+            raise LocalProfileError("Execução da conta não identificada.")
+        if status != "created" and (
+            confirmation_source is not None or
+            platform_user_id is not None or platform_id_source is not None
+        ):
+            raise LocalProfileError("Identificação remota sem confirmação de cadastro.")
+        if status == "created" and (
+            not isinstance(confirmation_source, str) or
+            not confirmation_source.strip() or len(confirmation_source) > 128
+        ):
+            raise LocalProfileError("Contrato de confirmação do provedor não verificado.")
+        if platform_user_id is not None and (
+            not isinstance(platform_user_id, str)
+            or not (1 <= len(platform_user_id) <= 128)
+            or not platform_user_id.isprintable()
+            or any(ch.isspace() for ch in platform_user_id)
+            or not isinstance(platform_id_source, str)
+            or not platform_id_source.strip()
+            or len(platform_id_source) > 128
+        ):
+            raise LocalProfileError("ID remoto sem fonte verificada ou formato inválido.")
+        if platform_user_id is None and platform_id_source is not None:
+            raise LocalProfileError("Fonte de ID remoto sem identificador.")
+
+        def origin(value):
+            try:
+                p = urlsplit(str(value or ""))
+                if p.scheme.lower() not in ("http", "https") or not p.hostname:
+                    return ""
+                port = p.port
+                default = 443 if p.scheme.lower() == "https" else 80
+                return p.scheme.lower() + "://" + p.hostname.lower() + (
+                    ":" + str(port) if port and port != default else ""
+                )
+            except (ValueError, TypeError):
+                return ""
+
+        with _LOCK:
+            state = self._read()
+            item = next((p for p in state["profiles"] if p["id"] == profile_id), None)
+            if item is None or item.get("accountId") != account_id:
+                raise LocalProfileError("A conta original não corresponde ao cadastro.")
+            if item.get("lastSessionId") != run_id:
+                raise LocalProfileError("Resultado antigo ignorado: execução diferente.")
+            if status == "created":
+                expected = origin(item.get("startUrl"))
+                actual = origin(site_origin)
+                if not expected or expected != actual:
+                    raise LocalProfileError("Origem autenticada diferente da conta.")
+                existing = item.get("platformUserId")
+                if existing is not None and platform_user_id not in (None, existing):
+                    raise LocalProfileError("Conflito de ID remoto: atualização bloqueada.")
+                if platform_user_id is not None and any(
+                    other["id"] != profile_id
+                    and other.get("platformUserId") == platform_user_id
+                    and other.get("platformOrigin") in (None, actual)
+                    for other in state["profiles"]
+                ):
+                    raise LocalProfileError("ID remoto já associado a outra conta desta plataforma.")
+            if item.get("status") == "created" and status != "created":
+                return item.copy()
+            item["status"] = status
+            item["statusMessage"] = str(message or "")[:220]
+            if status == "created":
+                item["registrationConfirmedAt"] = (
+                    item.get("registrationConfirmedAt") or self._now()
+                )
+                item["registrationConfirmationSource"] = confirmation_source
+                item["registrationReviewRequired"] = False
+                item["platformOrigin"] = origin(site_origin)
+                if platform_user_id is not None:
+                    item["platformUserId"] = platform_user_id
+                    item["platformIdSource"] = platform_id_source
+                    item["platformIdVerifiedAt"] = self._now()
+            self._event(item, "registration." + status, "Resultado vinculado à execução")
             self._write(state)
             return item.copy()
 
@@ -833,6 +954,12 @@ class LocalProfileStore:
                 "createdAt": datetime.now(timezone.utc).isoformat(),
                 "status": "pending",
                 "statusMessage": "Aguardando confirmação do cadastro pelo site.",
+                "platformUserId": None,
+                "platformIdSource": None,
+                "platformIdVerifiedAt": None,
+                "registrationConfirmedAt": None,
+                "registrationConfirmationSource": None,
+                "registrationReviewRequired": False,
                 "accountId": str(uuid.uuid4()),
                 "deviceProfileId": str(uuid.uuid4()),
                 "profilePath": self._profile_path(origin, number),
