@@ -172,6 +172,7 @@ def test_clicked_account_requires_own_validated_identity_evidence(store):
         # Invalid ID from the other account fails independent owner validation.
         page.emit(Response(page, "000002"))
         clicked(store, a, "run-a")
+        clicked(store, b, "run-b")
         assert watch.identify(wait_seconds=0) is None
         page.emit(Response(page, "000001"))
         identity = watch.identify(wait_seconds=0)
