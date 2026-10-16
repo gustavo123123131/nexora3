@@ -703,6 +703,73 @@ class LocalProfileStore:
             self._write(state)
             return item.copy()
 
+    def save_verified_platform_id(
+        self, profile_id: int, account_id: str, run_id: str, *,
+        site_origin: str, platform_user_id: str, platform_id_source: str,
+    ) -> dict:
+        """Persist an independently validated remote ID after confirmed signup.
+
+        The only caller is the per-session identity observer after its audited
+        site adapter validates the source/ownership. The store repeats all
+        local identity, origin, state and uniqueness checks under the same
+        lock that protects the atomic JSON write.
+        """
+        from Settings.platform_identity import site_origin as normalize_origin
+
+        if type(profile_id) is not int or not isinstance(account_id, str) or not account_id:
+            raise LocalProfileError("Identidade local inválida.")
+        if not isinstance(run_id, str) or not run_id:
+            raise LocalProfileError("Execução não identificada.")
+        if (not isinstance(platform_user_id, str)
+            or not (1 <= len(platform_user_id) <= 128)
+            or not platform_user_id.isprintable()
+            or any(ch.isspace() for ch in platform_user_id)
+            or not isinstance(platform_id_source, str)
+            or not (1 <= len(platform_id_source) <= 128)
+            or not platform_id_source.isprintable()
+            or any(ch.isspace() for ch in platform_id_source)):
+            raise LocalProfileError("ID remoto ou fonte inválidos.")
+
+        actual = normalize_origin(site_origin)
+        with _LOCK:
+            data = self._read()
+            item = next((p for p in data["profiles"] if p["id"] == profile_id), None)
+            if item is None or item.get("accountId") != account_id:
+                raise LocalProfileError("O ID local não corresponde à conta.")
+            if item.get("lastSessionId") != run_id:
+                raise LocalProfileError("Execução expirada: ID remoto não será salvo.")
+            if (item.get("status") != "created"
+                or item.get("registrationReviewRequired")
+                or not item.get("registrationConfirmedAt")
+                or not item.get("registrationConfirmationSource")):
+                raise LocalProfileError("Cadastro não confirmado por uma fonte verificada.")
+            if (not actual or actual != normalize_origin(item.get("startUrl"))
+                or actual != normalize_origin(item.get("platformOrigin"))):
+                raise LocalProfileError("Origem da plataforma divergente.")
+            if platform_user_id in (
+                item.get("username"), account_id, run_id,
+                str(item.get("deviceProfileId") or ""),
+            ):
+                raise LocalProfileError("Identificador interno não é ID remoto.")
+            previous = item.get("platformUserId")
+            if previous is not None:
+                if previous != platform_user_id:
+                    raise LocalProfileError("Conflito: não substituir ID remoto confirmado.")
+                return item.copy()
+            if any(
+                other["id"] != profile_id
+                and other.get("platformUserId") == platform_user_id
+                and other.get("platformOrigin") in (None, actual)
+                for other in data["profiles"]
+            ):
+                raise LocalProfileError("ID remoto já associado a outra conta.")
+            item["platformUserId"] = platform_user_id
+            item["platformIdSource"] = platform_id_source
+            item["platformIdVerifiedAt"] = self._now()
+            self._event(item, "platform-id.verified", "Identidade remota validada")
+            self._write(data)
+            return item.copy()
+
     def associate_proxy(self, profile_id: int, proxy_id):
         """Persist the association reference, not upstream credentials."""
         with _LOCK:
