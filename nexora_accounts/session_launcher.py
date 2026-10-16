@@ -29,6 +29,10 @@ class AccountLauncher:
         with self._lock:
             return len(self._running)
 
+    def is_running(self, profile_id: int) -> bool:
+        with self._lock:
+            return profile_id in self._running
+
     def stop_all(self):
         with self._lock:
             active = list(self._running.values())
@@ -90,10 +94,16 @@ class AccountLauncher:
             self._running[profile_id] = {"stop": stop_event}
 
         def log(message):
+            # Logs remain visible even if the CTk UI adapter cannot schedule
+            # an update; errors no longer disappear behind an HTTP 200.
+            safe = str(message)
             try:
-                tab.after(0, lambda msg=message: tab._log(msg))
+                tab.after(0, lambda msg=safe: tab._log(msg))
             except Exception:
-                pass
+                try:
+                    tab._log(safe)
+                except Exception:
+                    pass
 
         def worker():
             try:
@@ -205,7 +215,8 @@ class AccountLauncher:
             with self._lock:
                 self._running.pop(profile_id, None)
             raise
-        return {"ok": True, "profileId": profile_id, "deviceMode": mode}
+        return {"ok": True, "profileId": profile_id, "deviceMode": mode,
+                "message": "Abertura solicitada. Consulte os logs para confirmar a sessão."}
 
 
 ACCOUNT_LAUNCHER = AccountLauncher()
