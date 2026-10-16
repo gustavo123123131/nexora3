@@ -30,6 +30,13 @@ def _text(value, limit=128):
             and value.isprintable() and not any(c.isspace() for c in value))
 
 
+# Both exact hosts have been used as registration origins in the project.
+# Do not admit look-alike subdomains or arbitrary redirect destinations.
+FIVEGBET_SITE_ORIGINS = frozenset({
+    "https://5gbet.com", "https://www.5gbet.com",
+})
+
+
 class FiveGBetIdentityContract:
     """Observed 5gbet header location; NO authenticated response contract yet.
 
@@ -58,8 +65,8 @@ class FiveGBetIdentityContract:
 
 
 def provider_identity_contract(origin):
-    """Enable the audited header location only for the exact official site."""
-    if site_origin(origin) == FiveGBetIdentityContract.origin:
+    """Enable the audited header location for either exact known site host."""
+    if site_origin(origin) in FIVEGBET_SITE_ORIGINS:
         return FiveGBetIdentityContract()
     return None
 
@@ -119,11 +126,22 @@ class PlatformIdentityObserver:
             "username": account.get("username"),
         }
         self.origin = site_origin(expected_origin)
+        self._official_site = self.origin in FIVEGBET_SITE_ORIGINS
+        self._last_site_origin = self.origin
+        self._diagnosed = set()
+        self._request_route_seen = False
+        self._header_present = False
+        self._header_invalid = False
         if contract is None:
             contract = provider_identity_contract(self.origin)
         self.contract = contract if (
             contract is not None and self.origin
-            and site_origin(getattr(contract, "origin", None)) == self.origin
+            and (
+                site_origin(getattr(contract, "origin", None)) == self.origin
+                or (self._official_site
+                    and isinstance(contract, FiveGBetIdentityContract)
+                    and site_origin(contract.origin) in FIVEGBET_SITE_ORIGINS)
+            )
             and callable(getattr(contract, "validate_identity", None))
         ) else None
         # Only the exact audited CDN host/path may add another origin.
@@ -133,10 +151,11 @@ class PlatformIdentityObserver:
             for method, api_origin, path in routes
             if (method, api_origin, path) ==
             ("GET", "https://cdnapiif.ppa5g.net", "/hall/api/message/list/all")
-            and self.origin == FiveGBetIdentityContract.origin
+            and self._official_site
         ) if self.contract is not None else frozenset()
         self._response_origins = {self.origin}
         if self._header_routes:
+            self._response_origins.update(FIVEGBET_SITE_ORIGINS)
             self._response_origins.add("https://cdnapiif.ppa5g.net")
         self._header_requests = {}
         self._scanned_request_ids = set()
@@ -150,9 +169,48 @@ class PlatformIdentityObserver:
         self._context_listening = False
         self._request_listening = False
         self._context_request_listening = False
+        self._navigation_listening = False
+
+    def _log_once(self, key, message):
+        if key not in self._diagnosed:
+            self._diagnosed.add(key)
+            try:
+                self.log("[Registro] [ID] " + message)
+            except Exception:
+                pass
+
+    def note_navigation(self, url):
+        """Diagnose the final host and any allowed apex/www redirect."""
+        new_origin = site_origin(url)
+        if not new_origin or new_origin == self._last_site_origin:
+            return
+        self._last_site_origin = new_origin
+        if self._official_site:
+            self._official_site = new_origin in FIVEGBET_SITE_ORIGINS
+            label = ("oficial" if self._official_site else "fora da lista permitida")
+            self._log_once(
+                "navigation-" + label,
+                "Origem após navegação: " + label
+                + "; adaptador " + ("ativo." if self._official_site else "suspenso."),
+            )
+        elif new_origin in FIVEGBET_SITE_ORIGINS:
+            # An untrusted initial domain must not automatically inherit
+            # 5gbet identity or overwrite its recorded startUrl.
+            self._log_once(
+                "unexpected-redirect",
+                "Redirecionamento para domínio oficial observado, mas "
+                "origem inicial não autorizada; não capturando ID.",
+            )
+
+    def _on_frame_navigated(self, frame):
+        try:
+            if frame is self.page.main_frame:
+                self.note_navigation(frame.url)
+        except Exception:
+            return
 
     def _collect_request(self, request, *, page_scoped):
-        if not self._header_routes:
+        if not self._header_routes or not self._official_site:
             return
         try:
             parsed = urlsplit(request.url)
@@ -163,6 +221,8 @@ class PlatformIdentityObserver:
             )
             if route not in self._header_routes:
                 return
+            self._request_route_seen = True
+            self._log_once("request-route", "Requisição permitida da API observada.")
             if not page_scoped:
                 try:
                     frame = request.frame
@@ -184,11 +244,24 @@ class PlatformIdentityObserver:
                 return
             raw = next((v for k, v in headers.items()
                         if isinstance(k, str) and k.lower() == "x-object-id"), None)
+            if raw is not None:
+                self._header_present = True
+            else:
+                self._log_once(
+                    "missing-header", "Requisição permitida sem cabeçalho x-object-id.",
+                )
             uid = parse_x_object_id_uid(raw)
             if uid is None:
+                if raw is not None:
+                    self._header_invalid = True
+                    self._log_once("invalid-header", "x-object-id presente, uid inválido.")
                 return
+            self._log_once("candidate", "x-object-id.uid observado (valor protegido); aguardando verificação.")
             if self._header_seen_uid is not None and self._header_seen_uid != uid:
                 self._header_conflict = True
+                self._log_once(
+                    "conflict", "IDs de cabeçalhos conflitantes; nenhum ID será salvo.",
+                )
             else:
                 self._header_seen_uid = uid
             if len(self._header_requests) < 32:
@@ -240,9 +313,20 @@ class PlatformIdentityObserver:
         if self._active:
             return
         if not self.origin:
+            self._log_once("no-origin", "Origem inicial inválida; adaptador não ativado.")
             return
+        self._log_once(
+            "activation",
+            "Adaptador " + ("5gbet ativo." if self._header_routes else
+            "não ativado para a origem inicial; contrato de identidade ausente."),
+        )
         self.page.on("response", self._on_page_response)
         self._active = True
+        try:
+            self.page.on("framenavigated", self._on_frame_navigated)
+            self._navigation_listening = True
+        except Exception:
+            pass
         if self._header_routes:
             self.page.on("request", self._on_page_request)
             self._request_listening = True
@@ -255,6 +339,22 @@ class PlatformIdentityObserver:
                 self._context_request_listening = True
 
     def close(self):
+        if self._active and self._header_routes:
+            if not self._request_route_seen:
+                self._log_once("route-absent", "Nenhuma requisição permitida da API observada nesta sessão.")
+            elif self._header_seen_uid is None:
+                self._log_once("uid-absent", "Requisição observada, mas nenhum uid válido capturado.")
+            else:
+                self._log_once(
+                    "candidate-final", "ID observado, não verificado; "
+                    "falta evidência independente de autenticação.",
+                )
+        if self._navigation_listening:
+            try:
+                self.page.remove_listener("framenavigated", self._on_frame_navigated)
+            except Exception:
+                pass
+            self._navigation_listening = False
         if self._active:
             try:
                 self.page.remove_listener("response", self._on_page_response)
@@ -472,7 +572,7 @@ class PlatformIdentityObserver:
         authenticated identity and ownership from the selected source.
         """
         if self.contract is None:
-            self.log("[Registro] ID da plataforma: não identificado (contrato de identidade ausente).")
+            self._log_once("no-contract", "ID não identificado: contrato de identidade ausente.")
             return None
         if stop_event is not None and stop_event.is_set():
             return None
@@ -514,10 +614,13 @@ class PlatformIdentityObserver:
             if result:
                 return result
         if self._header_seen_uid is not None and self._clicked_at is not None:
-            self.log(
-                "[Registro] x-object-id.uid observado na sessão, mas falta "
-                "confirmação independente de autenticação; ID não salvo."
+            self._log_once(
+                "candidate-pending", "ID observado, mas ainda não verificado "
+                "por resposta de autenticação independente; ID não salvo.",
             )
-        else:
-            self.log("[Registro] ID da plataforma: não identificado nas fontes validadas.")
+        elif self._clicked_at is not None:
+            self._log_once(
+                "no-uid", "Ainda não foi encontrado uid autenticado nesta sessão; "
+                "o monitor continuará ativo.",
+            )
         return None
