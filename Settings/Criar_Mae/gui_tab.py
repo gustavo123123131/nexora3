@@ -1462,7 +1462,7 @@ def run_instance(
                             )
                             log(
                                 f"[#{idx}] [Registro] {profile['label']}: "
-                                f"status { {'created':'Criada','error':'Erro','pending':'Pendente'}[result_status] }. "
+                                f"status { {'created':'Criada','error':'Erro','pending':'Pendente','unconfirmed':'Não confirmado'}[result_status] }. "
                                 f"Motivo: {reason}"
                             )
                         else:
