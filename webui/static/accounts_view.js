@@ -114,8 +114,7 @@
     removeSelected.addEventListener('click', async () => {
       const ids = [...selection].filter(id => !deleting.has(id));
       if (!ids.length) return;
-      if (!window.confirm('Excluir ' + ids.length +
-          ' conta(s) selecionada(s)? Um backup completo será criado automaticamente para cada uma.')) return;
+      // The button itself is the deletion request: do not stack dialogs.
       for (const id of ids) deleting.add(id);
       status.textContent = 'Excluindo ' + ids.length +
         ' conta(s): criando backups completos antes de remover os arquivos. Aguarde.';
@@ -142,7 +141,45 @@
       }
     });
     toolbar.append(allLabel, selectedCount, removeSelected);
-    node.append(top, status, toolbar, recovery, list);
+    // Keep account cards and deleted-account backups in the SAME top-level
+    // Contas tab. Reuse the existing backup renderer and restore endpoints.
+    const sectionTabs = document.createElement('nav');
+    sectionTabs.className = 'accounts-inner-tabs';
+    sectionTabs.setAttribute('aria-label', 'Seções de Contas');
+    const accountsTab = document.createElement('button');
+    accountsTab.type = 'button';
+    accountsTab.textContent = 'Contas';
+    const backupTab = document.createElement('button');
+    backupTab.type = 'button';
+    backupTab.textContent = 'Backup';
+    sectionTabs.append(accountsTab, backupTab);
+
+    const accountsPanel = document.createElement('div');
+    accountsPanel.className = 'accounts-current-panel';
+    accountsPanel.append(top, status, toolbar, recovery, list);
+    const backupPanel = document.createElement('div');
+    backupPanel.className = 'accounts-backup-panel';
+    backupPanel.hidden = true;
+    const backupView = window.NexoraBackupView.create({
+      get, post, onRestore: () => refresh()
+    });
+    backupPanel.append(backupView.node);
+    let showingBackups = false;
+    function showSection(backups) {
+      showingBackups = backups;
+      accountsPanel.hidden = backups;
+      backupPanel.hidden = !backups;
+      accountsTab.classList.toggle('active', !backups);
+      backupTab.classList.toggle('active', backups);
+      accountsTab.setAttribute('aria-pressed', String(!backups));
+      backupTab.setAttribute('aria-pressed', String(backups));
+      if (backups) backupView.onShow();
+      else refresh();
+    }
+    accountsTab.addEventListener('click', () => showSection(false));
+    backupTab.addEventListener('click', () => showSection(true));
+    node.append(sectionTabs, accountsPanel, backupPanel);
+    showSection(false);
 
     const labels = {
       pending: 'Pendente', created: 'Criada', error: 'Erro',
@@ -268,8 +305,8 @@
         remove.title = 'Excluir esta conta e seus dados locais de navegador';
         remove.addEventListener('click', async () => {
           const accountName = profile.label || 'esta conta';
-          if (!window.confirm('Excluir ' + accountName +
-              '? Um backup completo dos dados e cookies disponíveis será salvo na aba Backup.')) return;
+          // One click triggers the request. Backup is created by the agent
+          // before it removes this account; a failed request restores the card.
           deleting.add(profile.id);
           selection.delete(profile.id);
           status.textContent = accountName +
@@ -284,7 +321,9 @@
             }
             deleting.delete(profile.id);
             await refresh();
-            status.textContent = accountName + ' excluída, com backup disponível na aba Backup.';
+            status.textContent = result.legacyFilesPreserved
+              ? accountName + ' excluída da lista e salva em Contas > Backup; pasta Chromium legada preservada.'
+              : accountName + ' excluída, com backup em Contas > Backup.';
           } catch (error) {
             deleting.delete(profile.id);
             render(latestProfiles);
@@ -379,7 +418,7 @@
         }
       }
     }
-    return {node, onShow: refresh};
+    return {node, onShow: () => showingBackups ? backupView.onShow() : refresh()};
   }
   Object.defineProperty(window, 'NexoraAccountsView', {
     value: Object.freeze({create}), writable: false, configurable: false,
