@@ -183,7 +183,8 @@
 
     const labels = {
       pending: 'Pendente', created: 'Criada', error: 'Erro',
-      unconfirmed: 'Não confirmado'
+      rejected: 'Recusada', verification_required: 'Verificação necessária',
+      unconfirmed: 'Não confirmada'
     };
     function textRow(label, value) {
       const row = document.createElement('div');
@@ -350,6 +351,12 @@
             expanded.replaceChildren();
             expanded.append(
               textRow('Nome', stored.fullName),
+              textRow('Status do cadastro', labels[stored.status] || 'Não confirmada'),
+              textRow('ID da plataforma', stored.platformUserId || 'Não identificado'),
+              textRow('Fonte da confirmação',
+                stored.registrationReviewRequired
+                  ? 'Confirmação antiga — revisão necessária'
+                  : (stored.registrationConfirmationSource || 'Não comprovada')),
               textRow('UUID da conta', stored.accountId),
               textRow(
                 stored.deviceProfileIdOrigin === 'migration-internal-only'
