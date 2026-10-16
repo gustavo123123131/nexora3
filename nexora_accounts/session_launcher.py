@@ -8,6 +8,7 @@ from __future__ import annotations
 import importlib
 import itertools
 import threading
+import uuid
 
 from nexora_accounts.local_profiles import LocalProfileStore
 from nexora_accounts.proxy_store import ProxyStore
@@ -43,6 +44,17 @@ class AccountLauncher:
     def _set_state(self, profile_id: int, state: str, message: str):
         with self._lock:
             self._results[profile_id] = {"state": state, "message": message[:220]}
+
+    def close(self, profile_id: int) -> dict:
+        with self._lock:
+            info = self._running.get(profile_id)
+            if not info:
+                return {"ok": True, "message": "Nenhum navegador ativo para esta conta."}
+            info["stop"].set()
+            self._results[profile_id] = {
+                "state": "closing", "message": "Fechando navegador desta conta."
+            }
+        return {"ok": True, "message": "Fechamento solicitado para esta conta."}
 
     def stop_all(self):
         with self._lock:
@@ -96,6 +108,7 @@ class AccountLauncher:
             raise ValueError("URL salva na conta é inválida.")
         module, tab = self._controller(gui, profile["origin"])
         instance_idx = next(self._instance_numbers)
+        run_id = str(uuid.uuid4())
         stop_event = threading.Event()
         with self._lock:
             if profile_id in self._running:
@@ -120,9 +133,17 @@ class AccountLauncher:
                     pass
 
         def worker():
+            try:
+                LocalProfileStore().record_session(profile_id, "starting", run_id)
+            except Exception:
+                pass
             def fail(message):
                 log(message)
                 self._set_state(profile_id, "error", message)
+                try:
+                    LocalProfileStore().record_session(profile_id, "error", run_id)
+                except Exception:
+                    pass
             try:
                 store = ProxyStore()
                 listing = store.list()["proxies"]
@@ -180,8 +201,11 @@ class AccountLauncher:
                     "url": url or "about:blank",
                     "device_mode": mode,
                     "account_profile": profile,
-                    "on_browser_ready": lambda: self._set_state(
-                        profile_id, "ready", "Chromium abriu a sessão desta conta."
+                    "run_id": run_id,
+                    "browser_id": instance_idx,
+                    "on_browser_ready": lambda: (
+                        self._set_state(profile_id, "ready", "Chromium abriu a sessão desta conta."),
+                        LocalProfileStore().record_session(profile_id, "ready", run_id),
                     ),
                 }
                 if session_proxy_id:
@@ -235,6 +259,11 @@ class AccountLauncher:
                             "message": "A sessão da conta foi encerrada."
                         }
                     self._running.pop(profile_id, None)
+                if self.state(profile_id)["state"] == "closed":
+                    try:
+                        LocalProfileStore().record_session(profile_id, "closed", run_id)
+                    except Exception:
+                        pass
 
         try:
             thread = threading.Thread(
