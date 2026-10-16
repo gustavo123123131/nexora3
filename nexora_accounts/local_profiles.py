@@ -325,6 +325,11 @@ class LocalProfileStore:
         )
         for name in ("password", "confirmPassword", "credentialRef"):
             safe.pop(name, None)
+        if details and isinstance(safe.get("runtimeConfig"), dict):
+            # Runtime HTTP headers may contain authentication information.
+            config = safe["runtimeConfig"].copy()
+            config.pop("extra_headers", None)
+            safe["runtimeConfig"] = config
         if not details:
             safe.pop("history", None)
             safe.pop("runtimeConfig", None)
@@ -494,6 +499,17 @@ class LocalProfileStore:
             self._event(item, "registration." + status, "Resultado registrado")
             self._write(state)
             return item.copy()
+
+    def associate_proxy(self, profile_id: int, proxy_id):
+        """Persist the association reference, not upstream credentials."""
+        with _LOCK:
+            data = self._read()
+            item = next((p for p in data["profiles"] if p["id"] == profile_id), None)
+            if item is None:
+                raise LocalProfileError("Conta não encontrada.")
+            item["proxyId"] = proxy_id
+            self._event(item, "proxy.assigned", "Vínculo persistente registrado")
+            self._write(data)
 
     def record_session(self, profile_id: int, action: str, run_id: str = ""):
         if action not in ("starting", "ready", "closed", "error"):
