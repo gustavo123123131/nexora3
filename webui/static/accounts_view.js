@@ -134,6 +134,7 @@
             errors.map(x => 'Conta ' + x.id + ' (' + x.reason + ')').join('; ') : '');
       } catch (error) {
         for (const id of ids) deleting.delete(id);
+        render(latestProfiles);
         await refresh();
         status.textContent = 'Falha na exclusão em lote: ' + error.message;
       } finally {
@@ -286,6 +287,7 @@
             status.textContent = accountName + ' excluída, com backup disponível na aba Backup.';
           } catch (error) {
             deleting.delete(profile.id);
+            render(latestProfiles);
             await refresh();
             status.textContent = 'Não foi possível excluir ' + accountName +
               ': ' + error.message + '. O cartão foi restaurado.';
