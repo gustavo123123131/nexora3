@@ -78,22 +78,22 @@ class PlatformIdentityObserver:
         self._active = False
         self._context_listening = False
 
-    def _on_response(self, response):
+    def _collect_response(self, response, *, page_scoped):
         try:
             if site_origin(response.url) != self.origin:
                 return
-            # A Chromium context can contain multiple tabs on the SAME
-            # origin. Ignore responses attributed to another tab, even if
-            # Playwright forwards them to a context-level listener.
-            try:
-                frame = response.request.frame
-            except Exception:
-                # Service worker / unframed requests cannot be attributed
-                # unambiguously to this profile's page.
-                return
-            if frame is None or frame.page is not self.page:
-                return
-            # Store response handles, never bodies, headers, cookies or tokens.
+            if not page_scoped:
+                # A Chromium context may contain several tabs on the same
+                # origin. For context events require an exact frame->page
+                # match; unframed service workers are ambiguous and ignored.
+                try:
+                    frame = response.request.frame
+                    if frame is None or frame.page is not self.page:
+                        return
+                except Exception:
+                    return
+            # Keep only bounded response handles from the owning page; never
+            # retain payloads, cookies, request headers or token-bearing URLs.
             key = id(response)
             if key not in self._seen and len(self._responses) < 64:
                 self._seen.add(key)
@@ -101,12 +101,19 @@ class PlatformIdentityObserver:
         except Exception:
             pass
 
+    def _on_page_response(self, response):
+        # Playwright page.on('response') is already scoped to this page.
+        self._collect_response(response, page_scoped=True)
+
+    def _on_response(self, response):
+        self._collect_response(response, page_scoped=False)
+
     def start(self):
         if self._active:
             return
         if not self.origin:
             return
-        self.page.on("response", self._on_response)
+        self.page.on("response", self._on_page_response)
         self._active = True
         context = getattr(self.page, "context", None)
         if context is not None and hasattr(context, "on"):
@@ -116,7 +123,7 @@ class PlatformIdentityObserver:
     def close(self):
         if self._active:
             try:
-                self.page.remove_listener("response", self._on_response)
+                self.page.remove_listener("response", self._on_page_response)
             except Exception:
                 pass
             self._active = False
