@@ -69,6 +69,7 @@ REQUIRED = (
     "webui/static/app.js",
     "webui/static/accounts_view.js",
     "webui/static/accounts_view.css",
+    "webui/static/backup_view.js",
     "Settings/registration_autofill.py",
 )
 
