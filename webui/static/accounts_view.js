@@ -14,13 +14,67 @@
     header.append(title, subtitle);
     const count = document.createElement('span');
     count.className = 'accounts-count';
-    top.append(header, count);
+    const check = document.createElement('button');
+    check.type = 'button';
+    check.className = 'accounts-details';
+    check.textContent = 'Verificar perfis';
+    top.append(header, count, check);
+    const recovery = document.createElement('div');
+    recovery.className = 'accounts-recovery';
+    recovery.hidden = true;
+    check.addEventListener('click', async () => {
+      if (!recovery.hidden) { recovery.hidden = true; return; }
+      try {
+        const integrity = await get('/api/local-profiles/integrity');
+        const backup = await get('/api/local-profiles/recovery');
+        recovery.replaceChildren();
+        const info = document.createElement('p');
+        info.textContent = 'Pastas ausentes: ' + integrity.missing.length +
+          ' · Pastas sem conta: ' + integrity.orphanFolders.length +
+          '. Nenhum arquivo foi movido ou alterado.';
+        recovery.append(info);
+        if (integrity.recoveryNotice) {
+          const note = document.createElement('p');
+          note.textContent = integrity.recoveryNotice;
+          recovery.append(note);
+        }
+        for (const profile of (backup.candidates || []).slice(0, 30)) {
+          const line = document.createElement('div');
+          line.className = 'accounts-recovery-row';
+          const description = document.createElement('span');
+          description.textContent = profile.label + ' — ' + profile.accountId;
+          const restore = document.createElement('button');
+          restore.type = 'button';
+          restore.className = 'accounts-details';
+          restore.textContent = 'Restaurar cartão';
+          restore.addEventListener('click', async () => {
+            if (!window.confirm('Recuperar metadados de ' + profile.label +
+                ' pelo backup? Não altera cookies nem substitui arquivos Chromium.')) return;
+            try {
+              await post('/api/local-profiles/restore', {
+                accountId: profile.accountId, confirmed: true
+              });
+              recovery.hidden = true;
+              status.textContent = profile.label + ': registro recuperado do backup.';
+              await refresh();
+            } catch (error) {
+              status.textContent = 'Recuperação indisponível: ' + error.message;
+            }
+          });
+          line.append(description, restore);
+          recovery.append(line);
+        }
+        recovery.hidden = false;
+      } catch (error) {
+        status.textContent = 'Falha na verificação dos perfis: ' + error.message;
+      }
+    });
     const status = document.createElement('p');
     status.className = 'accounts-status';
     status.setAttribute('role', 'status');
     const list = document.createElement('div');
     list.className = 'accounts-local-grid';
-    node.append(top, status, list);
+    node.append(top, status, recovery, list);
 
     const labels = {pending: 'Pendente', created: 'Criada', error: 'Erro'};
     function textRow(label, value) {
@@ -164,7 +218,11 @@
             expanded.append(
               textRow('Nome', stored.fullName),
               textRow('UUID da conta', stored.accountId),
-              textRow('UUID da emulação', stored.deviceProfileId),
+              textRow(
+                stored.deviceProfileIdOrigin === 'migration-internal-only'
+                  ? 'UUID interno (migração)' : 'UUID da emulação',
+                stored.deviceProfileId
+              ),
               textRow('Diretório Chromium', stored.profilePath),
               textRow('Sessão', stored.sessionStatus || 'closed'),
               textRow('Última abertura', stored.lastOpenedAt),
