@@ -41,7 +41,9 @@ def test_delete_removes_only_requested_account_folder(store, tmp_path):
     proxy_store.ProxyStore().bind_profile(a["id"], proxy["id"])
 
     result = delete_account(a["id"])
-    assert result == {"ok": True, "profileId": a["id"]}
+    assert result["ok"] is True
+    assert result["profileId"] == a["id"]
+    assert result["filesRemoved"] is True
     assert not p_a.exists()
     assert (p_b / "cookies.dat").exists()
     assert (shared / "unknown.dat").exists()
@@ -74,3 +76,18 @@ def test_delete_api_needs_confirm_and_csrf(store):
         assert good.status_code == 200
         assert good.json()["profileId"] == a["id"]
         assert not store.list()
+
+
+def test_delete_card_only_preserves_its_browser_files(store, tmp_path):
+    from Settings.device_modes import account_profile_directory
+    p = store.create("mae", device_mode="android")
+    folder = account_profile_directory(tmp_path / "mae-profiles", "mae", p["id"])
+    folder.mkdir(parents=True)
+    (folder / "Local Storage").mkdir()
+    (folder / "Local Storage" / "db").write_text("keep me")
+    response = delete_account(p["id"], remove_files=False)
+    assert response["filesRemoved"] is False
+    assert (folder / "Local Storage" / "db").read_text() == "keep me"
+    assert store.list() == []
+    backups = list((store.path.parent / "profile-backups").glob("*.json"))
+    assert backups, "Metadata backup must exist before account removal"
