@@ -331,6 +331,29 @@ async def select_local_profile(body: dict):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@app.get('/api/local-profiles/integrity')
+async def local_profile_integrity():
+    from nexora_accounts.local_profiles import LocalProfileStore
+    return LocalProfileStore().integrity_report()
+
+
+@app.get('/api/local-profiles/recovery')
+async def local_profile_recovery_candidates():
+    from nexora_accounts.local_profiles import LocalProfileStore
+    return {"candidates": LocalProfileStore().recovery_candidates()}
+
+
+@app.post('/api/local-profiles/restore')
+async def local_profile_restore(body: dict):
+    from nexora_accounts.local_profiles import LocalProfileStore, LocalProfileError
+    if body.get("confirmed") is not True:
+        raise HTTPException(status_code=422, detail="Confirme a restauração dos metadados.")
+    try:
+        return LocalProfileStore().restore_account_from_backup(body.get("accountId"))
+    except LocalProfileError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @app.get('/api/local-profiles/detail')
 async def local_profile_details(id: int):
     from nexora_accounts.local_profiles import LocalProfileStore, LocalProfileError
