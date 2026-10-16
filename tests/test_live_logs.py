@@ -51,5 +51,16 @@ def test_authenticated_local_log_endpoint_and_browser_source():
         events = reply.json()["events"]
         sources = {e["source"] for e in events if e["text"] == "[Teste] mensagem global"}
         assert sources == {"Mãe", "Filha"}
+        # Original widgets still contain messages for desktop compatibility,
+        # while web state snapshots omit the duplicated full log history.
+        assert all("[Teste] mensagem global" in tab.log_text._text for tab in tabs)
+        tree = client.get("/api/state").json()["tree"]
+        def walk(node):
+            yield node
+            for child in node.get("children", []):
+                yield from walk(child)
+        assert len([node for node in walk(tree) if node["type"] == "textbox"]) >= 2
+        assert all(node["options"].get("value") == "" for node in walk(tree)
+                   if node["type"] == "textbox")
         assert client.get("/api/live-logs",
                           headers={"Host": "unauthorized.example"}).status_code == 403
