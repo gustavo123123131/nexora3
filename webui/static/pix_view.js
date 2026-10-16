@@ -35,7 +35,8 @@
       else if (phone.length === 13 && phone.startsWith('55')) phone = phone.slice(2);
       if (/^\d{11}$/.test(phone) && ddds.has(Number(phone.slice(0, 2))) &&
           phone[2] === '9' && !/^(\d)\1+$/.test(phone.slice(2))) {
-        found.PHONE = '+55' + phone;
+        // Chaves de telefone são exibidas com DDD + 9 dígitos, sem +55.
+        found.PHONE = phone;
       }
     }
     const email = raw.toLowerCase();
@@ -67,7 +68,7 @@
     form.hidden = true;
     const field = document.createElement('input');
     field.type = 'text';
-    field.placeholder = 'CPF, celular, e-mail ou UUID da chave aleatória';
+    field.placeholder = 'CPF, celular com DDD (11 dígitos), e-mail ou UUID';
     field.autocomplete = 'off';
     field.spellcheck = false;
     field.maxLength = 128;
