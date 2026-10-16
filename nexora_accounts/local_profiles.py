@@ -686,7 +686,7 @@ class LocalProfileStore:
                 return self.public_view(item, details=True)
             raise LocalProfileError("Conta não localizada nos backups, nenhuma alteração feita.")
 
-    def record_session(self, profile_id: int, action: str, run_id: str = ""):
+    def record_session(self, profile_id: int, action: str, run_id: str = "", browser_id=None):
         if action not in ("starting", "ready", "closed", "error"):
             raise LocalProfileError("Evento de sessão inválido.")
         with _LOCK:
@@ -697,6 +697,8 @@ class LocalProfileStore:
             if action == "starting":
                 item["lastOpenedAt"] = self._now()
                 item["lastSessionId"] = run_id
+                if browser_id is not None:
+                    item["lastBrowserId"] = str(browser_id)
             item["sessionStatus"] = action
             self._event(item, "session." + action, "Abertura " + action)
             self._write(data)
