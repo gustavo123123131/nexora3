@@ -80,6 +80,7 @@
 .accounts-status-pending { color: #ffd27e; background: #493c27; }
 .accounts-status-created { color: #8bdfab; background: #1a4533; }
 .accounts-status-error { color: #ffa3a3; background: #4b2a30; }
+.accounts-status-unconfirmed { color: #c5d2e1; background: #334355; }
 .accounts-summary { display: grid; gap: 8px; }
 .account-summary-row {
   display: grid;
