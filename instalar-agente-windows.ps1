@@ -92,7 +92,8 @@ try {
         foreach ($Needed in @(
             "Settings\registration_autofill.py",
             "webui\static\accounts_view.js",
-            "webui\static\accounts_view.css"
+            "webui\static\accounts_view.css",
+            "webui\static\backup_view.js"
         )) {
             if (-not (Test-Path -LiteralPath (Join-Path $Source $Needed))) {
                 throw "ZIP incompleto: arquivo ativo do Nexora3 ausente."
