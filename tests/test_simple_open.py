@@ -27,6 +27,12 @@ def test_both_buttons_open_browsers_and_create_one_local_profile_each(monkeypatc
             module = importlib.import_module(controller.__class__.__module__)
             path = tmp_path / label / "__profiles"
             monkeypatch.setattr(module, "PROFILES_DIR", path)
+            from Settings.Criar_Mae.settings import utils as mae_utils
+            from Settings.Criar_Filha.settings import utils as filha_utils
+            monkeypatch.setattr(
+                mae_utils if label == "mae" else filha_utils,
+                "PROFILES_DIR", path,
+            )
             finished = threading.Event()
             calls = []
 
@@ -95,13 +101,21 @@ def test_both_buttons_open_browsers_and_create_one_local_profile_each(monkeypatc
                     {"idx": 1, "url": "https://exemplo.com"},
                     {"idx": 2, "url": "https://exemplo.com"},
                 ]
-                assert not path.exists()  # Browser directories are created only by Chromium.
+                # Profile directory and fixed device config are reserved
+                # before Chromium starts, even when the browser is mocked.
+                assert path.exists()
+                assert all((path / "accounts" / ("account_" + str(p["account_profile"]["id"]))).exists()
+                           for p in plans)
                 records = client.get("/api/local-profiles").json()["profiles"]
                 assert len(records) == (2 if label == "mae" else 4)
                 assert all(p["origin"] == label for p in records[-2:])
                 assert records[-1]["deviceMode"] == "desktop"
                 assert records[-1]["label"] == f"Conta {len(records)}"
-                assert records[-1]["password"] == records[-1]["confirmPassword"]
+                assert "password" not in records[-1]
+                assert "confirmPassword" not in records[-1]
+                assert records[-1]["accountId"]
+                assert records[-1]["deviceProfileId"]
+                assert records[-1]["hasRuntimeConfig"] is True
                 assert not (tmp_path / "Nexora" / "accounts.json").exists()
                 assert client.get("/api/registration/accounts").status_code == 404
             finally:
