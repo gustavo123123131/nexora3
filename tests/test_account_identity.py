@@ -111,3 +111,21 @@ def test_bad_source_json_is_not_replaced_with_empty_profiles(tmp_path):
     with pytest.raises(LocalProfileError):
         LocalProfileStore(path)
     assert path.read_text(encoding="utf-8") == "{BROKEN"
+
+
+def test_corrupted_generated_profiles_restored_from_backup_without_losing_damaged_original(tmp_path, monkeypatch):
+    from Settings.Criar_Mae.settings import utils
+    monkeypatch.setattr(utils, "PROFILES_DIR", tmp_path / "profiles")
+    path = tmp_path / "Nexora" / "generated_profiles.json"
+    store = LocalProfileStore(path)
+    p = store.create("mae")
+    # A backup is always written before an account deletion.
+    store.create("mae")
+    store.delete(p["id"])
+    remaining_id = store.list()[0]["id"]
+    path.write_text("{damaged", encoding="utf-8")
+    restored = LocalProfileStore(path)
+    assert restored.recovery_notice
+    # Backup represents pre-deletion state and retains at least the surviving ID.
+    assert any(x["id"] == remaining_id for x in restored.list())
+    assert any(path.parent.glob("generated_profiles.json.corrupt-*"))
