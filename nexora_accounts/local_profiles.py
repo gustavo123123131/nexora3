@@ -555,7 +555,7 @@ class LocalProfileStore:
 
     def update_status(self, profile_id: int, status: str, message: str = "") -> dict:
         """Never infer success from form filling, click or an HTTP 200 alone."""
-        if status not in ("pending", "created", "error"):
+        if status not in ("pending", "created", "error", "unconfirmed"):
             raise LocalProfileError("Status inválido.")
         if type(profile_id) is not int:
             raise LocalProfileError("ID da conta inválido.")
