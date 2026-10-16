@@ -43,7 +43,7 @@ def _default_path() -> Path:
 
 
 def _cpf(raw: str) -> str | None:
-    if not re.fullmatch(r"[\d.\-]+", raw, flags=re.ASCII):
+    if not re.fullmatch(r"(?:[0-9]{11}|[0-9]{3}\.[0-9]{3}\.[0-9]{3}-[0-9]{2})", raw):
         return None
     digits = re.sub(r"\D", "", raw)
     if len(digits) != 11 or len(set(digits)) == 1:
@@ -113,7 +113,7 @@ def normalize_key(value: str, key_type: str | None = None) -> tuple[str, str]:
     options = candidates(value)
     if not options:
         raise PixKeyError("Chave Pix inválida. Confira o formato do CPF, telefone, e-mail ou EVP.")
-    if key_type is not None and key_type not in _TYPES:
+    if key_type is not None and (not isinstance(key_type, str) or key_type not in _TYPES):
         raise PixKeyError("Tipo de chave Pix inválido.")
     if key_type is None:
         if len(options) > 1:
