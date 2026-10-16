@@ -615,4 +615,11 @@ async function poll() {
     setTimeout(poll, 550);
   }
 }
+// The console is outside the tab tree, so it remains mounted while navigating.
+const globalLogView = window.NexoraLiveLogs.create({
+  get: getRegistration,
+  isReady: () => !runningInCodespaces || agentConnected,
+});
+document.body.append(globalLogView.node);
+globalLogView.start();
 poll();

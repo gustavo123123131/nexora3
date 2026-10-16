@@ -2003,6 +2003,13 @@ class FilhaTab(ctk.CTkFrame):
         self.log_text.insert("end", msg)
         self.log_text.see("end")
         self.log_text.configure(state="disabled")
+        # Publish the same event once to the cross-tab panel. Failure to
+        # deliver diagnostics must never interrupt browser operations.
+        try:
+            from webui.live_logs import publish
+            publish("Filha", msg)
+        except Exception:
+            pass
 
     def _get_float(self, var: ctk.StringVar, default: float = 1.0, min_v: float = 0.0, max_v: float = 9999.0) -> float:
         s = (var.get() or "").strip().replace(",", ".")
@@ -2408,6 +2415,10 @@ class FilhaTab(ctk.CTkFrame):
         ctk.CTkLabel(top_logs, textvariable=self.status_var, text_color="#9CA3AF").pack(side="right")
 
         self.log_text = ctk.CTkTextbox(logs_card, corner_radius=14)
+        # The web panel reads these messages from the incremental shared feed.
+        # Keep this widget for the original desktop UI, but do not resend its
+        # full history in every serialized /api/state response.
+        self.log_text._nexora_logs_live_only = True
         self.log_text.pack(fill="both", expand=True, padx=16, pady=(0, 16))
         self.log_text.configure(state="disabled")
 

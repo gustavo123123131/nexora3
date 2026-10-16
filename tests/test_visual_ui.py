@@ -67,9 +67,11 @@ def test_nexora_visual_and_existing_controls(tmp_path):
                 header_box = page.locator(screen + " > .ctk-frame:first-child").bounding_box()
                 settings_box = page.locator(screen + " > .ctk-frame:nth-child(2)").bounding_box()
                 logs_box = page.locator(screen + " > .ctk-frame:nth-child(3)").bounding_box()
-                assert header_box and settings_box and logs_box
+                assert header_box and settings_box and logs_box is None
                 assert settings_box["y"] >= header_box["y"] + header_box["height"] - 2
-                assert logs_box["y"] >= settings_box["y"] + settings_box["height"] - 2
+                expect(page.locator("#global-logs")).to_be_visible()
+                expect(page.locator(".global-logs-console")).to_be_visible()
+                assert page.locator("#global-logs").bounding_box()["height"] > 500
                 assert settings_box["width"] > 700
                 assert page.locator(".ctk-option").count() > 0
                 assert page.locator("input.ctk-entry").count() > 2
@@ -92,11 +94,13 @@ def test_nexora_visual_and_existing_controls(tmp_path):
                 ):
                     assert not any(node.is_visible() for node in page.get_by_text(hidden_label, exact=True).all())
                 expect(page.locator(".ctk-option:visible")).to_have_count(1)
-                expect(page.locator(".ctk-textbox:visible")).to_have_count(1)
+                expect(page.locator(".ctk-textbox:visible")).to_have_count(0)
+                expect(page.locator("#global-logs")).to_be_visible()
                 assert page.locator("input.ctk-entry:visible").count() >= 3
                 # Alternate tab navigation retains its original event wiring.
                 page.locator(".tab-bar button").nth(1).click()
                 expect(page.locator(".tab-bar button.active")).to_have_text("Filha")
+                expect(page.locator("#global-logs")).to_be_visible()
                 expect(page.get_by_role("button", name="Abrir Navegadores")).to_be_visible()
                 expect(page.locator(".ui-action-start:visible")).to_have_count(1)
                 page.locator(".tab-bar button").nth(0).click()
@@ -129,6 +133,7 @@ def test_nexora_visual_and_existing_controls(tmp_path):
                         if request.method == "POST" and "/api/" in request.url else None)
                 page.get_by_role("button", name="Proxy").click()
                 expect(page.locator(".tab-bar button.active")).to_have_text("Proxy")
+                expect(page.locator("#global-logs")).to_be_visible()
                 expect(page.get_by_role("heading", name="Proxy", exact=True)).to_be_visible()
                 line = page.get_by_role("textbox", name="Linha completa da proxy")
                 expect(line).to_be_visible()
@@ -154,6 +159,7 @@ def test_nexora_visual_and_existing_controls(tmp_path):
                 # New Pix tab uses this actual local FastAPI server and
                 # a temporary on-disk registry: add, reload, edit and delete.
                 page.get_by_role("button", name="Chave Pix").click()
+                expect(page.locator("#global-logs")).to_be_visible()
                 expect(page.get_by_role("heading", name="Gerenciamento de Chaves Pix")).to_be_visible()
                 page.get_by_role("button", name="Adicionar Chave Pix").click()
                 pix_input = page.get_by_role("textbox", name="Chave Pix")
@@ -182,6 +188,7 @@ def test_nexora_visual_and_existing_controls(tmp_path):
 
                 # Contas tab is preserved and renders minimal cards.
                 page.locator(".tab-bar").get_by_role("button", name="Contas", exact=True).click()
+                expect(page.locator("#global-logs")).to_be_visible()
                 expect(page.get_by_role("heading", name="Contas")).to_be_visible()
                 expect(page.locator(".accounts-current-panel .accounts-local-grid")).to_be_visible()
                 assert page.locator(".tab-bar").get_by_role("button", name="Backup").count() == 0

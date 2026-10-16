@@ -1,0 +1,61 @@
+/* Fixed global console. Shared by Mãe, Filha, Proxy, Pix, Contas and Backup. */
+:root { --global-logs-width: 350px; }
+#application { margin-right: var(--global-logs-width); }
+#global-logs {
+  position: fixed; right: 0; top: 68px; bottom: 0;
+  width: var(--global-logs-width);
+  display: flex; flex-direction: column; min-height: 0;
+  z-index: 3;
+  background: #101928; color: #d3e1f7;
+  border-left: 1px solid #344660;
+  box-shadow: -8px 0 26px #05091230;
+}
+.global-logs-header {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 8px;
+  padding: 18px 15px 14px;
+  border-bottom: 1px solid #2f415a;
+}
+.global-logs-header strong { color: #f0f4ff; font-size: 13px; font-weight: 750; }
+.global-logs-indicator { color: #98adc9; font-size: 11px; }
+.global-logs-indicator.connected { color: #70c7a8; }
+.global-logs-console {
+  flex: 1 1 auto; min-height: 0; overflow: auto;
+  background: #0b1320; padding: 13px 11px;
+  overscroll-behavior: contain;
+  scrollbar-color: #425675 #111a28;
+}
+.global-logs-text {
+  margin: 0; color: #c6d6ef;
+  font: 11px/1.75 Consolas, 'Cascadia Mono', monospace;
+  white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
+}
+.global-logs-footer {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  min-height: 42px; padding: 8px 15px;
+  border-top: 1px solid #2f415a; color: #90a6c3; font-size: 11px;
+}
+.global-logs-jump {
+  background: #2a3d5d; border: 1px solid #475f85; border-radius: 7px;
+  color: #e5ecff; font-size: 11px; padding: 6px 9px; cursor: pointer;
+}
+.global-logs-jump[hidden] { display: none; }
+/* The existing per-tab CTk log widgets still receive data in Python for
+   compatibility, but their duplicate cards no longer render in the web UI. */
+.tab-content > .ctk-frame > .ctk-frame > .ctk-frame:nth-child(3) {
+  display: none !important;
+}
+@media (max-width: 1250px) {
+  :root { --global-logs-width: 285px; }
+}
+@media (max-width: 1020px) {
+  #application { margin-right: 0; padding-bottom: 240px; }
+  #global-logs {
+    width: 100%; height: 235px; top: auto; bottom: 0;
+    border-left: 0; border-top: 1px solid #344660;
+    box-shadow: 0 -6px 20px #05091240;
+  }
+  .global-logs-header { padding: 8px 14px; }
+  .global-logs-console { padding: 8px 12px; }
+  .global-logs-footer { min-height: 34px; padding: 5px 14px; }
+}
