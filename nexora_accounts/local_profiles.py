@@ -600,6 +600,35 @@ class LocalProfileStore:
         return {"missing": missing[:100], "orphanFolders": sorted(set(orphan))[:100],
                 "recoveryNotice": self.recovery_notice}
 
+    def recovery_candidates(self):
+        """List only UUID/labels from valid backups, never secret fields."""
+        with _LOCK:
+            known = {p.get("accountId") for p in self._read()["profiles"]}
+        folder = self.path.parent / "profile-backups"
+        if not folder.is_dir():
+            return []
+        from nexora_accounts import credential_vault
+        candidates = {}
+        for backup in sorted(folder.iterdir(), key=lambda x: x.stat().st_mtime_ns,
+                             reverse=True):
+            if not backup.name.startswith(self.path.stem + ".") or not backup.name.endswith((".json",".json.dpapi")):
+                continue
+            try:
+                raw = backup.read_bytes()
+                if backup.name.endswith(".dpapi"):
+                    raw = credential_vault._crypt(raw, decrypt=True)
+                data = json.loads(raw.decode("utf-8"))
+                for p in data["profiles"]:
+                    ident = p.get("accountId")
+                    if ident and ident not in known and ident not in candidates:
+                        candidates[ident] = {
+                            "accountId": ident, "label": p.get("label", "Conta"),
+                            "profilePath": p.get("profilePath", ""),
+                        }
+            except (ValueError, OSError, TypeError, KeyError, UnicodeError):
+                continue
+        return list(candidates.values())[:100]
+
     def restore_account_from_backup(self, account_id: str) -> dict:
         """Recover metadata only, with exact UUID/index/path from a backup."""
         try:
