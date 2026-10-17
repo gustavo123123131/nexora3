@@ -1,8 +1,8 @@
 """Passive collection of an authenticated user's remote identity.
 
-No production site adapter is configured. A reviewed origin-specific adapter
-is required before any candidate may be accepted or persisted. This module
-never sends HTTP requests, navigates, clicks, or logs personal values.
+A production verifier has not yet been established. Candidate IDs are kept
+separate from independently verified identities. This module only observes
+existing requests and the current page; it sends no new HTTP traffic.
 """
 from __future__ import annotations
 
@@ -54,6 +54,7 @@ class FiveGBetIdentityContract:
     origin = "https://www.5gbet.com"
     identity_header_requests = frozenset({
         ("GET", "https://cdnapiif.ppa5g.net", "/hall/api/message/list/all"),
+        ("GET", "https://cdnapiif.ppa5g.co", "/hall/api/message/list/all"),
     })
     identity_response_routes = ()
     identity_storage_fields = ()
@@ -86,6 +87,17 @@ def parse_x_object_id_uid(raw):
     if type(uid) is not int or uid <= 0 or uid > (2**53 - 1):
         return None
     return str(uid)
+
+
+@dataclass(frozen=True)
+class ObservedPlatformIdentity:
+    """A session-scoped CANDIDATE, not proof of remote authentication."""
+    user_id: str
+    source: str
+    profile_id: int
+    account_id: str
+    run_id: str
+    platform_origin: str
 
 
 @dataclass(frozen=True)
@@ -134,6 +146,13 @@ class PlatformIdentityObserver:
         self._header_invalid = False
         if contract is None:
             contract = provider_identity_contract(self.origin)
+        elif self._official_site and (
+            not callable(getattr(contract, "validate_identity", None))
+            or site_origin(getattr(contract, "origin", None)) not in FIVEGBET_SITE_ORIGINS
+        ):
+            # Registration adapters are NOT identity adapters. Do not let a
+            # generic registration contract suppress the official observer.
+            contract = provider_identity_contract(self.origin)
         self.contract = contract if (
             contract is not None and self.origin
             and (
@@ -149,14 +168,13 @@ class PlatformIdentityObserver:
         self._header_routes = frozenset(
             (method, api_origin, path)
             for method, api_origin, path in routes
-            if (method, api_origin, path) ==
-            ("GET", "https://cdnapiif.ppa5g.net", "/hall/api/message/list/all")
+            if (method, api_origin, path) in FiveGBetIdentityContract.identity_header_requests
             and self._official_site
         ) if self.contract is not None else frozenset()
         self._response_origins = {self.origin}
         if self._header_routes:
             self._response_origins.update(FIVEGBET_SITE_ORIGINS)
-            self._response_origins.add("https://cdnapiif.ppa5g.net")
+            self._response_origins.update({"https://cdnapiif.ppa5g.net", "https://cdnapiif.ppa5g.co"})
         self._header_requests = {}
         self._pending_header_requests = {}
         self._ready_header_ids = set()
@@ -174,6 +192,10 @@ class PlatformIdentityObserver:
         self._context_request_listening = False
         self._navigation_listening = False
         self._header_responses_checked = set()
+        self._storage_seen_uid = None
+        self._storage_conflict = False
+        self._storage_descriptor = None
+        self._storage_last_probe = 0.0
 
     def _log_once(self, key, message):
         if key not in self._diagnosed:
@@ -450,6 +472,145 @@ class PlatformIdentityObserver:
         self._header_seen_uid = None
         self._header_conflict = False
         self._header_responses_checked.clear()
+        self._storage_seen_uid = None
+        self._storage_conflict = False
+        self._storage_descriptor = None
+
+
+    @property
+    def observation_conflict(self):
+        return (self._header_conflict or self._storage_conflict
+                or (self._header_seen_uid is not None
+                    and self._storage_seen_uid is not None
+                    and self._header_seen_uid != self._storage_seen_uid))
+
+    def _probe_storage(self):
+        """Diagnostic only: discover current-page storage key/shape safely.
+
+        No unknown storage key is promoted to an authentication contract.
+        Return only numeric UID candidates and their key/path metadata;
+        never export raw values, cookies, or JWTs out of page.evaluate().
+        """
+        if not (self._official_site and isinstance(self.contract, FiveGBetIdentityContract)
+                and site_origin(getattr(self.page, "url", "")) in FIVEGBET_SITE_ORIGINS):
+            return
+        now = time.monotonic()
+        if now - self._storage_last_probe < 2.0:
+            return
+        self._storage_last_probe = now
+        try:
+            matches = self.page.evaluate(
+                """() => {
+                  const results = [];
+                  const numeric = value => {
+                    if (typeof value === 'number' && Number.isSafeInteger(value)
+                        && value > 0) return String(value);
+                    if (typeof value === 'string' && /^[0-9]{1,15}$/.test(value)
+                        && BigInt(value) > 0n && BigInt(value) <= 9007199254740991n)
+                        return value;
+                    return null;
+                  };
+                  const add = (value, area, key, path, kind) => {
+                    const uid = numeric(value);
+                    if (uid !== null && results.length < 16)
+                      results.push({uid, area, key, path, kind});
+                  };
+                  function walk(obj, area, key, path, depth, budget) {
+                    if (!obj || typeof obj !== 'object' || depth > 5 || budget.n-- <= 0)
+                      return;
+                    for (const [part, value] of Object.entries(obj).slice(0, 80)) {
+                      if (part === 'uid') add(value, area, key, [...path, part], 'json');
+                      if (value && typeof value === 'object' && depth < 5)
+                        walk(value, area, key, [...path, part], depth + 1, budget);
+                    }
+                  }
+                  for (const [area, storage] of [['local', localStorage],
+                                                 ['session', sessionStorage]]) {
+                    for (const key of Object.keys(storage).slice(0, 64)) {
+                      if (results.length >= 16) break;
+                      const raw = storage.getItem(key);
+                      if (typeof raw !== 'string' || raw.length > 32768) continue;
+                      try { walk(JSON.parse(raw), area, key, [], 0, {n: 256}); }
+                      catch (_) {}
+                      const tokens = raw.match(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g) || [];
+                      for (const jwt of tokens.slice(0, 4)) {
+                        try {
+                          const segment = jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+                          const payload = JSON.parse(atob(segment.padEnd(Math.ceil(segment.length / 4) * 4, '=')));
+                          if (payload && Object.prototype.hasOwnProperty.call(payload, 'u'))
+                            add(payload.u, area, key, ['jwt', 'u'], 'jwt-payload');
+                        } catch (_) {}
+                      }
+                    }
+                  }
+                  return results;
+                }"""
+            )
+        except Exception:
+            return
+        if not isinstance(matches, list):
+            return
+        values = set()
+        descriptors = []
+        for match in matches[:16]:
+            if not isinstance(match, dict):
+                continue
+            uid = match.get("uid")
+            if (not isinstance(uid, str) or not uid.isdecimal() or not
+                    1 <= len(uid) <= 15 or not 0 < int(uid) <= 2**53 - 1):
+                continue
+            area, key, path, kind = (match.get("area"), match.get("key"),
+                                     match.get("path"), match.get("kind"))
+            if (area not in ("local", "session") or not _text(key, 128)
+                or not isinstance(path, list) or len(path) > 6
+                or any(not _text(x, 80) for x in path)
+                or kind not in ("json", "jwt-payload")):
+                continue
+            values.add(uid)
+            descriptors.append((area, key, path, kind))
+        if len(values) > 1 or (self._storage_seen_uid and values
+                               and self._storage_seen_uid not in values):
+            self._storage_conflict = True
+            self._log_once("storage-conflict",
+                           "IDs divergentes no armazenamento; candidato bloqueado.")
+        elif len(values) == 1:
+            self._storage_seen_uid = next(iter(values))
+            self._storage_descriptor = descriptors[0]
+            area, key, path, kind = descriptors[0]
+            # Log metadata only, never raw storage values or JWT contents.
+            if all(c.isalnum() or c in "._:-" for c in key):
+                self._log_once("storage-location",
+                               f"Origem do UID observado: {area}Storage[{key!r}], "
+                               f"caminho {'.'.join(path)} ({kind}); não verificado.")
+
+    def observe_candidate(self):
+        """Return an observed ID scoped to THIS page/account/run, not verified."""
+        if not self._active or not self._official_site or not self._header_routes:
+            return None
+        self.inspect_pending_headers()
+        self._probe_storage()
+        if self.observation_conflict:
+            self._log_once("observation-conflict",
+                           "IDs de fontes conflitantes; candidato não será vinculado.")
+            return None
+        uid = self._header_seen_uid or self._storage_seen_uid
+        if uid is None:
+            return None
+        if self._header_seen_uid and self._storage_seen_uid:
+            source = "5gbet:header+storage:observed"
+        elif self._header_seen_uid:
+            source = "5gbet:x-object-id.uid:observed"
+        else:
+            source = "5gbet:storage:observed"
+        self._log_once("observed-id",
+                       "ID observado na própria sessão; sem confirmação de autenticação.")
+        return ObservedPlatformIdentity(
+            user_id=uid, source=source,
+            profile_id=self.account["profileId"],
+            account_id=self.account["accountId"],
+            run_id=self.account["runId"],
+            platform_origin=self.origin,
+        )
 
     def _accept(self, candidate):
         if not isinstance(candidate, (list, tuple)) or len(candidate) != 2:
@@ -523,7 +684,7 @@ class PlatformIdentityObserver:
         of server acceptance. A non-2xx / err_code:41000 response is rejected;
         a generic HTTP 200 / err_code:0 is still insufficient. No new traffic.
         """
-        if (self._clicked_at is None or not self._header_routes
+        if (not self._header_routes
             or self._header_conflict or not self._official_site):
             return None
         verifier = getattr(self.contract, "verify_header_identity", None)
@@ -534,8 +695,6 @@ class PlatformIdentityObserver:
                 if detail is None or detail[0] is not request:
                     continue
                 _, uid, seen_at = detail
-                if seen_at < self._clicked_at - 3.0:
-                    continue
                 response_key = id(response)
                 if response_key in self._header_responses_checked:
                     continue

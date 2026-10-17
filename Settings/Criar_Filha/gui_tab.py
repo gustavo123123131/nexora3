@@ -1250,8 +1250,23 @@ def run_instance(
 
                 def _poll_identity():
                     nonlocal identity_saved_this_run
-                    if (identity_saved_this_run or identity_observer is None
-                        or identity_observer._clicked_at is None):
+                    if identity_observer is None:
+                        return
+                    from nexora_accounts.local_profiles import LocalProfileStore
+                    store = LocalProfileStore()
+                    observed = identity_observer.observe_candidate()
+                    profile_id = int(candidate_profile["id"])
+                    account_id = str(candidate_profile["accountId"])
+                    run_id = str((instance_plan or {}).get("run_id") or "")
+                    if identity_observer.observation_conflict:
+                        store.invalidate_observed_platform_id(profile_id, account_id, run_id)
+                    elif observed is not None:
+                        store.save_observed_platform_id(
+                            profile_id, account_id, run_id,
+                            site_origin=identity_observer.origin,
+                            observed_identity=observed,
+                        )
+                    if identity_saved_this_run:
                         return
                     verified_id = identity_observer.identify(
                         stop_event=stop_event, wait_seconds=0,
