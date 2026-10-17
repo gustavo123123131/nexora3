@@ -93,3 +93,42 @@ def test_browser_check_requires_verified_identity_and_running_session(monkeypatc
     app._running[22] = {"requests": Queue(maxsize=1), "stop": threading.Event()}
     app._results[22] = {"state": "ready"}
     assert app.check_pix_browser_session(22, uid, timeout=0.01)["state"] == "timeout"
+
+
+def test_observed_id_permits_only_readonly_probe_and_never_promotes_identity(monkeypatch):
+    """Observed candidate can diagnose network status without bypassing ID checks."""
+    uid = str(uuid4())
+    profile = {
+        "id": 31, "accountId": uid, "platformUserId": None,
+        "platformObservedUserId": "123987",
+    }
+
+    class FakeStore:
+        def public_detail(self, profile_id):
+            assert profile_id == 31
+            return dict(profile)
+
+    monkeypatch.setattr(launcher_module, "LocalProfileStore", FakeStore)
+    app = AccountLauncher()
+    requests = Queue(maxsize=1)
+    app._running[31] = {"requests": requests, "stop": threading.Event()}
+    app._results[31] = {"state": "ready"}
+    page = StubPage()
+    import time
+
+    def worker():
+        time.sleep(0.04)
+        app._process_browser_request(31, uid, requests, page)
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    answer = app.check_pix_browser_session(31, uid, timeout=2)
+    thread.join(2)
+    assert answer["state"] == "api-reachable"
+    assert answer["identityStatus"] == "observed"
+    assert "ainda não verificado" in answer["message"]
+    assert "cadastro Pix permanece bloqueado" in answer["message"]
+    assert profile["platformUserId"] is None
+    assert page.evaluations == 1
+    with pytest.raises(LocalProfileError):
+        app.check_pix_browser_session(31, str(uuid4()), timeout=0.1)
