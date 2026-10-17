@@ -1235,11 +1235,10 @@ class LocalProfileStore:
                 full_name,
                 {str(p.get("username", "")) for p in data["profiles"] if isinstance(p, dict)},
             )
-            # Test-only default for newly created local profiles; no legacy reset.
-            password = os.environ.get("NEXORA_NEW_ACCOUNT_PASSWORD", "387520")
-            if not isinstance(password, str) or not 6 <= len(password) <= 128:
-                raise LocalProfileError("Senha padrão de teste inválida.")
-
+            # Login password must retain the original per-account generator.
+            # The six-digit test withdrawal PIN is a separate credential and
+            # must never be inserted into password/confirmPassword.
+            password = _new_password()
             ddd = secrets.choice(_DDDS)
             phone = "9" + _digits(8)
             record = {
