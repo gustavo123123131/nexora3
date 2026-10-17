@@ -343,3 +343,31 @@ def test_late_old_run_cannot_overwrite_current_profile(store):
             save(store,p,"run79",identity)
     finally:
         watcher.close()
+
+
+def test_long_lived_monitor_still_reads_new_requests_after_many_events(store):
+    p = make(store, "mae", "run79")
+    page = Page()
+    logs = []
+    watcher = PlatformIdentityObserver(
+        page, logs.append,
+        {**p, "runId": "run79"},
+        expected_origin=PAGE,
+    )
+    watcher.start()
+    try:
+        # More than earlier hard limits: the monitor must not go blind
+        # after many ordinary authenticated-page requests.
+        for _ in range(140):
+            send(page, None, header={})
+            watcher.inspect_pending_headers()
+        send(page, 963258741)
+        watcher.inspect_pending_headers()
+        assert watcher._header_seen_uid == "963258741"
+        assert len(watcher._scanned_request_ids) <= 128
+        assert len(watcher._responses) <= 64
+        watcher.after_registration_click()
+        assert watcher.identify(wait_seconds=0) is None
+        assert any("ID observado" in line for line in logs)
+    finally:
+        watcher.close()
