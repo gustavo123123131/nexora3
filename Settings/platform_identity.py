@@ -195,6 +195,7 @@ class PlatformIdentityObserver:
             self._log_once(
                 "navigation-" + label,
                 "Origem após navegação: " + label
+                + (f" ({new_origin})" if self._official_site else "")
                 + "; adaptador " + ("ativo." if self._official_site else "suspenso."),
             )
         elif new_origin in FIVEGBET_SITE_ORIGINS:
@@ -373,8 +374,11 @@ class PlatformIdentityObserver:
             return
         self._log_once(
             "activation",
-            "Adaptador " + ("5gbet ativo." if self._header_routes else
-            "não ativado para a origem inicial; contrato de identidade ausente."),
+            "Adaptador " + (
+                "5gbet ativo; origem inicial " + self.origin + "."
+                if self._header_routes else
+                "não ativado para a origem inicial; contrato de identidade ausente."
+            ),
         )
         self.page.on("response", self._on_page_response)
         self._active = True
