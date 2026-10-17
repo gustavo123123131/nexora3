@@ -132,3 +132,63 @@ def test_observed_id_permits_only_readonly_probe_and_never_promotes_identity(mon
     assert page.evaluations == 1
     with pytest.raises(LocalProfileError):
         app.check_pix_browser_session(31, str(uuid4()), timeout=0.1)
+
+
+def test_check_session_http_route_imports_live_launcher_and_returns_safe_result(monkeypatch):
+    """Regression: the FastAPI endpoint used to raise NameError -> HTTP 500.
+
+    No actual Chromium or provider request is made in this test.
+    """
+    from fastapi.testclient import TestClient
+    import servidor
+    from nexora_accounts import session_launcher
+
+    calls = []
+
+    def fake_check(profile_id, account_id):
+        calls.append((profile_id, account_id))
+        return {
+            "state": "api-reachable",
+            "identityStatus": "observed",
+            "message": "API respondeu; ID observado ainda não verificado.",
+        }
+
+    monkeypatch.setattr(session_launcher.ACCOUNT_LAUNCHER,
+                        "check_pix_browser_session", fake_check)
+    body = {"profileId": 31, "accountId": str(uuid4())}
+    with TestClient(servidor.app) as client:
+        denied = client.post("/api/operations/pix/check-session", json=body)
+        assert denied.status_code == 403
+        assert calls == []
+
+        csrf = client.get("/api/state").json()["csrf_token"]
+        response = client.post(
+            "/api/operations/pix/check-session",
+            json=body,
+            headers={"X-LixoCPA-CSRF": csrf},
+        )
+        assert response.status_code == 200
+        assert response.json()["state"] == "api-reachable"
+        assert response.json()["identityStatus"] == "observed"
+        assert calls == [(body["profileId"], body["accountId"])]
+
+
+def test_check_session_route_returns_controlled_validation_error(monkeypatch):
+    from fastapi.testclient import TestClient
+    import servidor
+    from nexora_accounts import session_launcher
+
+    def reject_mismatch(profile_id, account_id):
+        raise LocalProfileError("A conta selecionada mudou.")
+
+    monkeypatch.setattr(session_launcher.ACCOUNT_LAUNCHER,
+                        "check_pix_browser_session", reject_mismatch)
+    with TestClient(servidor.app) as client:
+        csrf = client.get("/api/state").json()["csrf_token"]
+        response = client.post(
+            "/api/operations/pix/check-session",
+            json={"profileId": 12, "accountId": str(uuid4())},
+            headers={"X-LixoCPA-CSRF": csrf},
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"] == "Conta selecionada inválida ou divergente."

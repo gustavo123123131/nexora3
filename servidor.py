@@ -400,6 +400,7 @@ async def pix_operation_readiness(body: dict):
 async def check_pix_browser_session(body: dict):
     """Read-only security API health on the selected account's live Chromium."""
     from nexora_accounts.local_profiles import LocalProfileError
+    from nexora_accounts.session_launcher import ACCOUNT_LAUNCHER
     from starlette.concurrency import run_in_threadpool
     try:
         return await run_in_threadpool(
