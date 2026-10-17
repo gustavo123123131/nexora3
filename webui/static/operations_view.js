@@ -181,7 +181,7 @@
         history.append(el('p', 'operations-hint', 'Nenhuma operação registrada nesta conta.'));
         return;
       }
-      for (const op of ops) {
+      for (const [index, op] of ops.entries()) {
         const entry = el('article', 'operations-history-item');
         entry.append(
           el('strong', '', 'Chave Pix — ' + op.keyType),
@@ -192,6 +192,44 @@
           el('span', '', 'Registrado em: ' + op.createdAt),
           el('small', '', (op.missingRequirements || []).join(' ')),
         );
+        const trace = Array.isArray(op.events) ? op.events : [];
+        if (trace.length) {
+          const detail = el('details', 'operations-pix-trace');
+          detail.open = index === 0 && op.status !== 'confirmed';
+          const summary = el('summary', '', 'Ver etapas e logs (' + trace.length + ')');
+          const entries = el('div', 'operations-pix-trace-lines');
+          const names = {
+            'withdrawInfoV2-antes': 'Consulta inicial de saque',
+            verifyWithdrawalPasswordV2: 'Verificação do PIN de saque',
+            bindalipayV3: 'Envio do cadastro Pix',
+            'withdrawInfoV2-depois': 'Conferência final'
+          };
+          for (const item of trace) {
+            const stage = String(item.stage || 'evento');
+            const chunks = stage.startsWith('api.') ? stage.slice(4).split('.') : [];
+            const stepName = names[chunks[0]] || chunks[0] || stage;
+            const eventName = {
+              request_start: 'Requisição iniciada',
+              api_accepted: 'API aceitou a etapa',
+              api_rejected: 'API recusou a etapa',
+              request_exception: 'Erro de comunicação/cliente HTTP',
+              list_check: 'Listagem conferida',
+              authorization_received: 'Autorização temporária recebida',
+              authorization_missing: 'Autorização temporária ausente',
+              two_step_required: 'Verificação adicional exigida',
+              result: 'Resultado da etapa'
+            }[chunks[1]] || chunks[1] || '';
+            const fields = [stepName, eventName];
+            if (Number.isInteger(item.httpStatus)) fields.push('HTTP ' + item.httpStatus);
+            if (Number.isInteger(item.providerCode)) fields.push('Código API ' + item.providerCode);
+            if (Number.isInteger(item.elapsedMs)) fields.push(item.elapsedMs + ' ms');
+            if (item.responseShape) fields.push('Formato: ' + item.responseShape);
+            if (item.detail) fields.push(String(item.detail));
+            entries.append(el('div', 'operations-pix-trace-line', fields.filter(Boolean).join(' | ')));
+          }
+          detail.append(summary, entries);
+          entry.append(detail);
+        }
         history.append(entry);
       }
     }
