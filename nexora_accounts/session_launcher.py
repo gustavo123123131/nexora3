@@ -150,14 +150,131 @@ class AccountLauncher:
             result["identityStatus"] = "observed"
         return result
 
-    def _process_browser_request(self, profile_id: int, account_id: str, request_queue, page):
-        """Called ONLY inside the worker that owns this account's Playwright page."""
+    def verify_platform_identity(self, profile_id: int, account_id: str, *, timeout=13) -> dict:
+        """Query current authenticated account info in the SAME open Chromium.
+
+        Unlike check-session, this cannot fall back to a launcher state alone;
+        both the account UUID and run UUID must identify the owning worker.
+        """
+        from nexora_accounts.local_profiles import LocalProfileError
+        from nexora_accounts.browser_sessions import active_account_session
+        if type(profile_id) is not int or not isinstance(account_id, str):
+            raise LocalProfileError("Conta inválida.")
+        profile = LocalProfileStore().public_detail(profile_id)
+        if profile.get("accountId") != account_id:
+            raise LocalProfileError("Conta selecionada não corresponde ao perfil.")
+        if profile.get("platformUserId"):
+            return {"state": "already-verified", "message": "O ID desta conta já está verificado."}
+        if not profile.get("platformObservedUserId"):
+            return {"state": "no-candidate", "message": "Nenhum ID observado nesta conta; autentique-a no site."}
+        session = active_account_session(profile.get("origin"), profile_id, account_id)
+        if session is None or session["stop"].is_set():
+            return {"state": "not-running", "message": "Nenhum navegador vinculado a esta conta está aberto."}
+        if not session.get("ready"):
+            return {"state": "starting", "message": "O Chromium desta conta ainda está inicializando."}
+        run_id = session.get("runId")
+        if not run_id or run_id != profile.get("lastSessionId"):
+            return {"state": "stale-session", "message": "Sessão da conta divergente; não verificamos o ID."}
+        response = queue.Queue(maxsize=1)
+        job = {"kind": "verify-identity", "profileId": profile_id,
+               "accountId": account_id, "runId": run_id, "result": response}
+        try:
+            session["requests"].put_nowait(job)
+        except queue.Full:
+            return {"state": "busy", "message": "A sessão está ocupada. Tente novamente mais tarde."}
+        try:
+            return response.get(timeout=timeout)
+        except queue.Empty:
+            return {"state": "timeout", "message": "A verificação demorou; nenhum ID foi confirmado."}
+
+    def _verify_identity_on_owner_thread(self, profile_id: int, account_id: str,
+                                         run_id: str, page) -> dict:
+        """Persist only when a provider response proves BOTH UID and username."""
+        from nexora_accounts.local_profiles import LocalProfileError
+        from nexora_accounts.platform_identity_probe import (
+            check_auth_identity_page, OFFICIAL_HOSTS, VERIFICATION_SOURCE
+        )
+        from Settings.platform_identity import VerifiedPlatformIdentity, site_origin
+        from urllib.parse import urlsplit
+        try:
+            profile = LocalProfileStore().public_detail(profile_id)
+            if (profile.get("accountId") != account_id or
+                profile.get("lastSessionId") != run_id):
+                return {"state": "stale-session",
+                        "message": "Execução diferente da conta selecionada."}
+            observed = profile.get("platformObservedUserId")
+            if not observed:
+                return {"state": "no-candidate", "message": "ID observado indisponível."}
+            expected_site = site_origin(profile.get("startUrl"))
+            active_site = site_origin(str(page.url or ""))
+            if (urlsplit(expected_site).hostname not in OFFICIAL_HOSTS
+                or urlsplit(active_site).hostname not in OFFICIAL_HOSTS
+                or not expected_site.startswith("https://")
+                or not active_site.startswith("https://")):
+                return {"state": "wrong-origin", "message": "Esta conta não está na origem oficial esperada."}
+            check = check_auth_identity_page(
+                page, observed_uid=observed, username=profile.get("username", ""),
+            )
+            state = check["state"]
+            if state != "matched":
+                statuses = {
+                    "schema-unconfirmed": "A API respondeu, mas não trouxe UID e username juntos em formato verificado. O ID continua observado.",
+                    "uid-mismatch": "O ID devolvido pela API não corresponde ao observado. Nada foi salvo.",
+                    "username-mismatch": "O username autenticado não corresponde à conta selecionada. Nada foi salvo.",
+                    "wrong-origin": "O navegador não está na plataforma oficial.",
+                    "missing-sdk": "Abra uma página autenticada da 5gbet para carregar o cliente original.",
+                    "timeout": "A consulta de identidade excedeu o tempo; nenhum ID foi verificado.",
+                    "provider-unavailable": "Não foi possível consultar os dados autenticados do usuário.",
+                    "provider-rejected": "A plataforma rejeitou a consulta de perfil do usuário.",
+                    "invalid-identity-shape": "Resposta de identidade inválida; nenhuma atualização realizada.",
+                }
+                return {"state": state, "message": statuses.get(
+                    state, "Não há prova autenticada suficiente para verificar o ID."
+                )}
+            # Ensure the observed candidate did not change DURING the request.
+            latest = LocalProfileStore().public_detail(profile_id)
+            if (latest.get("accountId") != account_id or
+                latest.get("lastSessionId") != run_id or
+                latest.get("platformObservedUserId") != observed):
+                return {"state": "stale-session",
+                        "message": "A identificação da conta mudou durante a consulta."}
+            evidence = VerifiedPlatformIdentity(
+                user_id=observed, source=VERIFICATION_SOURCE,
+                profile_id=profile_id, account_id=account_id,
+                run_id=run_id, platform_origin=expected_site,
+            )
+            try:
+                LocalProfileStore().save_verified_platform_id(
+                    profile_id, account_id, run_id, site_origin=expected_site,
+                    platform_user_id=observed,
+                    platform_id_source=VERIFICATION_SOURCE,
+                    identity_evidence=evidence,
+                )
+            except LocalProfileError:
+                return {"state": "persistence-blocked",
+                        "message": "A API confirmou os dados, mas o estado do cadastro não permite salvar o ID automaticamente."}
+            return {"state": "verified",
+                    "message": "Identidade da conta confirmada pela resposta autenticada da plataforma e salva."}
+        except Exception:
+            return {"state": "browser-error",
+                    "message": "Verificação de identidade indisponível nesta sessão."}
+
+    def _process_browser_request(self, profile_id: int, account_id: str,
+                                 request_queue, page, *, run_id=None):
+        """Consume only the exact account's request on its Playwright thread."""
         try:
             job = request_queue.get_nowait()
         except queue.Empty:
             return
         if job.get("accountId") != account_id or job.get("profileId") != profile_id:
             result = {"state": "account-mismatch", "message": "Sessão de outra conta bloqueada."}
+        elif job.get("kind") == "verify-identity":
+            if not run_id or job.get("runId") != run_id:
+                result = {"state": "stale-session", "message": "Sessão divergente; identidade não atualizada."}
+            else:
+                result = self._verify_identity_on_owner_thread(
+                    profile_id, account_id, run_id, page
+                )
         else:
             result = self._probe_existing_page(page)
         try:
