@@ -142,6 +142,51 @@ class PixOperationStore:
                 if profile_id is None or op["profileId"] == profile_id
             ][:60], "providerIntegration": "unavailable"}
 
+    def readiness(self, *, profile_id, account_id, key_id, key_type) -> dict:
+        """Recheck owner/UID/PIN/Pix binding for the selected account; no network.
+
+        Synthetic fullName/cpf generated at account creation never qualify as
+        confirmed account-holder information.
+        """
+        if type(profile_id) is not int or profile_id < 1 or not _is_uuid(account_id):
+            raise PixPreparationError("Conta selecionada inválida.")
+        if not _is_uuid(key_id) or key_type not in TYPES:
+            raise PixPreparationError("Chave Pix selecionada inválida.")
+        try:
+            profile = self.profiles.public_detail(profile_id)
+        except LocalProfileError as exc:
+            raise PixPreparationError("Conta não encontrada.") from exc
+        if profile.get("accountId") != account_id:
+            raise PixPreparationError("A conta selecionada não corresponde ao perfil.")
+        key = next((v for v in self.keys.list()["keys"] if v.get("id") == key_id), None)
+        if not key or key.get("type") != key_type:
+            raise PixPreparationError("Chave Pix não encontrada no tipo selecionado.")
+        missing = []
+        if not profile.get("platformUserId"):
+            missing.append("ID real da plataforma não verificado.")
+        if not profile.get("financialRealName"):
+            missing.append("Nome real do titular não confirmado em Contas.")
+        if not profile.get("financialCpf"):
+            missing.append("CPF do titular não confirmado em Contas.")
+        if profile.get("financialIdentitySource") != "operator-confirmed":
+            missing.append("Confirmação de titularidade financeira ausente.")
+        if not profile.get("hasWithdrawPin"):
+            missing.append("PIN de saque da conta não salvo no cofre do Windows.")
+        from nexora_accounts.pix_key_store import normalize_key
+        try:
+            normalize_key(key["value"], key_type)
+        except (KeyError, PixKeyError):
+            missing.append("Chave Pix local inválida.")
+        return {
+            "accountId": account_id, "profileId": profile_id,
+            "keyId": key_id, "keyType": key_type,
+            "identityStatus": "verified" if profile.get("platformUserId") else "unverified",
+            "missingRequirements": missing,
+            "readyForProvider": not missing,
+            "externalExecutionEnabled": False,
+            "reason": "Executor remoto ainda não validado na sessão Windows selecionada.",
+        }
+
     def prepare(self, *, profile_id, account_id, key_id, key_type,
                 ownership_acknowledged=False):
         # This operation only validates LOCAL records; never check a remote
