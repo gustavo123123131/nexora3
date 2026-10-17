@@ -28,6 +28,8 @@ jobs:
           node --check webui/static/pix_view.js
           node --check webui/static/accounts_view.js
           node --check webui/static/backup_view.js
+      - name: Chromium real (rotas locais; timeout de diagnóstico)
+        run: timeout 60s python -m pytest -vv -s tests/test_identity_chromium.py
       - name: Executar testes sem operacoes externas
         run: |
           python -m pytest -q tests/test_x_object_id.py tests/test_identity_after_click.py tests/test_registration_click_status.py tests/test_registration_status.py tests/test_platform_identity.py tests/test_registration_identity.py

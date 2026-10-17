@@ -30,6 +30,13 @@ def _text(value, limit=128):
             and value.isprintable() and not any(c.isspace() for c in value))
 
 
+# Both exact hosts have been used as registration origins in the project.
+# Do not admit look-alike subdomains or arbitrary redirect destinations.
+FIVEGBET_SITE_ORIGINS = frozenset({
+    "https://5gbet.com", "https://www.5gbet.com",
+})
+
+
 class FiveGBetIdentityContract:
     """Observed 5gbet header location; NO authenticated response contract yet.
 
@@ -58,8 +65,8 @@ class FiveGBetIdentityContract:
 
 
 def provider_identity_contract(origin):
-    """Enable the audited header location only for the exact official site."""
-    if site_origin(origin) == FiveGBetIdentityContract.origin:
+    """Enable the audited header location for either exact known site host."""
+    if site_origin(origin) in FIVEGBET_SITE_ORIGINS:
         return FiveGBetIdentityContract()
     return None
 
@@ -119,11 +126,22 @@ class PlatformIdentityObserver:
             "username": account.get("username"),
         }
         self.origin = site_origin(expected_origin)
+        self._official_site = self.origin in FIVEGBET_SITE_ORIGINS
+        self._last_site_origin = self.origin
+        self._diagnosed = set()
+        self._request_route_seen = False
+        self._header_present = False
+        self._header_invalid = False
         if contract is None:
             contract = provider_identity_contract(self.origin)
         self.contract = contract if (
             contract is not None and self.origin
-            and site_origin(getattr(contract, "origin", None)) == self.origin
+            and (
+                site_origin(getattr(contract, "origin", None)) == self.origin
+                or (self._official_site
+                    and isinstance(contract, FiveGBetIdentityContract)
+                    and site_origin(contract.origin) in FIVEGBET_SITE_ORIGINS)
+            )
             and callable(getattr(contract, "validate_identity", None))
         ) else None
         # Only the exact audited CDN host/path may add another origin.
@@ -133,13 +151,17 @@ class PlatformIdentityObserver:
             for method, api_origin, path in routes
             if (method, api_origin, path) ==
             ("GET", "https://cdnapiif.ppa5g.net", "/hall/api/message/list/all")
-            and self.origin == FiveGBetIdentityContract.origin
+            and self._official_site
         ) if self.contract is not None else frozenset()
         self._response_origins = {self.origin}
         if self._header_routes:
+            self._response_origins.update(FIVEGBET_SITE_ORIGINS)
             self._response_origins.add("https://cdnapiif.ppa5g.net")
         self._header_requests = {}
+        self._pending_header_requests = {}
+        self._ready_header_ids = set()
         self._scanned_request_ids = set()
+        self._scanned_request_order = []
         self._header_seen_uid = None
         self._header_conflict = False
         self._clicked_at = None
@@ -150,9 +172,50 @@ class PlatformIdentityObserver:
         self._context_listening = False
         self._request_listening = False
         self._context_request_listening = False
+        self._navigation_listening = False
+        self._header_responses_checked = set()
+
+    def _log_once(self, key, message):
+        if key not in self._diagnosed:
+            self._diagnosed.add(key)
+            try:
+                self.log("[Registro] [ID] " + message)
+            except Exception:
+                pass
+
+    def note_navigation(self, url):
+        """Diagnose the final host and any allowed apex/www redirect."""
+        new_origin = site_origin(url)
+        if not new_origin or new_origin == self._last_site_origin:
+            return
+        self._last_site_origin = new_origin
+        if self._official_site:
+            self._official_site = new_origin in FIVEGBET_SITE_ORIGINS
+            label = ("oficial" if self._official_site else "fora da lista permitida")
+            self._log_once(
+                "navigation-" + label,
+                "Origem após navegação: " + label
+                + (f" ({new_origin})" if self._official_site else "")
+                + "; adaptador " + ("ativo." if self._official_site else "suspenso."),
+            )
+        elif new_origin in FIVEGBET_SITE_ORIGINS:
+            # An untrusted initial domain must not automatically inherit
+            # 5gbet identity or overwrite its recorded startUrl.
+            self._log_once(
+                "unexpected-redirect",
+                "Redirecionamento para domínio oficial observado, mas "
+                "origem inicial não autorizada; não capturando ID.",
+            )
+
+    def _on_frame_navigated(self, frame):
+        try:
+            if frame is self.page.main_frame:
+                self.note_navigation(frame.url)
+        except Exception:
+            return
 
     def _collect_request(self, request, *, page_scoped):
-        if not self._header_routes:
+        if not self._header_routes or not self._official_site:
             return
         try:
             parsed = urlsplit(request.url)
@@ -163,6 +226,8 @@ class PlatformIdentityObserver:
             )
             if route not in self._header_routes:
                 return
+            self._request_route_seen = True
+            self._log_once("request-route", "Requisição permitida da API observada.")
             if not page_scoped:
                 try:
                     frame = request.frame
@@ -174,27 +239,78 @@ class PlatformIdentityObserver:
             # Deduplicate BEFORE reading all_headers() (including invalid
             # or missing x-object-id) to avoid duplicate sensitive reads.
             key = id(request)
-            if key in self._scanned_request_ids or len(self._scanned_request_ids) >= 128:
+            # Hold a bounded strong reference to each recently seen Request.
+            # Numeric id() values can be reused after GC in long-lived runs.
+            if request in self._scanned_request_ids:
                 return
-            self._scanned_request_ids.add(key)
-            # all_headers() is invoked ONLY for the exact allowed URL. Never
-            # persist or print headers, tokens, JWTs or request bodies.
-            headers = request.all_headers()
-            if not isinstance(headers, dict):
-                return
-            raw = next((v for k, v in headers.items()
-                        if isinstance(k, str) and k.lower() == "x-object-id"), None)
-            uid = parse_x_object_id_uid(raw)
-            if uid is None:
-                return
-            if self._header_seen_uid is not None and self._header_seen_uid != uid:
-                self._header_conflict = True
-            else:
-                self._header_seen_uid = uid
-            if len(self._header_requests) < 32:
-                self._header_requests[id(request)] = (request, uid, time.monotonic())
+            if len(self._scanned_request_order) >= 128:
+                old = self._scanned_request_order.pop(0)
+                self._scanned_request_ids.discard(old)
+            self._scanned_request_ids.add(request)
+            self._scanned_request_order.append(request)
+            # Do NOT call all_headers() inside Playwright's request event:
+            # the Chromium extra-info packet may arrive only afterwards and
+            # block a synchronous event handler. Queue the bound handle
+            # without copying other headers or tokens.
+            if len(self._pending_header_requests) >= 64:
+                oldest = next(iter(self._pending_header_requests))
+                self._pending_header_requests.pop(oldest, None)
+                self._ready_header_ids.discard(oldest)
+            self._pending_header_requests[key] = (request, time.monotonic())
         except Exception:
             return
+
+    def inspect_pending_headers(self):
+        """Read only completed allowlisted requests, outside event callbacks."""
+        for key in tuple(self._ready_header_ids):
+            self._ready_header_ids.discard(key)
+            queued = self._pending_header_requests.pop(key, None)
+            if queued is None:
+                continue
+            request, timestamp = queued
+            try:
+                # No passwords, tokens, cookies or JWT are kept or logged.
+                headers = request.all_headers()
+                if not isinstance(headers, dict):
+                    continue
+                raw = next(
+                    (v for k, v in headers.items()
+                     if isinstance(k, str) and k.lower() == "x-object-id"),
+                    None,
+                )
+                if raw is not None:
+                    self._header_present = True
+                else:
+                    self._log_once(
+                        "missing-header", "Requisição permitida sem cabeçalho x-object-id.",
+                    )
+                uid = parse_x_object_id_uid(raw)
+                if uid is None:
+                    if raw is not None:
+                        self._header_invalid = True
+                        self._log_once(
+                            "invalid-header", "x-object-id presente, uid inválido.",
+                        )
+                    continue
+                self._log_once(
+                    "candidate",
+                    "x-object-id.uid observado (valor protegido); aguardando verificação.",
+                )
+                if self._header_seen_uid is not None and self._header_seen_uid != uid:
+                    self._header_conflict = True
+                    self._log_once(
+                        "conflict", "IDs de cabeçalhos conflitantes; nenhum ID será salvo.",
+                    )
+                else:
+                    self._header_seen_uid = uid
+                if len(self._header_requests) >= 32:
+                    self._header_requests.pop(next(iter(self._header_requests)), None)
+                self._header_requests[key] = (request, uid, timestamp)
+            except Exception:
+                self._log_once(
+                    "header-read-error",
+                    "Cabeçalho da requisição não disponível após a resposta.",
+                )
 
     def _on_page_request(self, request):
         self._collect_request(request, page_scoped=True)
@@ -220,10 +336,24 @@ class PlatformIdentityObserver:
                         return
                 except Exception:
                     return
+            # A response indicates headers can now be inspected without
+            # blocking Playwright's request event.
+            try:
+                request_key = id(response.request)
+                if request_key in self._pending_header_requests:
+                    self._ready_header_ids.add(request_key)
+            except Exception:
+                pass
             # Keep only bounded response handles from the owning page; never
             # retain payloads, cookies, request headers or token-bearing URLs.
             key = id(response)
-            if key not in self._seen and len(self._responses) < 64:
+            if key not in self._seen:
+                if len(self._responses) >= 64:
+                    oldest = self._responses.pop(0)
+                    self._seen.discard(id(oldest))
+                    self._header_responses_checked.discard(id(oldest))
+                    if self._processed:
+                        self._processed -= 1
                 self._seen.add(key)
                 self._responses.append(response)
         except Exception:
@@ -240,9 +370,23 @@ class PlatformIdentityObserver:
         if self._active:
             return
         if not self.origin:
+            self._log_once("no-origin", "Origem inicial inválida; adaptador não ativado.")
             return
+        self._log_once(
+            "activation",
+            "Adaptador " + (
+                "5gbet ativo; origem inicial " + self.origin + "."
+                if self._header_routes else
+                "não ativado para a origem inicial; contrato de identidade ausente."
+            ),
+        )
         self.page.on("response", self._on_page_response)
         self._active = True
+        try:
+            self.page.on("framenavigated", self._on_frame_navigated)
+            self._navigation_listening = True
+        except Exception:
+            pass
         if self._header_routes:
             self.page.on("request", self._on_page_request)
             self._request_listening = True
@@ -255,6 +399,23 @@ class PlatformIdentityObserver:
                 self._context_request_listening = True
 
     def close(self):
+        if self._active and self._header_routes:
+            self.inspect_pending_headers()
+            if not self._request_route_seen:
+                self._log_once("route-absent", "Nenhuma requisição permitida da API observada nesta sessão.")
+            elif self._header_seen_uid is None:
+                self._log_once("uid-absent", "Requisição observada, mas nenhum uid válido capturado.")
+            else:
+                self._log_once(
+                    "candidate-final", "ID observado, não verificado; "
+                    "falta evidência independente de autenticação.",
+                )
+        if self._navigation_listening:
+            try:
+                self.page.remove_listener("framenavigated", self._on_frame_navigated)
+            except Exception:
+                pass
+            self._navigation_listening = False
         if self._active:
             try:
                 self.page.remove_listener("response", self._on_page_response)
@@ -282,9 +443,13 @@ class PlatformIdentityObserver:
         self._responses.clear()
         self._seen.clear()
         self._header_requests.clear()
+        self._pending_header_requests.clear()
+        self._ready_header_ids.clear()
         self._scanned_request_ids.clear()
+        self._scanned_request_order.clear()
         self._header_seen_uid = None
         self._header_conflict = False
+        self._header_responses_checked.clear()
 
     def _accept(self, candidate):
         if not isinstance(candidate, (list, tuple)) or len(candidate) != 2:
@@ -352,17 +517,16 @@ class PlatformIdentityObserver:
         return None
 
     def _identity_header(self):
-        """Check audited request UID against independent server-auth proof.
+        """Require an independent provider-specific authenticated identity.
 
-        A server's ordinary 200/err_code:0 isn't ownership proof. Production
-        5gbet has no verified response contract yet, so this deliberately
-        returns None until one is provided. No extra HTTP calls are made.
+        The x-object-id uid from an OUTGOING request is a candidate, not proof
+        of server acceptance. A non-2xx / err_code:41000 response is rejected;
+        a generic HTTP 200 / err_code:0 is still insufficient. No new traffic.
         """
-        if self._clicked_at is None or not self._header_routes or self._header_conflict:
+        if (self._clicked_at is None or not self._header_routes
+            or self._header_conflict or not self._official_site):
             return None
         verifier = getattr(self.contract, "verify_header_identity", None)
-        if not callable(verifier):
-            return None
         for response in self._responses:
             try:
                 request = response.request
@@ -370,13 +534,18 @@ class PlatformIdentityObserver:
                 if detail is None or detail[0] is not request:
                     continue
                 _, uid, seen_at = detail
-                # Registration click can cause a request before click()
-                # returns; keep only the short click-race window, not old
-                # requests from previous logins.
                 if seen_at < self._clicked_at - 3.0:
                     continue
+                response_key = id(response)
+                if response_key in self._header_responses_checked:
+                    continue
                 status = int(response.status)
-                if status < 200 or status >= 300:
+                if not 200 <= status < 300:
+                    self._log_once(
+                        "response-http-error",
+                        "Resposta da API com HTTP não 2xx; cabeçalho não comprova login.",
+                    )
+                    self._header_responses_checked.add(response_key)
                     continue
                 finished = getattr(response, "finished", None)
                 if callable(finished) and finished():
@@ -386,11 +555,33 @@ class PlatformIdentityObserver:
                     "err_code" in body
                     and (type(body["err_code"]) is not int or body["err_code"] != 0)
                 ):
-                    continue  # e.g. err_code 41000: not authenticated.
+                    self._log_once(
+                        "response-api-error",
+                        "Resposta da API contém erro; uid não verificado.",
+                    )
+                    self._header_responses_checked.add(response_key)
+                    continue
+                self._header_responses_checked.add(response_key)
+                if not callable(verifier):
+                    self._log_once(
+                        "missing-verifier",
+                        "ID observado; não salvo: falta contrato independente "
+                        "de autenticação do provedor.",
+                    )
+                    continue
                 if verifier(uid, response, body, dict(self.account)) is not True:
+                    self._log_once(
+                        "unverified-response",
+                        "ID observado; resposta sem prova independente "
+                        "da conta autenticada.",
+                    )
                     continue
                 accepted = self._accept((uid, "5gbet:x-object-id.uid:authenticated"))
                 if accepted:
+                    self._log_once(
+                        "verified",
+                        "ID verificado por fonte independente para a sessão.",
+                    )
                     return accepted
             except Exception:
                 continue
@@ -472,10 +663,11 @@ class PlatformIdentityObserver:
         authenticated identity and ownership from the selected source.
         """
         if self.contract is None:
-            self.log("[Registro] ID da plataforma: não identificado (contrato de identidade ausente).")
+            self._log_once("no-contract", "ID não identificado: contrato de identidade ausente.")
             return None
         if stop_event is not None and stop_event.is_set():
             return None
+        self.inspect_pending_headers()
         # Give an independently verified registration response first priority.
         # Never trust a generic status/uid just because Registrar was clicked.
         if (getattr(registration_verdict, "status", None) == "created"
@@ -514,10 +706,13 @@ class PlatformIdentityObserver:
             if result:
                 return result
         if self._header_seen_uid is not None and self._clicked_at is not None:
-            self.log(
-                "[Registro] x-object-id.uid observado na sessão, mas falta "
-                "confirmação independente de autenticação; ID não salvo."
+            self._log_once(
+                "candidate-pending", "ID observado, mas ainda não verificado "
+                "por resposta de autenticação independente; ID não salvo.",
             )
-        else:
-            self.log("[Registro] ID da plataforma: não identificado nas fontes validadas.")
+        elif self._clicked_at is not None:
+            self._log_once(
+                "no-uid", "Ainda não foi encontrado uid autenticado nesta sessão; "
+                "o monitor continuará ativo.",
+            )
         return None
