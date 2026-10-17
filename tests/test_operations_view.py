@@ -48,7 +48,7 @@ def test_operations_selects_correct_internal_account_and_labels_observed_uid():
         try:
             page = browser.new_page(viewport={"width": 1000, "height": 780})
             open_view(page)
-            expect(page.get_by_role("heading", name="Operações")).to_be_visible()
+            expect(page.get_by_role("heading", name="Operações", exact=True)).to_be_visible()
             expect(page.locator(".operations-card")).to_have_count(4)
             expect(page.get_by_text("Não disponível")).to_have_count(4)
             chooser = page.get_by_role("combobox", name="Selecionar conta para operações")
