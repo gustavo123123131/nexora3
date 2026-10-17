@@ -255,3 +255,48 @@ def test_pix_prepare_ui_four_types_uses_local_routes_and_keeps_history():
                        for p in paths if p.startswith("POST "))
         finally:
             browser.close()
+
+
+def test_observed_id_can_probe_readonly_api_but_not_bind_pix():
+    """Observed UID enables diagnostics only; no Pix-finance POST is possible."""
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.set_content('<main id="mount"></main>')
+            page.add_script_tag(path=str(ROOT / "webui/static/operations_view.js"))
+            page.evaluate("""() => {
+                window.posts = [];
+                const account = {id:52, accountId:'acct-local-52',label:'Conta 52',
+                    platformObservedUserId:'745550222',platformUserId:null};
+                const get = async path => {
+                    if (path === '/api/local-profiles') return {profiles:[account]};
+                    if (path.includes('/api/local-profiles/detail?id='))
+                        return {...account};
+                    if (path === '/api/pix-keys') return {keys:[]};
+                    if (path.includes('/api/operations/pix/history')) return {operations:[]};
+                    throw Error('Unexpected GET');
+                };
+                const post = async (path, data) => {
+                    window.posts.push({path, data});
+                    if (path !== '/api/operations/pix/check-session')
+                        throw Error('Unexpected POST');
+                    return {state:'api-reachable', identityStatus:'observed',
+                        message:'API respondeu. ID observado ainda não verificado; cadastro Pix permanece bloqueado.'};
+                };
+                const view=NexoraOperationsView.create({get,post});
+                document.querySelector('#mount').append(view.node);
+                view.onShow();
+            }""")
+            page.get_by_role("combobox", name="Selecionar conta para operações").select_option("52")
+            button = page.get_by_role("button", name="Testar API na conta aberta")
+            expect(button).to_be_enabled()
+            expect(page.get_by_role("button", name="Preparar cadastro")).to_be_disabled()
+            button.click()
+            expect(page.locator(".operations-pix-feedback")).to_contain_text("cadastro Pix permanece bloqueado")
+            entries = page.evaluate("window.posts")
+            assert len(entries) == 1
+            assert entries[0]["path"] == "/api/operations/pix/check-session"
+            assert entries[0]["data"] == {"profileId":52,"accountId":"acct-local-52"}
+        finally:
+            browser.close()

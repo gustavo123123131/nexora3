@@ -96,8 +96,12 @@ class AccountLauncher:
         profile = LocalProfileStore().public_detail(profile_id)
         if profile.get("accountId") != account_id:
             raise LocalProfileError("A conta selecionada mudou. Atualize Operações.")
-        if not profile.get("platformUserId"):
-            return {"state": "unverified-id", "message": "ID real da conta ainda não verificado."}
+        # A passive health check may diagnose an OBSERVED ID. It must never
+        # promote that candidate to a verified identity or submit a Pix key.
+        verified = bool(profile.get("platformUserId"))
+        observed = bool(profile.get("platformObservedUserId"))
+        if not verified and not observed:
+            return {"state": "unverified-id", "message": "Nenhum ID da plataforma observado; abra a conta autenticada."}
         with self._lock:
             info = self._running.get(profile_id)
             if not info or info["stop"].is_set() or self._results.get(profile_id, {}).get("state") != "ready":
@@ -109,9 +113,19 @@ class AccountLauncher:
             except queue.Full:
                 return {"state": "busy", "message": "Há uma verificação em andamento nesta conta."}
         try:
-            return response.get(timeout=timeout)
+            result = response.get(timeout=timeout)
         except queue.Empty:
-            return {"state": "timeout", "message": "A sessão não respondeu a tempo; nenhum cadastro foi enviado."}
+            result = {"state": "timeout", "message": "A sessão não respondeu a tempo; nenhum cadastro foi enviado."}
+        if not verified:
+            # Explicitly distinguish read-only reachability from authenticated
+            # identity verification; never set platformUserId here.
+            result = dict(result)
+            result["message"] = (
+                str(result.get("message") or "Consulta concluída.") +
+                " ID observado ainda não verificado; cadastro Pix permanece bloqueado."
+            )
+            result["identityStatus"] = "observed"
+        return result
 
     def _process_browser_request(self, profile_id: int, account_id: str, request_queue, page):
         """Called ONLY inside the worker that owns this account's Playwright page."""

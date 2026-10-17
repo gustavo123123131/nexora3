@@ -139,7 +139,9 @@
         !!selected && !!selected.platformId && !!key && ownershipCheckbox.checked;
       prepareButton.disabled = !enabled;
       readinessButton.disabled = !selected || !key;
-      sessionButton.disabled = !selected || selected.identityStatus !== 'verified';
+      // A read-only diagnostic must be usable before identity verification.
+      // Financial submission still requires an independently verified ID.
+      sessionButton.disabled = typeof post !== 'function' || !selected || !selected.platformId;
       preview.replaceChildren(
         summaryRow('Conta', selected ? 'Conta ' + selected.profileId : 'Não selecionada'),
         summaryRow('Identidade', selected ? (
@@ -244,9 +246,9 @@
     ownershipCheckbox.addEventListener('change', updatePixPreview);
     sessionButton.addEventListener('click', async () => {
       const selected = getSelectedAccount();
-      if (!selected || selected.identityStatus !== 'verified') return;
+      if (!selected || !selected.platformId) return;
       sessionButton.disabled = true;
-      pixFeedback.textContent = 'Consultando a API de segurança na sessão Chromium desta conta...';
+      pixFeedback.textContent = 'Testando somente a conexão de segurança nesta conta; cadastro Pix não será enviado...';
       try {
         const response = await post('/api/operations/pix/check-session', {
           profileId: selected.profileId,
