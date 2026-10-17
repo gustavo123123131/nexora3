@@ -175,6 +175,8 @@ class LocalProfileStore:
                 "platformUserId", "platformIdSource", "platformIdVerifiedAt",
                 "platformObservedUserId", "platformObservedSource", "platformObservedAt",
                 "registrationConfirmedAt", "registrationConfirmationSource",
+                "financialRealName", "financialCpf", "financialIdentitySource",
+                "withdrawPinRef",
             ):
                 if key not in item:
                     item[key] = None
@@ -416,7 +418,9 @@ class LocalProfileStore:
             else "not-configured"
         )
         # Internal UUID identifies a browser emulation, not physical hardware.
-        for name in ("password", "confirmPassword", "credentialRef"):
+        safe["hasLoginPassword"] = bool(item.get("password") or item.get("credentialRef"))
+        safe["hasWithdrawPin"] = bool(item.get("withdrawPinRef"))
+        for name in ("password", "confirmPassword", "credentialRef", "withdrawPinRef"):
             safe.pop(name, None)
         if details and isinstance(safe.get("runtimeConfig"), dict):
             # Runtime HTTP headers may contain authentication information.
@@ -424,6 +428,7 @@ class LocalProfileStore:
             config.pop("extra_headers", None)
             safe["runtimeConfig"] = config
         if not details:
+            safe.pop("financialCpf", None)
             safe.pop("history", None)
             safe.pop("runtimeConfig", None)
             safe.pop("profilePath", None)
@@ -438,6 +443,64 @@ class LocalProfileStore:
         if found is None:
             raise LocalProfileError("Conta não encontrada.")
         return self.public_view(found, details=True)
+
+    def set_financial_identity(self, profile_id: int, account_id: str,
+                               real_name: str, cpf: str) -> dict:
+        """Save operator-confirmed identity for one verified platform account.
+
+        Generated profile identity is never silently treated as real.
+        """
+        from nexora_accounts.pix_key_store import _cpf
+        if not isinstance(real_name, str) or not 5 <= len(real_name.strip()) <= 150 or " " not in real_name.strip():
+            raise LocalProfileError("Informe o nome completo real do titular.")
+        valid_cpf = _cpf(cpf) if isinstance(cpf, str) else None
+        if not valid_cpf:
+            raise LocalProfileError("CPF real do titular inválido.")
+        with _LOCK:
+            data = self._read()
+            item = next((p for p in data["profiles"] if p["id"] == profile_id), None)
+            if item is None or item.get("accountId") != account_id:
+                raise LocalProfileError("Conta e identificador interno não correspondem.")
+            if not item.get("platformUserId"):
+                raise LocalProfileError("ID real da plataforma ainda não verificado.")
+            # Names and CPFs come from authorized operator confirmation, not invented provider claims.
+            item["financialRealName"] = " ".join(real_name.strip().split())
+            item["financialCpf"] = valid_cpf
+            item["financialIdentitySource"] = "operator-confirmed"
+            self._event(item, "financial.identity", "Titular financeiro informado pelo operador")
+            self._write(data)
+            return self.public_view(item, details=True)
+
+    def set_withdraw_pin(self, profile_id: int, account_id: str, pin: str) -> dict:
+        """Withdrawal PIN is distinct from login password and encrypted on Windows."""
+        from nexora_accounts import credential_vault
+        if not credential_vault.is_available():
+            raise LocalProfileError("PIN de saque só pode ser salvo no cofre DPAPI do Windows.")
+        if not isinstance(pin, str) or not pin.isascii() or not pin.isdigit() or len(pin) != 6:
+            raise LocalProfileError("PIN de saque deve ter 6 números.")
+        with _LOCK:
+            data = self._read()
+            item = next((p for p in data["profiles"] if p["id"] == profile_id), None)
+            if item is None or item.get("accountId") != account_id:
+                raise LocalProfileError("Conta e identificador interno não correspondem.")
+            if not item.get("platformUserId"):
+                raise LocalProfileError("ID da plataforma ainda não verificado.")
+            item["withdrawPinRef"] = credential_vault.write_withdraw_pin(
+                self.path, item["accountId"], pin
+            )
+            self._event(item, "financial.pin", "PIN de saque protegido no Windows")
+            self._write(data)
+            return self.public_view(item, details=True)
+
+    def read_withdraw_pin(self, profile_id: int) -> str:
+        from nexora_accounts import credential_vault
+        profile = self.get(profile_id)
+        if not profile.get("withdrawPinRef"):
+            raise LocalProfileError("Cadastre o PIN de saque desta conta em Contas.")
+        try:
+            return credential_vault.read_withdraw_pin(self.path, profile["withdrawPinRef"])
+        except (OSError, ValueError, UnicodeError) as exc:
+            raise LocalProfileError("PIN de saque indisponível no cofre Windows.") from exc
 
     def selected_id(self) -> int | None:
         with _LOCK:
@@ -1172,7 +1235,11 @@ class LocalProfileStore:
                 full_name,
                 {str(p.get("username", "")) for p in data["profiles"] if isinstance(p, dict)},
             )
-            password = _new_password()
+            # Test-only default for newly created local profiles; no legacy reset.
+            password = os.environ.get("NEXORA_NEW_ACCOUNT_PASSWORD", "387520")
+            if not isinstance(password, str) or not 6 <= len(password) <= 128:
+                raise LocalProfileError("Senha padrão de teste inválida.")
+
             ddd = secrets.choice(_DDDS)
             phone = "9" + _digits(8)
             record = {
@@ -1199,6 +1266,10 @@ class LocalProfileStore:
                 "platformIdVerifiedAt": None,
                 "registrationConfirmedAt": None,
                 "registrationConfirmationSource": None,
+                "financialRealName": None,
+                "financialCpf": None,
+                "financialIdentitySource": None,
+                "withdrawPinRef": None,
                 "registrationReviewRequired": False,
                 "accountId": str(uuid.uuid4()),
                 "deviceProfileId": str(uuid.uuid4()),

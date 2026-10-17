@@ -240,3 +240,36 @@
 .accounts-current-panel[hidden],
 .accounts-backup-panel[hidden] { display: none; }
 .accounts-backup-panel .backup-local { padding: 0; min-height: auto; }
+
+/* Account-bound financial identity, isolated from the compact cards. */
+.accounts-financial-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  padding: 12px;
+  margin-block: 12px;
+  border: 1px solid var(--border-color, #465568);
+  border-radius: 10px;
+}
+.accounts-financial-form input:not([type="checkbox"]) {
+  display: block;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: 7px;
+  padding: 10px;
+  border: 1px solid #8594a5;
+  color: #122131;
+  background: #fff;
+}
+.accounts-financial-form label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.accounts-financial-form button {
+  justify-self: start;
+}
+.accounts-financial-form [role="status"] {
+  overflow-wrap: anywhere;
+}

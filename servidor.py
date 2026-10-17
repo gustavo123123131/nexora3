@@ -383,6 +383,19 @@ async def pix_operation_history(profileId: int):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@app.post('/api/operations/pix/readiness')
+async def pix_operation_readiness(body: dict):
+    """Validate selected account, verified UID, owner, PIN and saved key locally."""
+    from nexora_accounts.pix_operations import PixOperationStore, PixPreparationError
+    from starlette.concurrency import run_in_threadpool
+    try:
+        return await run_in_threadpool(lambda: PixOperationStore().readiness(
+            profile_id=body.get("profileId"), account_id=body.get("accountId"),
+            key_id=body.get("keyId"), key_type=body.get("keyType")))
+    except PixPreparationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @app.post('/api/operations/pix/prepare')
 async def prepare_pix_operation(body: dict):
     """Prepare an auditable local draft. NEVER bind Pix remotely."""
@@ -469,6 +482,54 @@ async def local_profile_details(id: int):
         return LocalProfileStore().public_detail(id)
     except LocalProfileError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+
+@app.post('/api/local-profiles/financial-identity')
+async def update_financial_identity(body: dict):
+    """Save an explicitly operator-confirmed owner, never generated identity."""
+    from nexora_accounts.local_profiles import LocalProfileStore, LocalProfileError
+    from starlette.concurrency import run_in_threadpool
+    if body.get("ownershipAcknowledged") is not True:
+        raise HTTPException(status_code=422, detail="Confirme a titularidade real do CPF e da chave.")
+    try:
+        result = await run_in_threadpool(lambda: LocalProfileStore().set_financial_identity(
+            body.get("profileId"), body.get("accountId"),
+            body.get("realName"), body.get("cpf")))
+        return {"profile": result}
+    except LocalProfileError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post('/api/local-profiles/withdraw-pin')
+async def save_withdraw_pin(body: dict):
+    """Explicit withdrawal PIN enrolment; never reuse account login password."""
+    from nexora_accounts.local_profiles import LocalProfileStore, LocalProfileError
+    from starlette.concurrency import run_in_threadpool
+    try:
+        result = await run_in_threadpool(lambda: LocalProfileStore().set_withdraw_pin(
+            body.get("profileId"), body.get("accountId"), body.get("pin")))
+        return {"profile": result}
+    except LocalProfileError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post('/api/local-profiles/reveal-login')
+async def reveal_login_password(body: dict):
+    """Default-deny credential viewing on a loopback agent with separate admin key."""
+    from nexora_accounts.local_profiles import LocalProfileStore, LocalProfileError
+    import secrets
+    secret = os.environ.get("NEXORA_CREDENTIAL_VIEW_KEY", "")
+    supplied = body.get("authorization", "")
+    if not secret or not isinstance(supplied, str) or not secrets.compare_digest(secret, supplied):
+        raise HTTPException(status_code=403, detail="Visualização de credenciais não autorizada.")
+    if body.get("accountId") != LocalProfileStore().public_detail(body.get("profileId")).get("accountId"):
+        raise HTTPException(status_code=422, detail="Identificação da conta divergente.")
+    try:
+        profile = LocalProfileStore().get(body.get("profileId"))
+        return {"password": profile.get("password") or ""}
+    except LocalProfileError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.post('/api/local-profiles/open')

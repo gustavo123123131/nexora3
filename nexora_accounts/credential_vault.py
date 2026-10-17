@@ -89,3 +89,41 @@ def delete_secret(json_path, ref):
     if ref and ref.startswith("dpapi:"):
         uid = str(uuid.UUID(ref.split(":", 1)[1]))
         (_folder(json_path) / (uid + ".dpapi")).unlink(missing_ok=True)
+
+
+def write_withdraw_pin(json_path, account_id: str, pin: str) -> str:
+    """Save independent withdrawal PIN. Never overwrite the login password blob."""
+    uid = str(uuid.UUID(account_id))
+    if not isinstance(pin, str) or len(pin) != 6 or not pin.isascii() or not pin.isdigit():
+        raise ValueError("PIN de saque inválido.")
+    folder = _folder(json_path)
+    folder.mkdir(parents=True, exist_ok=True)
+    import tempfile
+    target = folder / (uid + ".withdraw.dpapi")
+    data = _crypt(pin.encode("ascii"))
+    with tempfile.NamedTemporaryFile(dir=folder, prefix=".withdraw-", delete=False) as tmp:
+        temp_path = Path(tmp.name)
+        tmp.write(data)
+        tmp.flush()
+        os.fsync(tmp.fileno())
+    try:
+        os.replace(temp_path, target)
+    finally:
+        temp_path.unlink(missing_ok=True)
+    return "withdraw-dpapi:" + uid
+
+
+def read_withdraw_pin(json_path, ref: str) -> str:
+    if not isinstance(ref, str) or not ref.startswith("withdraw-dpapi:"):
+        raise ValueError("Referência de PIN inválida.")
+    uid = str(uuid.UUID(ref.split(":", 1)[1]))
+    pin = _crypt((_folder(json_path) / (uid + ".withdraw.dpapi")).read_bytes(), decrypt=True).decode("ascii")
+    if len(pin) != 6 or not pin.isdigit():
+        raise ValueError("Credencial de saque inválida.")
+    return pin
+
+
+def delete_withdraw_pin(json_path, ref: str):
+    if isinstance(ref, str) and ref.startswith("withdraw-dpapi:"):
+        uid = str(uuid.UUID(ref.split(":", 1)[1]))
+        (_folder(json_path) / (uid + ".withdraw.dpapi")).unlink(missing_ok=True)

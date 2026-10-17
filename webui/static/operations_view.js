@@ -97,11 +97,14 @@
     const prepareButton = el('button', 'accounts-open operations-pix-prepare', 'Preparar cadastro');
     prepareButton.type = 'button';
     prepareButton.disabled = true;
+    const readinessButton = el('button', 'accounts-details operations-pix-readiness', 'Verificar requisitos da API');
+    readinessButton.type = 'button';
+    readinessButton.disabled = true;
     const preview = el('div', 'operations-pix-preview');
     const historyHeading = el('h3', 'operations-history-heading', 'Histórico local da conta');
     const history = el('div', 'operations-history');
     pixPanel.append(pixControls, acknowledgment, preview,
-      prepareButton, pixFeedback, historyHeading, history);
+      prepareButton, readinessButton, pixFeedback, historyHeading, history);
     node.append(heading, selectorPanel, pixPanel, sections);
 
     let listRevision = 0;
@@ -132,6 +135,7 @@
       const enabled = typeof post === 'function' && !preparing &&
         !!selected && !!selected.platformId && !!key && ownershipCheckbox.checked;
       prepareButton.disabled = !enabled;
+      readinessButton.disabled = !selected || !key;
       preview.replaceChildren(
         summaryRow('Conta', selected ? 'Conta ' + selected.profileId : 'Não selecionada'),
         summaryRow('Identidade', selected ? (
@@ -234,6 +238,26 @@
       updatePixPreview();
     });
     ownershipCheckbox.addEventListener('change', updatePixPreview);
+    readinessButton.addEventListener('click', async () => {
+      const selected = getSelectedAccount(), key = activeKey();
+      if (!selected || !key) return;
+      readinessButton.disabled = true;
+      pixFeedback.textContent = 'Conferindo identidade, PIN de saque e chave vinculada à conta...';
+      try {
+        const result = await post('/api/operations/pix/readiness', {
+          profileId: selected.profileId,
+          accountId: selected.accountId,
+          keyId: key.id,
+          keyType: typeSelector.value
+        });
+        if (!selectedAccount || selectedAccount.accountId !== selected.accountId) return;
+        pixFeedback.textContent = result.missingRequirements?.length
+          ? 'Antes da API externa: ' + result.missingRequirements.join(' ')
+          : 'Dados locais conferidos. O executor externo ainda não está disponível na sessão Windows.';
+      } catch (error) {
+        pixFeedback.textContent = 'Verificação não concluída: ' + error.message;
+      } finally { updatePixPreview(); }
+    });
     prepareButton.addEventListener('click', async () => {
       const selected = getSelectedAccount();
       const key = activeKey();
@@ -305,6 +329,10 @@
         summaryRow('ID interno', detail.id),
         summaryRow('UUID da conta', detail.accountId),
         summaryRow('ID da plataforma', remoteId || 'Não identificado'),
+        summaryRow('Username', detail.username || 'Não informado'),
+        summaryRow('Nome real para operações', detail.financialRealName || 'Não confirmado; ajuste na aba Contas'),
+        summaryRow('CPF financeiro', detail.financialCpf ? 'Salvo nos detalhes da conta' : 'Não confirmado'),
+        summaryRow('PIN de saque', detail.hasWithdrawPin ? 'Protegido no Windows' : 'Não salvo'),
         summaryRow('Identificação', kind === 'verified' ? 'Verificado' :
           kind === 'observed' ? 'Observado, não verificado' : 'Não identificado')
       );

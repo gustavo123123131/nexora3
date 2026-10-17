@@ -387,6 +387,108 @@
               textRow('Última abertura', stored.lastOpenedAt),
               textRow('Proxy', stored.proxyId ? 'Vinculada' : (stored.connectionMode === 'managed' ? 'Configuração vinculada' : 'Não vinculada'))
             );
+            expanded.append(
+              textRow('Username', stored.username || 'Não informado'),
+              textRow('Nome real do titular (financeiro)', stored.financialRealName || 'Não confirmado'),
+              textRow('CPF financeiro', stored.financialCpf || 'Não confirmado'),
+              textRow('Senha da conta', stored.hasLoginPassword ? 'Protegida; requer autorização para mostrar' : 'Indisponível'),
+              textRow('PIN de saque', stored.hasWithdrawPin ? 'Protegido no cofre Windows' : 'Não configurado no Nexora')
+            );
+            const identityForm = document.createElement('section');
+            identityForm.className = 'accounts-financial-form';
+            const financialTitle = document.createElement('h3');
+            financialTitle.textContent = 'Identidade financeira desta conta';
+            const owner = document.createElement('input');
+            owner.placeholder = 'Nome real completo registrado na plataforma';
+            owner.setAttribute('aria-label', 'Nome real completo do titular');
+            owner.autocomplete = 'off';
+            owner.value = stored.financialRealName || '';
+            const cpf = document.createElement('input');
+            cpf.placeholder = 'CPF real do titular';
+            cpf.setAttribute('aria-label', 'CPF real do titular');
+            cpf.inputMode = 'numeric';
+            cpf.autocomplete = 'off';
+            cpf.value = stored.financialCpf || '';
+            const acknowledged = document.createElement('label');
+            const consent = document.createElement('input');
+            consent.type = 'checkbox';
+            acknowledged.append(consent, document.createTextNode(' Confirmo que estes dados são do titular real da conta'));
+            const feedback = document.createElement('p');
+            feedback.setAttribute('role', 'status');
+            const saveOwner = document.createElement('button');
+            saveOwner.type = 'button';
+            saveOwner.className = 'accounts-details';
+            saveOwner.textContent = 'Salvar titular financeiro';
+            saveOwner.addEventListener('click', async () => {
+              if (!consent.checked) { feedback.textContent = 'Confirme a titularidade.'; return; }
+              saveOwner.disabled = true;
+              try {
+                await post('/api/local-profiles/financial-identity', {
+                  profileId: stored.id, accountId: stored.accountId,
+                  realName: owner.value, cpf: cpf.value,
+                  ownershipAcknowledged: true
+                });
+                feedback.textContent = 'Titular atualizado nesta conta. Não constitui validação externa da plataforma.';
+                consent.checked = false;
+              } catch (error) {
+                feedback.textContent = 'Não foi possível salvar: ' + error.message;
+              } finally { saveOwner.disabled = false; }
+            });
+            const pin = document.createElement('input');
+            pin.type = 'password';
+            pin.inputMode = 'numeric';
+            pin.maxLength = 6;
+            pin.autocomplete = 'new-password';
+            pin.placeholder = 'PIN de saque existente (6 números)';
+            pin.setAttribute('aria-label', 'PIN de saque desta conta');
+            const savePin = document.createElement('button');
+            savePin.type = 'button';
+            savePin.className = 'accounts-details';
+            savePin.textContent = 'Salvar PIN no cofre Windows';
+            savePin.addEventListener('click', async () => {
+              savePin.disabled = true;
+              try {
+                await post('/api/local-profiles/withdraw-pin', {
+                  profileId: stored.id, accountId: stored.accountId, pin: pin.value
+                });
+                feedback.textContent = 'PIN de saque protegido separadamente da senha de login.';
+              } catch (error) {
+                feedback.textContent = 'Não foi possível salvar o PIN.';
+              } finally { pin.value = ''; savePin.disabled = false; }
+            });
+            const reveal = document.createElement('button');
+            reveal.type = 'button';
+            reveal.className = 'accounts-details';
+            reveal.textContent = 'Mostrar senha (administrador)';
+            reveal.addEventListener('click', async () => {
+              const authorization = window.prompt('Chave local de autorização para visualizar a senha de login:');
+              if (!authorization) return;
+              reveal.disabled = true;
+              try {
+                const result = await post('/api/local-profiles/reveal-login', {
+                  profileId: stored.id, accountId: stored.accountId, authorization
+                });
+                const value = document.createElement('input');
+                value.type = 'password';
+                value.readOnly = true;
+                value.value = result.password || '';
+                value.setAttribute('aria-label', 'Senha da conta protegida');
+                const toggle = document.createElement('button');
+                toggle.type = 'button';
+                toggle.textContent = 'Mostrar / ocultar';
+                toggle.onclick = () => { value.type = value.type === 'password' ? 'text' : 'password'; };
+                const close = document.createElement('button');
+                close.type = 'button';
+                close.textContent = 'Ocultar e limpar';
+                close.onclick = () => { value.value = ''; value.remove(); toggle.remove(); close.remove(); };
+                identityForm.append(value, toggle, close);
+              } catch (error) {
+                feedback.textContent = 'Credencial não autorizada ou indisponível.';
+              } finally { reveal.disabled = false; }
+            });
+            identityForm.append(financialTitle, owner, cpf, acknowledged, saveOwner,
+              pin, savePin, reveal, feedback);
+            expanded.append(identityForm);
             if (stored.runtimeConfig) {
               expanded.append(textRow('User-Agent salvo', stored.runtimeConfig.user_agent));
               expanded.append(textRow('Viewport', JSON.stringify(stored.runtimeConfig.viewport)));
