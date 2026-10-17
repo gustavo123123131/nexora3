@@ -30,6 +30,34 @@ class PixPreparationError(ValueError):
     """Public error text must never include Pix values or credentials."""
 
 
+def pix_owner_from_details(profile: dict) -> tuple[str, str]:
+    """Read existing owner name/CPF from the selected account's details.
+
+    A complete saved financial pair has priority. Otherwise use the existing
+    fullName/cpf pair from this same profile. This does NOT change the stored
+    identity or claim that generated values have been verified by a provider.
+    Provider-side CPF matching still happens when the remote Pix API runs.
+    """
+    from nexora_accounts.pix_key_store import _cpf
+
+    use_financial_pair = bool(
+        profile.get("financialRealName") and profile.get("financialCpf")
+    )
+    if use_financial_pair:
+        name, raw_cpf = profile.get("financialRealName"), profile.get("financialCpf")
+    else:
+        name, raw_cpf = profile.get("fullName"), profile.get("cpf")
+    if not isinstance(name, str):
+        raise PixPreparationError("Nome completo ausente em Contas → Detalhes.")
+    name = " ".join(name.strip().split())
+    if not (5 <= len(name) <= 150 and " " in name):
+        raise PixPreparationError("Nome completo ausente ou inválido em Contas → Detalhes.")
+    cpf = _cpf(raw_cpf) if isinstance(raw_cpf, str) else None
+    if not cpf:
+        raise PixPreparationError("CPF ausente ou inválido em Contas → Detalhes.")
+    return name, cpf
+
+
 def _now():
     return datetime.now(timezone.utc).isoformat()
 
@@ -141,11 +169,7 @@ class PixOperationStore:
             ][:60], "providerIntegration": "account-browser"}
 
     def readiness(self, *, profile_id, account_id, key_id, key_type) -> dict:
-        """Recheck owner/UID/PIN/Pix binding for the selected account; no network.
-
-        Synthetic fullName/cpf generated at account creation never qualify as
-        confirmed account-holder information.
-        """
+        """Read existing account details and saved Pix key without network calls."""
         if type(profile_id) is not int or profile_id < 1 or not _is_uuid(account_id):
             raise PixPreparationError("Conta selecionada inválida.")
         if not _is_uuid(key_id) or key_type not in TYPES:
@@ -160,14 +184,12 @@ class PixOperationStore:
         if not key or key.get("type") != key_type:
             raise PixPreparationError("Chave Pix não encontrada no tipo selecionado.")
         missing = []
-        if not profile.get("platformUserId"):
-            missing.append("ID real da plataforma não verificado.")
-        if not profile.get("financialRealName"):
-            missing.append("Nome real do titular não confirmado em Contas.")
-        if not profile.get("financialCpf"):
-            missing.append("CPF do titular não confirmado em Contas.")
-        if profile.get("financialIdentitySource") != "operator-confirmed":
-            missing.append("Confirmação de titularidade financeira ausente.")
+        if not (profile.get("platformUserId") or profile.get("platformObservedUserId")):
+            missing.append("ID da plataforma ausente em Contas → Detalhes.")
+        try:
+            pix_owner_from_details(profile)
+        except PixPreparationError as exc:
+            missing.append(str(exc))
         if not profile.get("hasWithdrawPin"):
             missing.append("PIN de saque da conta não salvo no cofre do Windows.")
         from nexora_accounts.pix_key_store import normalize_key
@@ -178,17 +200,19 @@ class PixOperationStore:
         return {
             "accountId": account_id, "profileId": profile_id,
             "keyId": key_id, "keyType": key_type,
-            "identityStatus": "verified" if profile.get("platformUserId") else "unverified",
+            "identityStatus": ("verified" if profile.get("platformUserId") else
+                               "observed" if profile.get("platformObservedUserId") else
+                               "unidentified"),
             "missingRequirements": missing,
             "readyForProvider": not missing,
-            "externalExecutionEnabled": False,
-            "reason": "Executor remoto ainda não validado na sessão Windows selecionada.",
+            "externalExecutionEnabled": not missing,
+            "reason": "Cadastro remoto usa a sessão Chromium ativa da conta selecionada.",
         }
 
 
     def begin_remote(self, *, profile_id, account_id, key_id, key_type, run_id):
         """Reserve one browser-owned attempt, using saved account/key details."""
-        from nexora_accounts.pix_key_store import normalize_key, _cpf
+        from nexora_accounts.pix_key_store import normalize_key
         if (type(profile_id) is not int or profile_id < 1 or
                 not _is_uuid(account_id) or not _is_uuid(key_id) or
                 key_type not in TYPES or not _is_uuid(run_id)):
@@ -202,12 +226,7 @@ class PixOperationStore:
         uid = profile.get("platformUserId") or profile.get("platformObservedUserId")
         if not str(uid or "").isdecimal():
             raise PixPreparationError("ID da plataforma ausente em Contas → Detalhes.")
-        if (profile.get("financialIdentitySource") != "operator-confirmed" or
-                not profile.get("financialRealName")):
-            raise PixPreparationError("Nome real do titular não confirmado nos detalhes da conta.")
-        cpf = _cpf(profile.get("financialCpf") or "")
-        if not cpf:
-            raise PixPreparationError("CPF real do titular não confirmado nos detalhes da conta.")
+        _name, cpf = pix_owner_from_details(profile)
         if not profile.get("hasWithdrawPin"):
             raise PixPreparationError("PIN de saque não salvo no cofre Windows desta conta.")
         key = next((k for k in self.keys.list().get("keys", [])
