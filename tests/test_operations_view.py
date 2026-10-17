@@ -177,3 +177,81 @@ def test_operations_rejects_divergent_detail_and_stale_async_response():
             assert "772104782" not in page.locator(".operations-account-details").inner_text()
         finally:
             browser.close()
+
+
+def test_pix_prepare_ui_four_types_uses_local_routes_and_keeps_history():
+    """An in-browser mock checks the UI contract; it never invokes finance APIs."""
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.set_content('<main id="mount"></main>')
+            page.add_style_tag(path=str(ROOT / "webui/static/accounts_view.css"))
+            page.add_style_tag(path=str(ROOT / "webui/static/operations_view.css"))
+            page.add_script_tag(path=str(ROOT / "webui/static/operations_view.js"))
+            page.evaluate("""() => {
+              window.calls = [];
+              const keys = [
+                {id:'a',type:'PHONE',value:'11987654321'},
+                {id:'b',type:'EMAIL',value:'private@example.com'},
+                {id:'c',type:'CPF',value:'52998224725'},
+                {id:'d',type:'EVP',value:'123e4567-e89b-12d3-a456-426655440000'}
+              ];
+              let history = [];
+              const get = async url => {
+                window.calls.push('GET ' + url);
+                if (url === '/api/local-profiles') return {profiles:[{
+                  id:11, label:'Conta 11',username:'test',
+                  accountId:'uuid-a',platformObservedUserId:'772104782',
+                  platformUserId:null}]};
+                if (url === '/api/local-profiles/detail?id=11') return {
+                  id:11, label:'Conta 11', accountId:'uuid-a',
+                  platformObservedUserId:'772104782',platformUserId:null};
+                if (url === '/api/pix-keys') return {keys};
+                if (url.startsWith('/api/operations/pix/history?')) return {operations:history};
+                throw Error('Unexpected GET');
+              };
+              const post = async (url,body) => {
+                window.calls.push('POST ' + url);
+                if(url !== '/api/operations/pix/prepare') throw Error('Unexpected POST');
+                const key = keys.find(k=>k.id===body.keyId);
+                if(!key||key.type!==body.keyType||body.accountId!=='uuid-a') throw Error('mismatch');
+                const operation = {
+                  operationId:'test-operation-'+history.length, keyType:key.type,
+                  status:'prepared', createdAt:'2026-10-17T00:00Z',
+                  missingRequirements:['Contrato da plataforma não comprovado.']
+                };
+                history=[operation,...history];
+                return {operation, reused:false};
+              };
+              window.ops=NexoraOperationsView.create({get,post});
+              document.querySelector('#mount').append(window.ops.node);
+              window.ops.onShow();
+            }""")
+            selector = page.get_by_role("combobox", name="Selecionar conta para operações")
+            selector.select_option("11")
+            type_selector = page.get_by_role("combobox", name="Escolher tipo de chave Pix")
+            key_selector = page.get_by_role("combobox", name="Escolher chave Pix cadastrada")
+            prepare = page.get_by_role("button", name="Preparar cadastro")
+            for typ, key in [("PHONE","a"),("EMAIL","b"),("CPF","c"),("EVP","d")]:
+                type_selector.select_option(typ)
+                expect(key_selector).to_have_value(key)
+                expect(prepare).to_be_disabled()
+                page.get_by_role("checkbox", name="Confirmar autorização da chave Pix").check()
+                expect(prepare).to_be_enabled()
+                prepare.click()
+                expect(page.locator(".operations-pix-feedback")).to_contain_text(
+                    "Preparação salva localmente."
+                )
+                expect(page.locator(".operations-history-item")).to_have_count(
+                    ["PHONE","EMAIL","CPF","EVP"].index(typ)+1
+                )
+            for secret in ("11987654321","private@example.com",
+                           "52998224725","123e4567-e89b-12d3-a456-426655440000"):
+                assert secret not in page.locator(".operations-pix-panel").inner_text()
+            paths = page.evaluate("window.calls")
+            assert len([p for p in paths if p.startswith("POST ")]) == 4
+            assert all('/api/operations/pix/prepare' in p
+                       for p in paths if p.startswith("POST "))
+        finally:
+            browser.close()
