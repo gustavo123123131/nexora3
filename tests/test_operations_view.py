@@ -232,16 +232,14 @@ def test_pix_prepare_ui_four_types_uses_local_routes_and_keeps_history():
             selector.select_option("11")
             type_selector = page.get_by_role("combobox", name="Escolher tipo de chave Pix")
             key_selector = page.get_by_role("combobox", name="Escolher chave Pix cadastrada")
-            prepare = page.get_by_role("button", name="Preparar cadastro")
+            prepare = page.get_by_role("button", name="Preparar chave Pix")
             for typ, key in [("PHONE","a"),("EMAIL","b"),("CPF","c"),("EVP","d")]:
                 type_selector.select_option(typ)
                 expect(key_selector).to_have_value(key)
-                expect(prepare).to_be_disabled()
-                page.get_by_role("checkbox", name="Confirmar autorização da chave Pix").check()
                 expect(prepare).to_be_enabled()
                 prepare.click()
                 expect(page.locator(".operations-pix-feedback")).to_contain_text(
-                    "Preparação salva localmente."
+                    "Preparação salva nesta conta."
                 )
                 expect(page.locator(".operations-history-item")).to_have_count(
                     ["PHONE","EMAIL","CPF","EVP"].index(typ)+1
@@ -257,8 +255,8 @@ def test_pix_prepare_ui_four_types_uses_local_routes_and_keeps_history():
             browser.close()
 
 
-def test_observed_id_can_probe_readonly_api_but_not_bind_pix():
-    """Observed UID enables diagnostics only; no Pix-finance POST is possible."""
+def test_direct_pix_preparation_uses_account_details_without_rechecking_id():
+    """One click uses existing detail/UUID and key; no identity/API probe."""
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
         try:
@@ -268,35 +266,50 @@ def test_observed_id_can_probe_readonly_api_but_not_bind_pix():
             page.evaluate("""() => {
                 window.posts = [];
                 const account = {id:52, accountId:'acct-local-52',label:'Conta 52',
+                    username:'usuario52', fullName:'Marina Souza',
+                    cpf:'52998224725', hasLoginPassword:true,
                     platformObservedUserId:'745550222',platformUserId:null};
                 const get = async path => {
                     if (path === '/api/local-profiles') return {profiles:[account]};
                     if (path.includes('/api/local-profiles/detail?id='))
                         return {...account};
-                    if (path === '/api/pix-keys') return {keys:[]};
+                    if (path === '/api/pix-keys') return {keys:[
+                        {id:'key-52',type:'PHONE',value:'11987654321'}
+                    ]};
                     if (path.includes('/api/operations/pix/history')) return {operations:[]};
-                    throw Error('Unexpected GET');
+                    throw Error('Unexpected GET '+path);
                 };
                 const post = async (path, data) => {
                     window.posts.push({path, data});
-                    if (path !== '/api/operations/pix/check-session')
+                    if (path !== '/api/operations/pix/prepare')
                         throw Error('Unexpected POST');
-                    return {state:'api-reachable', identityStatus:'observed',
-                        message:'API respondeu. ID observado ainda não verificado; cadastro Pix permanece bloqueado.'};
+                    return {reused:false, operation:{operationId:'test-op'}};
                 };
                 const view=NexoraOperationsView.create({get,post});
                 document.querySelector('#mount').append(view.node);
                 view.onShow();
             }""")
             page.get_by_role("combobox", name="Selecionar conta para operações").select_option("52")
-            button = page.get_by_role("button", name="Testar API na conta aberta")
-            expect(button).to_be_enabled()
-            expect(page.get_by_role("button", name="Preparar cadastro")).to_be_disabled()
-            button.click()
-            expect(page.locator(".operations-pix-feedback")).to_contain_text("cadastro Pix permanece bloqueado")
-            entries = page.evaluate("window.posts")
-            assert len(entries) == 1
-            assert entries[0]["path"] == "/api/operations/pix/check-session"
-            assert entries[0]["data"] == {"profileId":52,"accountId":"acct-local-52"}
+            detail = page.locator(".operations-account-details")
+            expect(detail).to_contain_text("Marina Souza")
+            expect(detail).to_contain_text("usuario52")
+            expect(detail).to_contain_text("Salva no cofre da conta")
+            assert "52998224725" not in detail.inner_text()
+            for obsolete in ("Testar API na conta aberta", "Verificar ID da plataforma",
+                             "Verificar requisitos da API", "Confirmar autorização da chave Pix"):
+                assert page.get_by_text(obsolete, exact=True).count() == 0
+            page.get_by_role("combobox", name="Escolher tipo de chave Pix").select_option("PHONE")
+            prepare=page.get_by_role("button", name="Preparar chave Pix")
+            expect(prepare).to_be_enabled()
+            prepare.click()
+            expect(page.locator(".operations-pix-feedback")).to_contain_text(
+                "Cadastro externo ainda não integrado.")
+            entries=page.evaluate("window.posts")
+            assert len(entries)==1
+            assert entries[0]["path"]=="/api/operations/pix/prepare"
+            assert entries[0]["data"]=={
+                "profileId":52,"accountId":"acct-local-52",
+                "keyId":"key-52","keyType":"PHONE"
+            }
         finally:
             browser.close()
