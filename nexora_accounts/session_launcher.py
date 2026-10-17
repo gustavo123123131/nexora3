@@ -102,16 +102,39 @@ class AccountLauncher:
         observed = bool(profile.get("platformObservedUserId"))
         if not verified and not observed:
             return {"state": "unverified-id", "message": "Nenhum ID da plataforma observado; abra a conta autenticada."}
-        with self._lock:
-            info = self._running.get(profile_id)
-            if not info or info["stop"].is_set() or self._results.get(profile_id, {}).get("state") != "ready":
-                return {"state": "not-running", "message": "Abra esta conta em Contas e aguarde o navegador iniciar."}
-            response = queue.Queue(maxsize=1)
-            job = {"accountId": account_id, "profileId": profile_id, "result": response}
-            try:
-                info["requests"].put_nowait(job)
-            except queue.Full:
-                return {"state": "busy", "message": "Há uma verificação em andamento nesta conta."}
+        from nexora_accounts.browser_sessions import active_account_session
+        # One account-bound broker receives workers opened by Mãe, Filha or
+        # Contas. Do not require the Contas launcher's private _running entry.
+        live = active_account_session(profile.get("origin"), profile_id, account_id)
+        if live is not None:
+            if live["stop"].is_set():
+                return {"state": "not-running", "message": "A sessão selecionada já foi encerrada."}
+            if not live["ready"]:
+                return {"state": "starting", "message": "O navegador da conta ainda está inicializando."}
+            requests = live["requests"]
+        else:
+            # Compatibility with existing launcher workers and mock sessions.
+            # This fallback is never used for a different profile/account UUID.
+            with self._lock:
+                info = self._running.get(profile_id)
+                if (
+                    not info or info["stop"].is_set()
+                    or self._results.get(profile_id, {}).get("state") != "ready"
+                ):
+                    return {
+                        "state": "not-running",
+                        "message": (
+                            "Não encontrei uma sessão ativa vinculada a esta conta. "
+                            "Abra a conta pela aba Mãe, Filha ou Contas e aguarde iniciar."
+                        ),
+                    }
+                requests = info["requests"]
+        response = queue.Queue(maxsize=1)
+        job = {"accountId": account_id, "profileId": profile_id, "result": response}
+        try:
+            requests.put_nowait(job)
+        except queue.Full:
+            return {"state": "busy", "message": "Há uma verificação em andamento nesta conta."}
         try:
             result = response.get(timeout=timeout)
         except queue.Empty:
