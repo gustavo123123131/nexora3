@@ -386,10 +386,20 @@ async def pix_operation_history(profileId: int):
 @app.post('/api/operations/pix/prepare')
 async def prepare_pix_operation(body: dict):
     """Prepare an auditable local draft. NEVER bind Pix remotely."""
+    import time
     from nexora_accounts.pix_operations import PixOperationStore, PixPreparationError
     from starlette.concurrency import run_in_threadpool
+    audit_id = str(uuid.uuid4())
+    started = time.monotonic()
+    audit = logging.getLogger("nexora.pix.operations")
+    safe_profile_id = body.get("profileId")
+    if type(safe_profile_id) is not int:
+        safe_profile_id = None
+    audit.info("[Pix] tentativa=%s perfil=%s metodo=POST "
+               "endpoint=/api/operations/pix/prepare etapa=inicio",
+               audit_id, safe_profile_id)
     try:
-        return await run_in_threadpool(
+        result = await run_in_threadpool(
             lambda: PixOperationStore().prepare(
                 profile_id=body.get("profileId"),
                 account_id=body.get("accountId"),
@@ -398,7 +408,17 @@ async def prepare_pix_operation(body: dict):
                 ownership_acknowledged=body.get("ownershipAcknowledged"),
             )
         )
+        audit.info("[Pix] tentativa=%s operacao=%s statusHTTP=200 "
+                   "etapa=preparacao_local concluida=%s duracaoMs=%d "
+                   "envioExterno=nao",
+                   audit_id, result["operation"]["operationId"], True,
+                   int((time.monotonic() - started) * 1000))
+        return result
     except PixPreparationError as exc:
+        audit.warning("[Pix] tentativa=%s perfil=%s statusHTTP=422 "
+                      "etapa=validacao motivo=%s duracaoMs=%d envioExterno=nao",
+                      audit_id, safe_profile_id, str(exc),
+                      int((time.monotonic() - started) * 1000))
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
