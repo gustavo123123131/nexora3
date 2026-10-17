@@ -1247,9 +1247,10 @@ def run_instance(
                         identity_observer = None
 
                 identity_saved_this_run = False
+                identity_observed_logged_uid = None
 
                 def _poll_identity():
-                    nonlocal identity_saved_this_run
+                    nonlocal identity_saved_this_run, identity_observed_logged_uid
                     if identity_observer is None:
                         return
                     from nexora_accounts.local_profiles import LocalProfileStore
@@ -1266,6 +1267,13 @@ def run_instance(
                             site_origin=identity_observer.origin,
                             observed_identity=observed,
                         )
+                        if identity_observed_logged_uid != observed.user_id:
+                            identity_observed_logged_uid = observed.user_id
+                            log(
+                                f"[#{idx}] [Registro] [ID] ID da plataforma "
+                                f"salvo em Contas → Detalhes como observado "
+                                f"para {candidate_profile['label']}."
+                            )
                     if identity_saved_this_run:
                         return
                     verified_id = identity_observer.identify(

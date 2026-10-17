@@ -209,3 +209,30 @@ def test_untrusted_initial_site_never_activates_after_redirect(store):
         assert observer.observe_candidate() is None
     finally:
         observer.close()
+
+
+def test_observed_uid_does_not_claim_that_id_was_not_saved(store):
+    """A candidate is persisted as observed, not misreported as wholly unsaved."""
+    p = create(store, "mae", "run-observed")
+    page = Page()
+    messages = []
+    observer = PlatformIdentityObserver(
+        page, messages.append, {**p, "runId": "run-observed"},
+        expected_origin=SITE,
+    )
+    observer.start()
+    try:
+        emit(page, API_CO, 772104785)
+        candidate = observer.observe_candidate()
+        assert isinstance(candidate, ObservedPlatformIdentity)
+        save(store, p, "run-observed", candidate)
+        observer.after_registration_click()
+        assert observer.identify(wait_seconds=0) is None
+
+        detail = store.public_detail(p["id"])
+        assert detail["platformObservedUserId"] == "772104785"
+        assert detail["platformUserId"] is None
+        assert not any("ID não salvo" in message for message in messages)
+        assert any("verificação remota" in message for message in messages)
+    finally:
+        observer.close()
