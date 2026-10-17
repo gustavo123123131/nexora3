@@ -100,11 +100,14 @@
     const readinessButton = el('button', 'accounts-details operations-pix-readiness', 'Verificar requisitos da API');
     readinessButton.type = 'button';
     readinessButton.disabled = true;
+    const sessionButton = el('button', 'accounts-details operations-pix-session', 'Testar API na conta aberta');
+    sessionButton.type = 'button';
+    sessionButton.disabled = true;
     const preview = el('div', 'operations-pix-preview');
     const historyHeading = el('h3', 'operations-history-heading', 'Histórico local da conta');
     const history = el('div', 'operations-history');
     pixPanel.append(pixControls, acknowledgment, preview,
-      prepareButton, readinessButton, pixFeedback, historyHeading, history);
+      prepareButton, readinessButton, sessionButton, pixFeedback, historyHeading, history);
     node.append(heading, selectorPanel, pixPanel, sections);
 
     let listRevision = 0;
@@ -136,6 +139,7 @@
         !!selected && !!selected.platformId && !!key && ownershipCheckbox.checked;
       prepareButton.disabled = !enabled;
       readinessButton.disabled = !selected || !key;
+      sessionButton.disabled = !selected || selected.identityStatus !== 'verified';
       preview.replaceChildren(
         summaryRow('Conta', selected ? 'Conta ' + selected.profileId : 'Não selecionada'),
         summaryRow('Identidade', selected ? (
@@ -238,6 +242,27 @@
       updatePixPreview();
     });
     ownershipCheckbox.addEventListener('change', updatePixPreview);
+    sessionButton.addEventListener('click', async () => {
+      const selected = getSelectedAccount();
+      if (!selected || selected.identityStatus !== 'verified') return;
+      sessionButton.disabled = true;
+      pixFeedback.textContent = 'Consultando a API de segurança na sessão Chromium desta conta...';
+      try {
+        const response = await post('/api/operations/pix/check-session', {
+          profileId: selected.profileId,
+          accountId: selected.accountId
+        });
+        if (!selectedAccount || selectedAccount.accountId !== selected.accountId ||
+            selectedAccount.profileId !== selected.profileId) return;
+        pixFeedback.textContent = response.message || 'Resultado da sessão não identificado.';
+      } catch (error) {
+        if (selectedAccount && selectedAccount.accountId === selected.accountId) {
+          pixFeedback.textContent = 'Falha ao testar a sessão: ' + error.message;
+        }
+      } finally {
+        updatePixPreview();
+      }
+    });
     readinessButton.addEventListener('click', async () => {
       const selected = getSelectedAccount(), key = activeKey();
       if (!selected || !key) return;
