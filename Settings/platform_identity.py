@@ -304,8 +304,19 @@ class PlatformIdentityObserver:
         except Exception:
             return
 
+    @staticmethod
+    def _page_is_closed(page):
+        """Do not inspect Playwright response handles after browser teardown."""
+        try:
+            check = getattr(page, "is_closed", None)
+            return bool(check()) if callable(check) else False
+        except Exception:
+            return True
+
     def inspect_pending_headers(self):
         """Read only completed allowlisted requests, outside event callbacks."""
+        if not self._active or self._page_is_closed(self.page):
+            return
         for key in tuple(self._ready_header_ids):
             self._ready_header_ids.discard(key)
             queued = self._pending_header_requests.pop(key, None)
@@ -443,7 +454,7 @@ class PlatformIdentityObserver:
                 self._context_request_listening = True
 
     def close(self):
-        if self._active and self._header_routes:
+        if self._active and self._header_routes and not self._page_is_closed(self.page):
             self.inspect_pending_headers()
             if not self._request_route_seen:
                 self._log_once("route-absent", "Nenhuma requisição permitida da API observada nesta sessão.")
@@ -522,7 +533,7 @@ class PlatformIdentityObserver:
         self._storage_last_probe = now
         try:
             matches = self.page.evaluate(
-                """() => {
+                r"""() => {
                   const results = [];
                   const numeric = value => {
                     if (typeof value === 'number' && Number.isSafeInteger(value)
@@ -607,7 +618,8 @@ class PlatformIdentityObserver:
 
     def observe_candidate(self):
         """Return an observed ID scoped to THIS page/account/run, not verified."""
-        if not self._active or not self._official_site or not self._header_routes:
+        if (not self._active or self._page_is_closed(self.page)
+            or not self._official_site or not self._header_routes):
             return None
         self.inspect_pending_headers()
         self._probe_storage()
@@ -666,6 +678,8 @@ class PlatformIdentityObserver:
         ))
 
     def _identity_responses(self):
+        if self._page_is_closed(self.page):
+            return None
         try:
             routes = {
                 (str(method).upper(), path.rstrip("/").lower())
@@ -684,9 +698,9 @@ class PlatformIdentityObserver:
                 path = urlsplit(response.url).path.rstrip("/").lower()
                 if (response.request.method.upper(), path) not in routes:
                     continue
-                finished = getattr(response, "finished", None)
-                if callable(finished) and finished():
-                    continue
+                # Avoid response.finished(): Playwright can spawn an
+                # unhandled on_finished task if Chromium closes mid-response.
+                # response.json() is used only on audited response routes.
                 candidate = parser(
                     response.url, int(response.status), response.json(),
                     dict(self.account)
@@ -706,7 +720,7 @@ class PlatformIdentityObserver:
         of server acceptance. A non-2xx / err_code:41000 response is rejected;
         a generic HTTP 200 / err_code:0 is still insufficient. No new traffic.
         """
-        if (not self._header_routes
+        if (not self._header_routes or self._page_is_closed(self.page)
             or self._header_conflict or not self._official_site):
             return None
         verifier = getattr(self.contract, "verify_header_identity", None)
@@ -728,9 +742,9 @@ class PlatformIdentityObserver:
                     )
                     self._header_responses_checked.add(response_key)
                     continue
-                finished = getattr(response, "finished", None)
-                if callable(finished) and finished():
-                    continue
+                # Avoid response.finished(): Playwright can spawn an
+                # unhandled on_finished task if Chromium closes mid-response.
+                # response.json() is used only on audited response routes.
                 body = response.json()
                 if isinstance(body, dict) and (
                     "err_code" in body
@@ -843,6 +857,8 @@ class PlatformIdentityObserver:
         serve as identity proof. A per-origin adapter must validate the actual
         authenticated identity and ownership from the selected source.
         """
+        if self._page_is_closed(self.page):
+            return None
         if self.contract is None:
             self._log_once("no-contract", "ID não identificado: contrato de identidade ausente.")
             return None
