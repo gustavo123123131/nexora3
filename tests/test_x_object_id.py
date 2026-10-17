@@ -178,6 +178,7 @@ def test_real_header_only_is_candidate_never_verified_or_saved(store):
     watcher = start(page, p, "run79")  # actual builtin contract
     try:
         request = send(page, 772104782, body={"err_code":0})
+        watcher.inspect_pending_headers()
         assert request.calls == 1
         store.mark_registration_clicked(p["id"], p["accountId"], "run79", site_origin=PAGE)
         watcher.after_registration_click()
@@ -206,6 +207,7 @@ def test_only_exact_api_host_get_and_path_read_sensitive_header(store):
             assert request.calls == 0
         assert watcher._header_seen_uid is None
         request = send(page, 54321)
+        watcher.inspect_pending_headers()
         assert request.calls == 1
         assert watcher._header_seen_uid == "54321"
     finally:
@@ -219,6 +221,7 @@ def test_invalid_header_and_absent_header_do_not_create_candidates(store):
     try:
         for header in ({}, {"x-object-id": "{"}, {"x-object-id":'{"uid":true}'}):
             request = send(page, None, header=header)
+            watcher.inspect_pending_headers()
             assert request.calls == 1
         assert watcher._header_seen_uid is None
         assert watcher._header_requests == {}
@@ -313,6 +316,8 @@ def test_context_request_from_different_page_cannot_leak_id(store):
         assert foreign.calls == 0
         own=Request(owner,222)
         context.emit("request",own)
+        context.emit("response", Response(own))
+        watcher.inspect_pending_headers()
         assert own.calls == 1
         assert watcher._header_seen_uid == "222"
     finally:
