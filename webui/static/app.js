@@ -9,6 +9,15 @@ const shownDialogs = new Set();
 const PROXY_PREVIEW_ID = '__nexora_proxy_visual__';
 const ACCOUNTS_VIEW_ID = '__nexora_accounts_local__';
 const PIX_VIEW_ID = '__nexora_pix_local__';
+const OPERATIONS_VIEW_ID = '__nexora_operations_local__';
+let operationsViewInstance = null;
+function operationsView() {
+  if (!operationsViewInstance) {
+    operationsViewInstance = window.NexoraOperationsView.create({get: getRegistration});
+  }
+  operationsViewInstance.onShow();
+  return operationsViewInstance.node;
+}
 let pixViewInstance = null;
 function pixView() {
   if (!pixViewInstance) {
@@ -436,7 +445,8 @@ function renderNode(obj) {
       const tabs = obj.children || [];
       let active = selectedTabs.get(obj.id);
       if (active !== PROXY_PREVIEW_ID && active !== PIX_VIEW_ID &&
-          active !== ACCOUNTS_VIEW_ID && !tabs.some(tab => tab.id === active)) active = tabs[0]?.id;
+          active !== ACCOUNTS_VIEW_ID && active !== OPERATIONS_VIEW_ID &&
+          !tabs.some(tab => tab.id === active)) active = tabs[0]?.id;
       selectedTabs.set(obj.id, active);
       const bar = el.querySelector('.tab-bar');
       const oldButtons = new Map([...bar.children].map(button => [button.dataset.tabid, button]));
@@ -455,7 +465,7 @@ function renderNode(obj) {
         b.classList.toggle('active', tab.id === active);
         return b;
       });
-      // Append a frontend-only third item; existing Mãe/Filha navigation is
+      // Append frontend-only workspaces; existing Mãe/Filha navigation is
       // unchanged, as are the backend tab IDs and callback bindings.
       let proxyButton = oldButtons.get(PROXY_PREVIEW_ID);
       if (!proxyButton) {
@@ -495,15 +505,29 @@ function renderNode(obj) {
       }
       accountsButton.textContent = 'Contas';
       accountsButton.classList.toggle('active', active === ACCOUNTS_VIEW_ID);
-      patchChildren(bar, [...buttons, proxyButton, pixButton, accountsButton]);
+      let operationsButton = oldButtons.get(OPERATIONS_VIEW_ID);
+      if (!operationsButton) {
+        operationsButton = document.createElement('button');
+        operationsButton.type = 'button';
+        operationsButton.dataset.tabid = OPERATIONS_VIEW_ID;
+        operationsButton.addEventListener('click', () => {
+          selectedTabs.set(obj.id, OPERATIONS_VIEW_ID);
+          if (currentState) updateTree(currentState.tree);
+        });
+      }
+      operationsButton.textContent = 'Operações';
+      operationsButton.classList.toggle('active', active === OPERATIONS_VIEW_ID);
+      patchChildren(bar, [...buttons, proxyButton, pixButton, accountsButton, operationsButton]);
       const activeTab = tabs.find(tab => tab.id === active);
-      el.dataset.activeView = active === PIX_VIEW_ID ? 'Chave Pix' :
+      el.dataset.activeView = active === OPERATIONS_VIEW_ID ? 'Operações' :
+        active === PIX_VIEW_ID ? 'Chave Pix' :
         active === ACCOUNTS_VIEW_ID ? 'Contas' :
         active === PROXY_PREVIEW_ID ? 'Proxy' : (activeTab?.options?._tab_label || '');
       const content = el.querySelector('.tab-content');
       patchChildren(content, active === PROXY_PREVIEW_ID
         ? [proxyPreview()] : active === PIX_VIEW_ID ? [pixView()] : active === ACCOUNTS_VIEW_ID
-        ? [accountsView()] : (activeTab ? [renderNode(activeTab)] : []));
+        ? [accountsView()] : active === OPERATIONS_VIEW_ID
+        ? [operationsView()] : (activeTab ? [renderNode(activeTab)] : []));
     } else {
       renderContainerLayout(el, obj);
       const children = obj.children || [];

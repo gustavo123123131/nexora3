@@ -49,7 +49,7 @@ def test_nexora_visual_and_existing_controls(tmp_path):
             try:
                 page = browser.new_page(viewport={"width": 1440, "height": 900})
                 page.goto(URL, wait_until="domcontentloaded")
-                expect(page.locator(".tab-bar button")).to_have_count(5, timeout=15000)
+                expect(page.locator(".tab-bar button")).to_have_count(6, timeout=15000)
                 expect(page.locator(".brand-wordmark")).to_have_text("NEXORA")
                 expect(page.locator(".tab-bar button.active")).to_have_text("Mãe")
                 expect(page.get_by_role("button", name="Abrir Navegadores")).to_be_visible()
@@ -104,6 +104,16 @@ def test_nexora_visual_and_existing_controls(tmp_path):
                 expect(page.get_by_role("button", name="Abrir Navegadores")).to_be_visible()
                 expect(page.locator(".ui-action-start:visible")).to_have_count(1)
                 page.locator(".tab-bar button").nth(0).click()
+                expect(page.locator(".tab-bar button.active")).to_have_text("Mãe")
+                # Operations is a separate read-only workspace using existing
+                # account list/detail GET APIs. It never triggers a command.
+                page.get_by_role("button", name="Operações").click()
+                expect(page.locator(".tab-bar button.active")).to_have_text("Operações")
+                expect(page.get_by_role("heading", name="Operações", exact=True)).to_be_visible()
+                expect(page.locator(".operations-card")).to_have_count(4)
+                expect(page.get_by_role("combobox", name="Selecionar conta para operações")).to_be_visible()
+                expect(page.locator("#global-logs")).to_be_visible()
+                page.locator(".tab-bar button").first.click()
                 expect(page.locator(".tab-bar button.active")).to_have_text("Mãe")
                 # Compact layout keeps the existing controls usable at 960 px.
                 page.set_viewport_size({"width": 960, "height": 850})
