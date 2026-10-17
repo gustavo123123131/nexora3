@@ -162,6 +162,9 @@ class PixOperationStore:
         if not isinstance(uid, str) or not uid.isdecimal() or not (0 < int(uid) <= 2**53 - 1):
             raise PixPreparationError("ID da plataforma ausente ou inválido.")
         identity_status = "verified" if profile.get("platformUserId") else "observed"
+        identity_seen_at = (profile.get("platformIdVerifiedAt") if
+                            identity_status == "verified" else
+                            profile.get("platformObservedAt"))
         keys = self.keys.list().get("keys", [])
         key = next((k for k in keys if k.get("id") == key_id), None)
         if key is None:
@@ -182,7 +185,9 @@ class PixOperationStore:
                 if (op["accountId"] == account_id and op["profileId"] == profile_id
                     and op["keyId"] == key_id and op["keyType"] == key_type
                     and op.get("keyUpdatedAt") == key.get("updatedAt")
-                    and op.get("platformIdentityRef") == remote_ref(uid)):
+                    and op.get("platformIdentityRef") == remote_ref(uid)
+                    and op.get("identityStatus") == identity_status
+                    and op.get("identitySeenAt") == identity_seen_at):
                     LOG.info(
                         "[Pix] preparo existente op=%s perfil=%s uid=%s tipo=%s",
                         op["operationId"], profile_id, remote_ref(uid), key_type,
@@ -192,7 +197,8 @@ class PixOperationStore:
             op = {
                 "operationId": str(uuid4()), "profileId": profile_id,
                 "accountId": account_id, "platformIdentityRef": remote_ref(uid),
-                "identityStatus": identity_status, "keyId": key_id,
+                "identityStatus": identity_status,
+                "identitySeenAt": identity_seen_at, "keyId": key_id,
                 "keyType": key_type, "keyMasked": masked(key["value"], key_type),
                 "keyUpdatedAt": key.get("updatedAt"), "status": "prepared",
                 "providerStatus": "not_submitted", "externalRequestSent": False,
