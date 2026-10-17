@@ -92,7 +92,7 @@
     acknowledgment.append(ownershipCheckbox, el('span', '',
       'Declaro que tenho autorização para utilizar esta chave Pix. ' +
       'Isso não comprova titularidade perante a plataforma.'));
-    const pixFeedback = el('p', 'operations-feedback operations-pix-feedback');
+    const pixFeedback = el('p', 'operations-pix-feedback');
     pixFeedback.setAttribute('role', 'status');
     const prepareButton = el('button', 'accounts-open operations-pix-prepare', 'Preparar cadastro');
     prepareButton.type = 'button';
