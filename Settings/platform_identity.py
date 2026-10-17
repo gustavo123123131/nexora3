@@ -158,6 +158,8 @@ class PlatformIdentityObserver:
             self._response_origins.update(FIVEGBET_SITE_ORIGINS)
             self._response_origins.add("https://cdnapiif.ppa5g.net")
         self._header_requests = {}
+        self._pending_header_requests = {}
+        self._ready_header_ids = set()
         self._scanned_request_ids = set()
         self._header_seen_uid = None
         self._header_conflict = False
@@ -238,37 +240,65 @@ class PlatformIdentityObserver:
             if key in self._scanned_request_ids or len(self._scanned_request_ids) >= 128:
                 return
             self._scanned_request_ids.add(key)
-            # all_headers() is invoked ONLY for the exact allowed URL. Never
-            # persist or print headers, tokens, JWTs or request bodies.
-            headers = request.all_headers()
-            if not isinstance(headers, dict):
-                return
-            raw = next((v for k, v in headers.items()
-                        if isinstance(k, str) and k.lower() == "x-object-id"), None)
-            if raw is not None:
-                self._header_present = True
-            else:
-                self._log_once(
-                    "missing-header", "Requisição permitida sem cabeçalho x-object-id.",
-                )
-            uid = parse_x_object_id_uid(raw)
-            if uid is None:
-                if raw is not None:
-                    self._header_invalid = True
-                    self._log_once("invalid-header", "x-object-id presente, uid inválido.")
-                return
-            self._log_once("candidate", "x-object-id.uid observado (valor protegido); aguardando verificação.")
-            if self._header_seen_uid is not None and self._header_seen_uid != uid:
-                self._header_conflict = True
-                self._log_once(
-                    "conflict", "IDs de cabeçalhos conflitantes; nenhum ID será salvo.",
-                )
-            else:
-                self._header_seen_uid = uid
-            if len(self._header_requests) < 32:
-                self._header_requests[id(request)] = (request, uid, time.monotonic())
+            # Do NOT call all_headers() inside Playwright's request event:
+            # the Chromium extra-info packet may arrive only afterwards and
+            # block a synchronous event handler. Queue the bound handle
+            # without copying other headers or tokens.
+            if len(self._pending_header_requests) < 64:
+                self._pending_header_requests[key] = (request, time.monotonic())
         except Exception:
             return
+
+    def inspect_pending_headers(self):
+        """Read only completed allowlisted requests, outside event callbacks."""
+        for key in tuple(self._ready_header_ids):
+            self._ready_header_ids.discard(key)
+            queued = self._pending_header_requests.pop(key, None)
+            if queued is None:
+                continue
+            request, timestamp = queued
+            try:
+                # No passwords, tokens, cookies or JWT are kept or logged.
+                headers = request.all_headers()
+                if not isinstance(headers, dict):
+                    continue
+                raw = next(
+                    (v for k, v in headers.items()
+                     if isinstance(k, str) and k.lower() == "x-object-id"),
+                    None,
+                )
+                if raw is not None:
+                    self._header_present = True
+                else:
+                    self._log_once(
+                        "missing-header", "Requisição permitida sem cabeçalho x-object-id.",
+                    )
+                uid = parse_x_object_id_uid(raw)
+                if uid is None:
+                    if raw is not None:
+                        self._header_invalid = True
+                        self._log_once(
+                            "invalid-header", "x-object-id presente, uid inválido.",
+                        )
+                    continue
+                self._log_once(
+                    "candidate",
+                    "x-object-id.uid observado (valor protegido); aguardando verificação.",
+                )
+                if self._header_seen_uid is not None and self._header_seen_uid != uid:
+                    self._header_conflict = True
+                    self._log_once(
+                        "conflict", "IDs de cabeçalhos conflitantes; nenhum ID será salvo.",
+                    )
+                else:
+                    self._header_seen_uid = uid
+                if len(self._header_requests) < 32:
+                    self._header_requests[key] = (request, uid, timestamp)
+            except Exception:
+                self._log_once(
+                    "header-read-error",
+                    "Cabeçalho da requisição não disponível após a resposta.",
+                )
 
     def _on_page_request(self, request):
         self._collect_request(request, page_scoped=True)
@@ -294,6 +324,14 @@ class PlatformIdentityObserver:
                         return
                 except Exception:
                     return
+            # A response indicates headers can now be inspected without
+            # blocking Playwright's request event.
+            try:
+                request_key = id(response.request)
+                if request_key in self._pending_header_requests:
+                    self._ready_header_ids.add(request_key)
+            except Exception:
+                pass
             # Keep only bounded response handles from the owning page; never
             # retain payloads, cookies, request headers or token-bearing URLs.
             key = id(response)
@@ -341,6 +379,7 @@ class PlatformIdentityObserver:
 
     def close(self):
         if self._active and self._header_routes:
+            self.inspect_pending_headers()
             if not self._request_route_seen:
                 self._log_once("route-absent", "Nenhuma requisição permitida da API observada nesta sessão.")
             elif self._header_seen_uid is None:
@@ -383,6 +422,8 @@ class PlatformIdentityObserver:
         self._responses.clear()
         self._seen.clear()
         self._header_requests.clear()
+        self._pending_header_requests.clear()
+        self._ready_header_ids.clear()
         self._scanned_request_ids.clear()
         self._header_seen_uid = None
         self._header_conflict = False
@@ -604,6 +645,7 @@ class PlatformIdentityObserver:
             return None
         if stop_event is not None and stop_event.is_set():
             return None
+        self.inspect_pending_headers()
         # Give an independently verified registration response first priority.
         # Never trust a generic status/uid just because Registrar was clicked.
         if (getattr(registration_verdict, "status", None) == "created"
