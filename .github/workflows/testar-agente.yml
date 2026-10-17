@@ -1,7 +1,7 @@
 name: Testar painel e agente Windows
 on:
   push:
-    branches: [main, fix/remover-criacao-contas, fix/5gbet-id-observado]
+    branches: [main, fix/remover-criacao-contas]
   pull_request:
     branches: [fix/remover-criacao-contas]
   workflow_dispatch:
