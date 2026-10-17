@@ -39,3 +39,23 @@
   .operations-controls button { width: 100%; }
   .operations-panel, .operations-catalog { padding: 13px 12px; }
 }
+
+/* Pix: local-only preparation; all data is masked in this workspace. */
+.operations-pix-panel { margin-top: 14px; }
+.operations-pix-panel > .operations-hint { margin: 0 0 13px; }
+.operations-pix-controls { margin-bottom: 12px; }
+.operations-ownership { display: flex; align-items: start; gap: 9px;
+  font-size: 12px; color: #c3cfdb; line-height: 1.5; cursor: pointer; }
+.operations-ownership input { width: 16px; height: 16px; flex: 0 0 auto; accent-color: #537eac; }
+.operations-pix-preview { display: grid; gap: 8px; margin: 12px 0;
+  padding: 12px; border: 1px solid #32475d; border-radius: 9px; background: #111e2d; }
+.operations-pix-preview .account-summary-row { grid-template-columns: 110px minmax(0,1fr); }
+.operations-pix-prepare { min-width: 150px; }
+.operations-history-heading { font-size: 13px; font-weight: 700;
+  color: #dce7f4; margin: 16px 0 8px; }
+.operations-history { display: grid; gap: 8px; }
+.operations-history-item { display: grid; gap: 5px; overflow-wrap: anywhere;
+  border: 1px solid #304157; border-radius: 8px; padding: 11px 12px;
+  background: #122033; font-size: 11px; color: #b7c7d9; }
+.operations-history-item strong { color: #e4eefe; font-size: 12px; }
+.operations-history-item small { line-height: 1.6; color: #aabdd1; }
