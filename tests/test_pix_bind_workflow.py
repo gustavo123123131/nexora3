@@ -13,11 +13,13 @@ def setup_store(tmp_path):
     a, b, key = str(uuid4()), str(uuid4()), str(uuid4())
     profiles = {
         11: {"id":11,"accountId":a,"origin":"mae","lastSessionId":run,
-             "platformUserId":"772104783","financialRealName":"Maria Silva",
+             "platformUserId":"772104783","fullName":"Marina Souza", "cpf":"52998224725",
+             "financialRealName":"Maria Silva",
              "financialCpf":"52998224725","financialIdentitySource":"operator-confirmed",
              "hasWithdrawPin":True},
         12: {"id":12,"accountId":b,"origin":"filha","lastSessionId":run,
-             "platformUserId":"772104784","financialRealName":"Ana Silva",
+             "platformUserId":"772104784","fullName":"Ana Ribeiro", "cpf":"52998224725",
+             "financialRealName":"Ana Silva",
              "financialCpf":"52998224725","financialIdentitySource":"operator-confirmed",
              "hasWithdrawPin":True},
     }
@@ -63,9 +65,10 @@ def test_remote_attempt_isolated_persisted_and_never_leaks_credentials(tmp_path)
 
 
 @pytest.mark.parametrize("change,expected", [
-    ({"financialRealName":None},"Nome real"),
-    ({"financialCpf":None},"CPF real"),
-    ({"financialIdentitySource":None},"Nome real"),
+    ({"financialRealName":None,"financialCpf":None,
+      "fullName":None},"Nome completo"),
+    ({"financialRealName":None,"financialCpf":None,
+      "cpf":None},"CPF"),
     ({"hasWithdrawPin":False},"PIN de saque"),
     ({"platformUserId":None,"platformObservedUserId":None},"ID da plataforma"),
 ])
@@ -135,3 +138,76 @@ def test_launcher_routes_to_only_live_matching_account_thread(monkeypatch,tmp_pa
         assert outputs[0]["operation"]["status"]=="confirmed"
         with pytest.raises(PixPreparationError,match="Conta selecionada divergente"):
             launched.bind_pix_key(11,profiles[12]["accountId"],keys[0]["id"],"PHONE")
+
+
+def test_saved_profile_name_and_cpf_work_without_financial_confirmation(tmp_path):
+    """No manual second confirmation is needed for already saved detail fields."""
+    store, profiles, keys, run = setup_store(tmp_path)
+    current = profiles[11]
+    current.update(financialRealName=None, financialCpf=None,
+                   financialIdentitySource=None,
+                   platformUserId=None, platformObservedUserId="772104783")
+    op = store.begin_remote(
+        profile_id=11, account_id=current["accountId"],
+        key_id=keys[0]["id"], key_type="PHONE", run_id=run
+    )["operation"]
+    assert op["status"] == "queued"
+    assert op["identityStatus"] == "observed"
+    # Even without a separate "financial owner" record, the saved profile
+    # name/CPF remain accessible without copying them into operation history.
+    history = (tmp_path / "pix-operations.json").read_text("utf-8")
+    assert "Marina Souza" not in history
+    assert "52998224725" not in history
+
+
+def test_both_owner_fields_are_resolved_from_the_same_saved_pair():
+    from nexora_accounts.pix_operations import pix_owner_from_details
+    profile = {
+        "fullName": "Marina Souza", "cpf": "52998224725",
+        "financialRealName": "Carolina Ribeiro", "financialCpf": "529.982.247-25",
+        "financialIdentitySource": "operator-confirmed",
+    }
+    assert pix_owner_from_details(profile) == ("Carolina Ribeiro", "52998224725")
+    profile["financialCpf"] = None
+    # Never combine a financial name with the profile CPF.
+    assert pix_owner_from_details(profile) == ("Marina Souza", "52998224725")
+
+
+def test_browser_worker_passes_saved_profile_name_and_cpf_without_extra_gate(
+        tmp_path, monkeypatch):
+    import nexora_accounts.pix_operations as operations
+    import nexora_accounts.pix_key_store as key_module
+    import nexora_accounts.pix_browser_bind as browser_module
+    import nexora_accounts.session_launcher as launcher_module
+
+    store, profiles, keys, run = setup_store(tmp_path)
+    p = profiles[11]
+    p.update(financialRealName=None, financialCpf=None,
+             financialIdentitySource=None)
+    reservation = store.begin_remote(
+        profile_id=11, account_id=p["accountId"],
+        key_id=keys[0]["id"], key_type="PHONE", run_id=run
+    )
+    calls = []
+    class SavedAccountStore:
+        def public_detail(self, pid):
+            assert pid == 11
+            return dict(p)
+        def read_withdraw_pin(self, pid):
+            assert pid == 11
+            return "000007"
+    monkeypatch.setattr(launcher_module, "LocalProfileStore", SavedAccountStore)
+    monkeypatch.setattr(operations, "PixOperationStore", lambda: store)
+    monkeypatch.setattr(key_module, "PixKeyStore", lambda: store.keys)
+    def fake_bind(page, *, name, cpf, pin, key, kind):
+        calls.append((page, name, cpf, pin, key, kind))
+        return {"state":"confirmed", "stage":"withdrawInfoV2-depois"}
+    monkeypatch.setattr(browser_module, "bind_in_page", fake_bind)
+    page=object()
+    saved = launcher_module.AccountLauncher()._bind_pix_on_owner_thread(
+        profile_id=11, account_id=p["accountId"], run_id=run,
+        operation_id=reservation["operation"]["operationId"],page=page,
+    )
+    assert saved["status"] == "confirmed"
+    assert calls == [(page, "Marina Souza", "52998224725",
+                      "000007", "11987654321", "PHONE")]
