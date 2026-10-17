@@ -259,6 +259,96 @@ class AccountLauncher:
             return {"state": "browser-error",
                     "message": "Verificação de identidade indisponível nesta sessão."}
 
+
+    def bind_pix_key(self, profile_id: int, account_id: str, key_id: str,
+                     key_type: str, *, timeout=50):
+        """Run a single Pix request on THIS account's existing Chromium worker."""
+        from nexora_accounts.browser_sessions import active_account_session
+        from nexora_accounts.local_profiles import LocalProfileError
+        from nexora_accounts.pix_operations import PixOperationStore, PixPreparationError
+        if type(profile_id) is not int or not isinstance(account_id, str):
+            raise PixPreparationError("Conta selecionada inválida.")
+        profile = LocalProfileStore().public_detail(profile_id)
+        if profile.get("accountId") != account_id:
+            raise PixPreparationError("Conta selecionada divergente.")
+        session = active_account_session(profile.get("origin"), profile_id, account_id)
+        if session is None or session["stop"].is_set():
+            raise PixPreparationError("Abra o Chromium desta conta para cadastrar a chave Pix.")
+        if not session.get("ready"):
+            raise PixPreparationError("O navegador da conta ainda está iniciando.")
+        run_id = session.get("runId")
+        if not run_id or run_id != profile.get("lastSessionId"):
+            raise PixPreparationError("Sessão Chromium divergente da conta selecionada.")
+        store = PixOperationStore()
+        reservation = store.begin_remote(
+            profile_id=profile_id, account_id=account_id,
+            key_id=key_id, key_type=key_type, run_id=run_id,
+        )
+        operation = reservation["operation"]
+        if reservation["reused"]:
+            return {"operation": operation, "reused": True}
+        reply = queue.Queue(maxsize=1)
+        job = {"kind": "pix-bind", "profileId": profile_id,
+               "accountId": account_id, "runId": run_id,
+               "operationId": operation["operationId"],
+               "result": reply}
+        try:
+            session["requests"].put_nowait(job)
+        except queue.Full:
+            operation = store.finish_remote(
+                operation["operationId"], profile_id=profile_id,
+                account_id=account_id, run_id=run_id,
+                result={"state": "failed", "stage": "client"},
+            )
+            raise PixPreparationError("A sessão da conta está ocupada. Tente mais tarde.")
+        try:
+            operation = reply.get(timeout=timeout)
+        except queue.Empty:
+            # The queued worker might still be performing the remote POST.
+            # Never reissue it automatically.
+            operation = store.get_remote(
+                operation["operationId"], profile_id=profile_id,
+                account_id=account_id, run_id=run_id,
+            )
+        return {"operation": operation, "reused": False}
+
+    def _bind_pix_on_owner_thread(self, *, profile_id, account_id, run_id,
+                                  operation_id, page):
+        """Get secrets only on the owning Windows worker; never into logs."""
+        from nexora_accounts.pix_operations import PixOperationStore
+        from nexora_accounts.pix_browser_bind import bind_in_page
+        from nexora_accounts.pix_key_store import PixKeyStore, normalize_key
+        store = PixOperationStore()
+        try:
+            op = store.get_remote(operation_id, profile_id=profile_id,
+                                  account_id=account_id, run_id=run_id)
+            if op["status"] != "queued":
+                return op
+            details = LocalProfileStore().public_detail(profile_id)
+            if (details.get("accountId") != account_id or
+                details.get("lastSessionId") != run_id or
+                details.get("financialIdentitySource") != "operator-confirmed"):
+                return store.finish_remote(operation_id, profile_id=profile_id,
+                    account_id=account_id, run_id=run_id,
+                    result={"state": "failed", "stage": "client"})
+            found = next((k for k in PixKeyStore().list().get("keys", ())
+                          if k.get("id") == op["keyId"] and
+                          k.get("type") == op["keyType"] and
+                          k.get("updatedAt") == op.get("keyUpdatedAt")), None)
+            if found is None:
+                return store.finish_remote(operation_id, profile_id=profile_id,
+                    account_id=account_id, run_id=run_id,
+                    result={"state": "failed", "stage": "client"})
+            _, key = normalize_key(found["value"], op["keyType"])
+            pin = LocalProfileStore().read_withdraw_pin(profile_id)
+            result = bind_in_page(page, name=details["financialRealName"],
+                cpf=details["financialCpf"], pin=pin, key=key,
+                kind=op["keyType"])
+        except Exception:
+            result = {"state": "uncertain", "stage": "browser"}
+        return store.finish_remote(operation_id, profile_id=profile_id,
+            account_id=account_id, run_id=run_id, result=result)
+
     def _process_browser_request(self, profile_id: int, account_id: str,
                                  request_queue, page, *, run_id=None):
         """Consume only the exact account's request on its Playwright thread."""
@@ -268,6 +358,14 @@ class AccountLauncher:
             return
         if job.get("accountId") != account_id or job.get("profileId") != profile_id:
             result = {"state": "account-mismatch", "message": "Sessão de outra conta bloqueada."}
+        elif job.get("kind") == "pix-bind":
+            if not run_id or job.get("runId") != run_id:
+                result = {"state": "stale-session", "message": "Sessão Pix divergente."}
+            else:
+                result = self._bind_pix_on_owner_thread(
+                    profile_id=profile_id, account_id=account_id, run_id=run_id,
+                    operation_id=job.get("operationId"), page=page,
+                )
         elif job.get("kind") == "verify-identity":
             if not run_id or job.get("runId") != run_id:
                 result = {"state": "stale-session", "message": "Sessão divergente; identidade não atualizada."}
