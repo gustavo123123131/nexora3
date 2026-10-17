@@ -569,6 +569,7 @@ def _idle_wait_with_speed(
     shared_phone_key: str = "",
     ip_refresh_callback=None,
     identity_poll_callback=None,
+    browser_command_callback=None,
 ):
     last_version = -1
 
@@ -591,6 +592,13 @@ def _idle_wait_with_speed(
     last_game_launch_version = game_launch_controller.get().version
     last_verify_phone_version = verify_phone_controller.get_version()
     while not stop_event.is_set():
+        # An account's browser command is executed on its original Playwright
+        # thread; never access a Page from the FastAPI server worker.
+        if browser_command_callback is not None:
+            try:
+                browser_command_callback(page)
+            except Exception:
+                pass
         # ---- salvar posição individual por idx (1x por clique) ----
         try:
             v = winpos_controller.get_version()
@@ -1613,6 +1621,7 @@ def run_instance(
                                 _periodic_proxy_ip_refresh if session_proxy else None
                             ),
                             identity_poll_callback=_poll_identity,
+                            browser_command_callback=(instance_plan or {}).get("on_browser_command_tick"),
                         )
 
                     else:
@@ -1639,6 +1648,7 @@ def run_instance(
                                 _periodic_proxy_ip_refresh if session_proxy else None
                             ),
                             identity_poll_callback=_poll_identity,
+                            browser_command_callback=(instance_plan or {}).get("on_browser_command_tick"),
                         )
 
                 except HttpsNavigationError:
