@@ -441,6 +441,15 @@
             pin.autocomplete = 'new-password';
             pin.placeholder = 'PIN de saque existente (6 números)';
             pin.setAttribute('aria-label', 'PIN de saque desta conta');
+            const useTestPin = document.createElement('button');
+            useTestPin.type = 'button';
+            useTestPin.className = 'accounts-details';
+            useTestPin.textContent = 'Usar PIN de saque de teste (387520)';
+            useTestPin.addEventListener('click', () => {
+              // Explicit operator choice. Does NOT change login or provider PIN.
+              pin.value = '387520';
+              feedback.textContent = 'PIN de teste preenchido somente para saque. Salve apenas se já for o PIN desta conta na plataforma.';
+            });
             const savePin = document.createElement('button');
             savePin.type = 'button';
             savePin.className = 'accounts-details';
@@ -487,7 +496,7 @@
               } finally { reveal.disabled = false; }
             });
             identityForm.append(financialTitle, owner, cpf, acknowledged, saveOwner,
-              pin, savePin, reveal, feedback);
+              pin, useTestPin, savePin, reveal, feedback);
             expanded.append(identityForm);
             if (stored.runtimeConfig) {
               expanded.append(textRow('User-Agent salvo', stored.runtimeConfig.user_agent));
