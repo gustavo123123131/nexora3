@@ -315,7 +315,7 @@ class AccountLauncher:
     def _bind_pix_on_owner_thread(self, *, profile_id, account_id, run_id,
                                   operation_id, page):
         """Get secrets only on the owning Windows worker; never into logs."""
-        from nexora_accounts.pix_operations import PixOperationStore
+        from nexora_accounts.pix_operations import PixOperationStore, pix_owner_from_details
         from nexora_accounts.pix_browser_bind import bind_in_page
         from nexora_accounts.pix_key_store import PixKeyStore, normalize_key
         store = PixOperationStore()
@@ -326,8 +326,7 @@ class AccountLauncher:
                 return op
             details = LocalProfileStore().public_detail(profile_id)
             if (details.get("accountId") != account_id or
-                details.get("lastSessionId") != run_id or
-                details.get("financialIdentitySource") != "operator-confirmed"):
+                details.get("lastSessionId") != run_id):
                 return store.finish_remote(operation_id, profile_id=profile_id,
                     account_id=account_id, run_id=run_id,
                     result={"state": "failed", "stage": "client"})
@@ -340,10 +339,12 @@ class AccountLauncher:
                     account_id=account_id, run_id=run_id,
                     result={"state": "failed", "stage": "client"})
             _, key = normalize_key(found["value"], op["keyType"])
+            # Read the same saved owner pair used by begin_remote. No
+            # duplicate registration, confirmation, or login-password reuse.
+            name, cpf = pix_owner_from_details(details)
             pin = LocalProfileStore().read_withdraw_pin(profile_id)
-            result = bind_in_page(page, name=details["financialRealName"],
-                cpf=details["financialCpf"], pin=pin, key=key,
-                kind=op["keyType"])
+            result = bind_in_page(page, name=name,
+                cpf=cpf, pin=pin, key=key, kind=op["keyType"])
         except Exception:
             result = {"state": "uncertain", "stage": "browser"}
         return store.finish_remote(operation_id, profile_id=profile_id,

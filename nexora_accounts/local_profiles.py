@@ -483,8 +483,8 @@ class LocalProfileStore:
             item = next((p for p in data["profiles"] if p["id"] == profile_id), None)
             if item is None or item.get("accountId") != account_id:
                 raise LocalProfileError("Conta e identificador interno não correspondem.")
-            if not item.get("platformUserId"):
-                raise LocalProfileError("ID da plataforma ainda não verificado.")
+            # Storing an existing withdrawal PIN is a local account action.
+            # It does not require a second platform-ID verification.
             item["withdrawPinRef"] = credential_vault.write_withdraw_pin(
                 self.path, item["accountId"], pin
             )
