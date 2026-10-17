@@ -28,7 +28,6 @@ def context(tmp_path, *, key_type="PHONE", uid="772104782"):
     return service, profile, keys, {
         "profile_id": profile["id"], "account_id": account_id,
         "key_id": key_id, "key_type": key_type,
-        "ownership_acknowledged": True,
     }
 
 
@@ -50,7 +49,8 @@ def test_four_pix_types_prepare_without_external_sends_and_survive_restart(
     assert op["keyId"] == keys[0]["id"]
     assert op["keyType"] == key_type
     assert op["keyMasked"] != keys[0]["value"]
-    assert len(op["missingRequirements"]) == len(BLOCKERS)
+    assert len(op["missingRequirements"]) == 1
+    assert op["missingRequirements"] == list(BLOCKERS)
     assert all(e["httpMethod"] is None and e["endpoint"] is None
                and e["httpStatus"] is None for e in op["events"])
     assert keys[0]["value"] not in caplog.text
@@ -69,13 +69,12 @@ def test_four_pix_types_prepare_without_external_sends_and_survive_restart(
     assert "772104782" not in str(result)
 
 
-def test_selection_identity_and_authorization_must_match(tmp_path):
+def test_selection_account_and_key_must_match(tmp_path):
     service, profile, keys, args = context(tmp_path)
     scenarios = [
         {**args, "account_id": str(uuid4())},
         {**args, "key_id": str(uuid4())},
         {**args, "key_type": "CPF"},
-        {**args, "ownership_acknowledged": False},
         {**args, "profile_id": 0},
         {**args, "profile_id": True},
     ]
@@ -150,3 +149,40 @@ def test_pix_preparation_api_uses_existing_csrf_and_never_exposes_a_bind_route(
                            json=body, headers=protected).status_code == 404
         assert client.get("/api/operations/pix/history?profileId=0").status_code == 422
         assert not (tmp_path / "pix_operations.json").exists()
+
+
+
+def test_one_click_without_extra_ack_uses_only_selected_account_and_does_not_send_api(tmp_path):
+    service, profile, keys, args = context(tmp_path)
+    # An obsolete parameter supplied by an older client remains accepted,
+    # but isn't needed and cannot magically confirm financial ownership.
+    assert "ownership_acknowledged" not in args
+    first = service.prepare(**args)["operation"]
+    assert first["status"] == "prepared"
+    assert first["providerStatus"] == "not_submitted"
+    assert first["externalRequestSent"] is False
+    assert [event["stage"] for event in first["events"]] == [
+        "account_checked", "pix_key_checked", "preparation_requested", "provider_blocked"
+    ]
+    assert service.prepare(**args)["reused"] is True
+    assert service.prepare(**{**args, "ownership_acknowledged": False})["reused"] is True
+    assert not hasattr(service, "bind") and not hasattr(service, "submit")
+
+
+def test_two_accounts_never_cross_selected_pix_key_or_uid(tmp_path):
+    service, profile, keys, args = context(tmp_path)
+    a = service.prepare(**args)["operation"]
+    from uuid import uuid4
+    second = dict(profile)
+    second["id"] = 18
+    second["accountId"] = str(uuid4())
+    second["platformObservedUserId"] = "883300112"
+    service.profiles = SimpleNamespace(public_detail=lambda ident:
+        profile.copy() if ident == 17 else second.copy())
+    b = service.prepare(**{**args, "profile_id": 18,
+                           "account_id": second["accountId"]})["operation"]
+    assert a["operationId"] != b["operationId"]
+    assert a["accountId"] != b["accountId"]
+    assert a["platformIdentityRef"] != b["platformIdentityRef"]
+    with pytest.raises(PixPreparationError, match="conta mudou"):
+        service.prepare(**{**args, "account_id": second["accountId"]})
