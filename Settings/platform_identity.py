@@ -161,6 +161,7 @@ class PlatformIdentityObserver:
         self._pending_header_requests = {}
         self._ready_header_ids = set()
         self._scanned_request_ids = set()
+        self._scanned_request_order = []
         self._header_seen_uid = None
         self._header_conflict = False
         self._clicked_at = None
@@ -237,15 +238,24 @@ class PlatformIdentityObserver:
             # Deduplicate BEFORE reading all_headers() (including invalid
             # or missing x-object-id) to avoid duplicate sensitive reads.
             key = id(request)
-            if key in self._scanned_request_ids or len(self._scanned_request_ids) >= 128:
+            if key in self._scanned_request_ids:
                 return
+            # Rolling deduplication: do not silently stop tracking after
+            # hours of new requests from a long-lived Chromium session.
+            if len(self._scanned_request_order) >= 128:
+                old = self._scanned_request_order.pop(0)
+                self._scanned_request_ids.discard(old)
             self._scanned_request_ids.add(key)
+            self._scanned_request_order.append(key)
             # Do NOT call all_headers() inside Playwright's request event:
             # the Chromium extra-info packet may arrive only afterwards and
             # block a synchronous event handler. Queue the bound handle
             # without copying other headers or tokens.
-            if len(self._pending_header_requests) < 64:
-                self._pending_header_requests[key] = (request, time.monotonic())
+            if len(self._pending_header_requests) >= 64:
+                oldest = next(iter(self._pending_header_requests))
+                self._pending_header_requests.pop(oldest, None)
+                self._ready_header_ids.discard(oldest)
+            self._pending_header_requests[key] = (request, time.monotonic())
         except Exception:
             return
 
@@ -292,8 +302,9 @@ class PlatformIdentityObserver:
                     )
                 else:
                     self._header_seen_uid = uid
-                if len(self._header_requests) < 32:
-                    self._header_requests[key] = (request, uid, timestamp)
+                if len(self._header_requests) >= 32:
+                    self._header_requests.pop(next(iter(self._header_requests)), None)
+                self._header_requests[key] = (request, uid, timestamp)
             except Exception:
                 self._log_once(
                     "header-read-error",
@@ -335,7 +346,13 @@ class PlatformIdentityObserver:
             # Keep only bounded response handles from the owning page; never
             # retain payloads, cookies, request headers or token-bearing URLs.
             key = id(response)
-            if key not in self._seen and len(self._responses) < 64:
+            if key not in self._seen:
+                if len(self._responses) >= 64:
+                    oldest = self._responses.pop(0)
+                    self._seen.discard(id(oldest))
+                    self._header_responses_checked.discard(id(oldest))
+                    if self._processed:
+                        self._processed -= 1
                 self._seen.add(key)
                 self._responses.append(response)
         except Exception:
@@ -425,6 +442,7 @@ class PlatformIdentityObserver:
         self._pending_header_requests.clear()
         self._ready_header_ids.clear()
         self._scanned_request_ids.clear()
+        self._scanned_request_order.clear()
         self._header_seen_uid = None
         self._header_conflict = False
         self._header_responses_checked.clear()
