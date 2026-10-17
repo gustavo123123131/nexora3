@@ -59,3 +59,6 @@
   background: #122033; font-size: 11px; color: #b7c7d9; }
 .operations-history-item strong { color: #e4eefe; font-size: 12px; }
 .operations-history-item small { line-height: 1.6; color: #aabdd1; }
+
+.operations-pix-feedback { min-height: 14px; margin: 10px 0 0; color: #a8bed5; font-size: 12px; }
+.operations-pix-feedback:empty { display: none; }
