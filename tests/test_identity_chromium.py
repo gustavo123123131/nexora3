@@ -91,8 +91,8 @@ def test_real_chromium_catches_initial_navigation_header_and_diagnoses_rejection
             obs.after_registration_click()
             assert page.url == WWW
             assert obs._request_route_seen
-            assert obs._header_seen_uid == "82193475"
             assert obs.identify(wait_seconds=0) is None
+            assert obs._header_seen_uid == "82193475"
         finally:
             obs.close()
             browser.close()
