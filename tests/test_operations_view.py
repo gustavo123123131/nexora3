@@ -267,7 +267,7 @@ def test_direct_pix_preparation_uses_account_details_without_rechecking_id():
                 window.posts = [];
                 const account = {id:52, accountId:'acct-local-52',label:'Conta 52',
                     username:'usuario52', fullName:'Marina Souza',
-                    cpf:'52998224725', hasLoginPassword:true,
+                    cpf:'52998224725', hasLoginPassword:true, hasWithdrawPin:true,
                     platformObservedUserId:'745550222',platformUserId:null};
                 const get = async path => {
                     if (path === '/api/local-profiles') return {profiles:[account]};
@@ -293,8 +293,9 @@ def test_direct_pix_preparation_uses_account_details_without_rechecking_id():
             detail = page.locator(".operations-account-details")
             expect(detail).to_contain_text("Marina Souza")
             expect(detail).to_contain_text("usuario52")
-            expect(detail).to_contain_text("Salva no cofre da conta")
+            expect(detail).to_contain_text("Salvo no cofre Windows")
             assert "52998224725" not in detail.inner_text()
+            assert "Não informado" not in detail.inner_text()
             for obsolete in ("Testar API na conta aberta", "Verificar ID da plataforma",
                              "Verificar requisitos da API", "Confirmar autorização da chave Pix"):
                 assert page.get_by_text(obsolete, exact=True).count() == 0
