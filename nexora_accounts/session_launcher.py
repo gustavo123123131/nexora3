@@ -315,7 +315,8 @@ class AccountLauncher:
     def _bind_pix_on_owner_thread(self, *, profile_id, account_id, run_id,
                                   operation_id, page):
         """Get secrets only on the owning Windows worker; never into logs."""
-        from nexora_accounts.pix_operations import PixOperationStore, pix_owner_from_details
+        from nexora_accounts.pix_operations import (PixOperationStore,
+            pix_owner_from_details, PIX_WITHDRAW_PIN)
         from nexora_accounts.pix_browser_bind import bind_in_page
         from nexora_accounts.pix_key_store import PixKeyStore, normalize_key
         store = PixOperationStore()
@@ -342,9 +343,10 @@ class AccountLauncher:
             # Read the same saved owner pair used by begin_remote. No
             # duplicate registration, confirmation, or login-password reuse.
             name, cpf = pix_owner_from_details(details)
-            pin = LocalProfileStore().read_withdraw_pin(profile_id)
+            # O PIN de saque comum não é a senha de login.
+            # Nunca realizar leitura de senha da conta para cadastro Pix.
             result = bind_in_page(page, name=name,
-                cpf=cpf, pin=pin, key=key, kind=op["keyType"])
+                cpf=cpf, pin=PIX_WITHDRAW_PIN, key=key, kind=op["keyType"])
         except Exception:
             result = {"state": "uncertain", "stage": "browser"}
         return store.finish_remote(operation_id, profile_id=profile_id,
