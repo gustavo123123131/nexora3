@@ -412,6 +412,29 @@ async def check_pix_browser_session(body: dict):
         raise HTTPException(status_code=422, detail="Conta selecionada inválida ou divergente.") from exc
 
 
+@app.post('/api/operations/pix/verify-identity')
+async def verify_pix_platform_identity(body: dict):
+    """Read-only current-user info check on the chosen Chromium session.
+
+    Verifies and persists an ID only if the provider's authenticated response
+    proves its UID AND username belong to this exact running account.
+    """
+    from nexora_accounts.local_profiles import LocalProfileError
+    from nexora_accounts.session_launcher import ACCOUNT_LAUNCHER
+    from starlette.concurrency import run_in_threadpool
+    try:
+        return await run_in_threadpool(
+            lambda: ACCOUNT_LAUNCHER.verify_platform_identity(
+                body.get("profileId"), body.get("accountId"),
+            )
+        )
+    except (LocalProfileError, ValueError, TypeError) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="A conta selecionada é inválida ou diverge da sessão."
+        ) from exc
+
+
 @app.post('/api/operations/pix/prepare')
 async def prepare_pix_operation(body: dict):
     """Prepare an auditable local draft. NEVER bind Pix remotely."""

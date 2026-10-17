@@ -103,11 +103,15 @@
     const sessionButton = el('button', 'accounts-details operations-pix-session', 'Testar API na conta aberta');
     sessionButton.type = 'button';
     sessionButton.disabled = true;
+    const verifyIdButton = el('button', 'accounts-details operations-verify-identity', 'Verificar ID da plataforma');
+    verifyIdButton.type = 'button';
+    verifyIdButton.disabled = true;
     const preview = el('div', 'operations-pix-preview');
     const historyHeading = el('h3', 'operations-history-heading', 'Histórico local da conta');
     const history = el('div', 'operations-history');
     pixPanel.append(pixControls, acknowledgment, preview,
-      prepareButton, readinessButton, sessionButton, pixFeedback, historyHeading, history);
+      prepareButton, readinessButton, sessionButton, verifyIdButton,
+      pixFeedback, historyHeading, history);
     node.append(heading, selectorPanel, pixPanel, sections);
 
     let listRevision = 0;
@@ -142,6 +146,8 @@
       // A read-only diagnostic must be usable before identity verification.
       // Financial submission still requires an independently verified ID.
       sessionButton.disabled = typeof post !== 'function' || !selected || !selected.platformId;
+      verifyIdButton.disabled = typeof post !== 'function' ||
+        !selected || selected.identityStatus !== 'observed';
       preview.replaceChildren(
         summaryRow('Conta', selected ? 'Conta ' + selected.profileId : 'Não selecionada'),
         summaryRow('Identidade', selected ? (
@@ -260,6 +266,29 @@
       } catch (error) {
         if (selectedAccount && selectedAccount.accountId === selected.accountId) {
           pixFeedback.textContent = 'Falha ao testar a sessão: ' + error.message;
+        }
+      } finally {
+        updatePixPreview();
+      }
+    });
+    verifyIdButton.addEventListener('click', async () => {
+      const selected = getSelectedAccount();
+      if (!selected || selected.identityStatus !== 'observed') return;
+      verifyIdButton.disabled = true;
+      pixFeedback.textContent = 'Consultando dados autenticados desta conta; nenhuma chave Pix será enviada...';
+      try {
+        const result = await post('/api/operations/pix/verify-identity', {
+          profileId: selected.profileId, accountId: selected.accountId
+        });
+        if (!selectedAccount || selectedAccount.profileId !== selected.profileId ||
+            selectedAccount.accountId !== selected.accountId) return;
+        if (result.state === 'verified') {
+          await loadDetail(selected.profileId, selected.accountId);
+        }
+        pixFeedback.textContent = result.message || 'Verificação sem confirmação de identidade.';
+      } catch (error) {
+        if (selectedAccount && selectedAccount.accountId === selected.accountId) {
+          pixFeedback.textContent = 'Verificação de identidade não concluída: ' + error.message;
         }
       } finally {
         updatePixPreview();

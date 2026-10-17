@@ -933,6 +933,21 @@ class LocalProfileStore:
                 raise LocalProfileError("O ID local não corresponde à conta.")
             if item.get("lastSessionId") != run_id:
                 raise LocalProfileError("Execução expirada: ID remoto não será salvo.")
+            # Provider member-info attestation is allowed ONLY when it matches
+            # a previously observed candidate belonging to this exact account.
+            from nexora_accounts.platform_identity_probe import VERIFICATION_SOURCE
+            if platform_id_source == VERIFICATION_SOURCE:
+                if (item.get("platformObservedUserId") != platform_user_id
+                    or not isinstance(identity_evidence, VerifiedPlatformIdentity)
+                    or identity_evidence.user_id != platform_user_id
+                    or identity_evidence.source != VERIFICATION_SOURCE
+                    or identity_evidence.profile_id != profile_id
+                    or identity_evidence.account_id != account_id
+                    or identity_evidence.run_id != run_id
+                    or normalize_origin(identity_evidence.platform_origin) != actual):
+                    raise LocalProfileError(
+                        "Resposta autenticada não corresponde à identidade observada desta conta."
+                    )
             provider_confirmed = (
                 item.get("status") == "created"
                 and not item.get("registrationReviewRequired")

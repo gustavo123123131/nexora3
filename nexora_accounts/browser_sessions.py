@@ -19,7 +19,8 @@ class AccountSessionBusy(ValueError):
 @contextmanager
 def claim_account(origin: str, account_id: int, *,
                   account_uuid: str | None = None,
-                  stop_event: threading.Event | None = None):
+                  stop_event: threading.Event | None = None,
+                  run_id: str | None = None):
     """Disallow duplicate account folders and register any account-owned worker.
 
     Works for creation in Mãe/Filha and reopening in Contas. Legacy calls
@@ -32,6 +33,7 @@ def claim_account(origin: str, account_id: int, *,
     if account_uuid is not None and (
         not isinstance(account_uuid, str) or not account_uuid
         or not isinstance(stop_event, threading.Event)
+        or run_id is not None and (not isinstance(run_id, str) or not run_id)
     ):
         raise ValueError("Identificadores da sessão inválidos.")
     key = (origin, account_id)
@@ -45,6 +47,7 @@ def claim_account(origin: str, account_id: int, *,
                 "origin": origin,
                 "profileId": account_id,
                 "accountId": account_uuid,
+                "runId": run_id,
                 "stop": stop_event,
                 "ready": False,
                 "requests": queue.Queue(maxsize=1),

@@ -1803,6 +1803,7 @@ def run_all(
                     profile["origin"], int(profile["id"]),
                     account_uuid=str(profile["accountId"]),
                     stop_event=stop_event,
+                    run_id=session_plan.get("run_id"),
                 ) as live_session:
                     # Every account created in Mãe/Filha or reopened in Contas
                     # exposes one command queue; Playwright calls remain on
@@ -1819,6 +1820,7 @@ def run_all(
                         ACCOUNT_LAUNCHER._process_browser_request(
                             int(profile["id"]), str(profile["accountId"]),
                             live_session["requests"], page,
+                            run_id=live_session.get("runId"),
                         )
                         if callable(original_tick):
                             original_tick(page)
