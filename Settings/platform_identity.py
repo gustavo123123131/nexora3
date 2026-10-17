@@ -238,15 +238,15 @@ class PlatformIdentityObserver:
             # Deduplicate BEFORE reading all_headers() (including invalid
             # or missing x-object-id) to avoid duplicate sensitive reads.
             key = id(request)
-            if key in self._scanned_request_ids:
+            # Hold a bounded strong reference to each recently seen Request.
+            # Numeric id() values can be reused after GC in long-lived runs.
+            if request in self._scanned_request_ids:
                 return
-            # Rolling deduplication: do not silently stop tracking after
-            # hours of new requests from a long-lived Chromium session.
             if len(self._scanned_request_order) >= 128:
                 old = self._scanned_request_order.pop(0)
                 self._scanned_request_ids.discard(old)
-            self._scanned_request_ids.add(key)
-            self._scanned_request_order.append(key)
+            self._scanned_request_ids.add(request)
+            self._scanned_request_order.append(request)
             # Do NOT call all_headers() inside Playwright's request event:
             # the Chromium extra-info packet may arrive only afterwards and
             # block a synchronous event handler. Queue the bound handle
