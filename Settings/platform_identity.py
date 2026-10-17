@@ -746,8 +746,8 @@ class PlatformIdentityObserver:
                 if not callable(verifier):
                     self._log_once(
                         "missing-verifier",
-                        "ID observado; não salvo: falta contrato independente "
-                        "de autenticação do provedor.",
+                        "ID capturado nesta sessão; verificação remota "
+                        "independente ainda não configurada.",
                     )
                     continue
                 if verifier(uid, response, body, dict(self.account)) is not True:
@@ -888,8 +888,8 @@ class PlatformIdentityObserver:
                 return result
         if self._header_seen_uid is not None and self._clicked_at is not None:
             self._log_once(
-                "candidate-pending", "ID observado, mas ainda não verificado "
-                "por resposta de autenticação independente; ID não salvo.",
+                "candidate-pending", "ID capturado para exibição como observado; "
+                "não há prova independente para classificá-lo como verificado.",
             )
         elif (self._clicked_at is not None
               and time.monotonic() - self._clicked_at >= 3.0):
