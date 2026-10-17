@@ -888,7 +888,7 @@ class PlatformIdentityObserver:
                 return result
         if self._header_seen_uid is not None and self._clicked_at is not None:
             self._log_once(
-                "candidate-pending", "ID capturado para exibição como observado; "
+                "candidate-pending", "ID observado na sessão (candidato); "
                 "não há prova independente para classificá-lo como verificado.",
             )
         elif (self._clicked_at is not None
