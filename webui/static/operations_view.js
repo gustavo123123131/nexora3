@@ -317,10 +317,11 @@
         summaryRow('UUID da conta', detail.accountId),
         summaryRow('ID da plataforma', remoteId || 'Não identificado'),
         summaryRow('Username', detail.username || 'Não informado'),
-        summaryRow('Nome completo do perfil', detail.fullName || 'Não informado'),
-        summaryRow('CPF do perfil', detail.cpf ? 'Salvo na conta' : 'Não informado'),
-        summaryRow('Titular financeiro confirmado', detail.financialRealName || 'Não informado'),
-        summaryRow('Senha de acesso', detail.hasLoginPassword ? 'Salva no cofre da conta' : 'Não informada'),
+        summaryRow('Nome completo', (detail.financialRealName && detail.financialCpf)
+          ? detail.financialRealName : (detail.fullName || 'Não informado')),
+        summaryRow('CPF', ((detail.financialRealName && detail.financialCpf)
+          ? detail.financialCpf : detail.cpf) ? 'Salvo nos detalhes' : 'Não informado'),
+        summaryRow('PIN de saque', detail.hasWithdrawPin ? 'Salvo no cofre Windows' : 'Não salvo'),
         summaryRow('Identificação', kind === 'verified' ? 'Verificado' :
           kind === 'observed' ? 'Observado, não verificado' : 'Não identificado')
       );
