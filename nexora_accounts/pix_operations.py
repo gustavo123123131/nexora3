@@ -1,7 +1,7 @@
-"""Read-only Pix binding preparation, never a remote Pix operation.
+"""One-click local Pix preparation bound to existing Contas detail records.
 
-The ProxyBet trace is synthetic, not an authenticated provider contract.
-No code in this module can submit a withdrawal or bind a payment key.
+The remote Pix registration protocol is not established in this repository.
+This module does not submit financial changes to a third-party platform.
 """
 from __future__ import annotations
 
@@ -22,10 +22,7 @@ _LOCK = threading.RLock()
 LOG = logging.getLogger("nexora.pix.operations")
 TYPES = frozenset({"CPF", "PHONE", "EMAIL", "EVP"})
 BLOCKERS = (
-    "Contrato externo de cadastro Pix não confirmado.",
-    "Autenticação da sessão e identidade financeira não comprovadas.",
-    "Titularidade real do recebedor não validada.",
-    "Requisitos de PIN/verificação adicional não confirmados.",
+    "Cadastro remoto de chave Pix ainda não integrado ao Nexora3.",
 )
 
 
@@ -188,15 +185,16 @@ class PixOperationStore:
         }
 
     def prepare(self, *, profile_id, account_id, key_id, key_type,
-                ownership_acknowledged=False):
+                ownership_acknowledged=None):
         # This operation only validates LOCAL records; never check a remote
         # network, submit a PIN, create a Pix key, or alter the stored pool.
         if type(profile_id) is not int or profile_id < 1 or not _is_uuid(account_id):
             raise PixPreparationError("Conta selecionada inválida ou divergente.")
         if not _is_uuid(key_id) or key_type not in TYPES:
             raise PixPreparationError("Seleção da chave Pix inválida.")
-        if ownership_acknowledged is not True:
-            raise PixPreparationError("Confirme que está autorizado a usar esta chave Pix.")
+        # The button click is the only preparation action. An obsolete
+        # ownership_acknowledged argument may be supplied by older clients;
+        # it never implies that financial ownership was verified.
         try:
             profile = self.profiles.public_detail(profile_id)
         except LocalProfileError as exc:
@@ -252,7 +250,7 @@ class PixOperationStore:
                 "events": [
                     _event("account_checked", reason="ID local/UUID consistentes"),
                     _event("pix_key_checked", reason="Tipo e registro local consistentes"),
-                    _event("ownership_acknowledged", reason="Declaração do operador; não verifica titularidade"),
+                    _event("preparation_requested", reason="Pedido local da conta selecionada"),
                     _event("provider_blocked", reason="Contrato remoto não comprovado; nenhum POST externo enviado"),
                 ],
             }
