@@ -13,7 +13,7 @@ const OPERATIONS_VIEW_ID = '__nexora_operations_local__';
 let operationsViewInstance = null;
 function operationsView() {
   if (!operationsViewInstance) {
-    operationsViewInstance = window.NexoraOperationsView.create({get: getRegistration});
+    operationsViewInstance = window.NexoraOperationsView.create({get: getRegistration, post});
   }
   operationsViewInstance.onShow();
   return operationsViewInstance.node;
