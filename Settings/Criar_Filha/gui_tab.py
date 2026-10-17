@@ -1782,13 +1782,41 @@ def run_all(
         )
 
         def _run_one(session_plan=plan, session_args=args):
-            from nexora_accounts.browser_sessions import claim_account, AccountSessionBusy
+            from nexora_accounts.browser_sessions import (
+                claim_account, AccountSessionBusy, mark_browser_ready,
+            )
             profile = session_plan.get("account_profile")
             if not profile:
                 return run_instance(*session_args)
             from nexora_accounts.local_profiles import LocalProfileStore
+            from nexora_accounts.session_launcher import ACCOUNT_LAUNCHER
             try:
-                with claim_account(profile["origin"], int(profile["id"])):
+                with claim_account(
+                    profile["origin"], int(profile["id"]),
+                    account_uuid=str(profile["accountId"]),
+                    stop_event=stop_event,
+                ) as live_session:
+                    # Every account created in Mãe/Filha or reopened in Contas
+                    # exposes one command queue; Playwright calls remain on
+                    # the exact thread that owns this account's page.
+                    original_ready = session_plan.get("on_browser_ready")
+                    original_tick = session_plan.get("on_browser_command_tick")
+
+                    def _ready():
+                        if callable(original_ready):
+                            original_ready()
+                        mark_browser_ready(live_session)
+
+                    def _tick(page):
+                        ACCOUNT_LAUNCHER._process_browser_request(
+                            int(profile["id"]), str(profile["accountId"]),
+                            live_session["requests"], page,
+                        )
+                        if callable(original_tick):
+                            original_tick(page)
+
+                    session_plan["on_browser_ready"] = _ready
+                    session_plan["on_browser_command_tick"] = _tick
                     try:
                         return run_instance(*session_args)
                     finally:
