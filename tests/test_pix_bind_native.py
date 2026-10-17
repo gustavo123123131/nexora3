@@ -7,11 +7,12 @@ import json
 import pytest
 from playwright.sync_api import sync_playwright
 from nexora_accounts.pix_browser_bind import bind_in_page
+from nexora_accounts.pix_operations import PIX_WITHDRAW_PIN
 
 SITE = "https://www.5gbet.com/"
 SDK = "https://www.5gbet.com/commonChunk.test.js"
 CPF = "52998224725"
-PIN = "000007"
+PIN = PIX_WITHDRAW_PIN
 KEY = "11987654321"
 
 HTML = "<html><body><script src='/commonChunk.test.js' type='module'></script></body></html>"
@@ -42,7 +43,7 @@ def test_real_chromium_routes_native_pix_api_without_external_network(
         }
         if(url.endsWith('/verifyWithdrawalPasswordV2')){
           if("SCENARIO"==="bad-pin") return out({},41000);
-          if(data.withdrawalPassword!=="000007" ||
+          if(data.withdrawalPassword!=="387520" ||
              data.addWithdrawAccountType!==5) throw Error('wrong PIN');
           return out({key:"test-authorization",twoStepVerify:false});
         }
@@ -78,6 +79,16 @@ def test_real_chromium_routes_native_pix_api_without_external_network(
             assert calls.count("/api/finance/certify/bindalipayV3")==expected_posts
             if expected_posts:
                 assert "/api/finance/certify/verifyWithdrawalPasswordV2" in calls
+            if scenario != "already":
+                assert calls.count("/api/finance/certify/verifyWithdrawalPasswordV2") == 1
+                request = page.evaluate("""() => window.__calls.find(
+                    x => x.url === '/api/finance/certify/verifyWithdrawalPasswordV2'
+                )""")
+                assert request["method"] == "POST"
+                assert request["data"] == {
+                    "withdrawalPassword": "387520",
+                    "addWithdrawAccountType": 5,
+                }
         finally:
             browser.close()
 
