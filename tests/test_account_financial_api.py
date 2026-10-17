@@ -28,14 +28,21 @@ def _verified_store(tmp_path):
 def test_new_password_default_and_legacy_not_retroactively_changed(tmp_path, monkeypatch):
     monkeypatch.delenv("NEXORA_NEW_ACCOUNT_PASSWORD", raising=False)
     store, one, two = _verified_store(tmp_path)
-    assert store.get(one["id"])["password"] == "387520"
+    first_password = store.get(one["id"])["password"]
+    second_password = store.get(two["id"])["password"]
+    assert len(first_password) == 9 and len(second_password) == 9
+    assert first_password != "387520"
+    assert second_password != "387520"
+    assert first_password != second_password
+    assert store.get(one["id"])["confirmPassword"] == first_password
+    assert store.get(two["id"])["confirmPassword"] == second_password
     data = json.loads(store.path.read_text(encoding="utf-8"))
     data["profiles"][0]["password"] = "legacy-secret"
     data["profiles"][0]["confirmPassword"] = "legacy-secret"
     store._write(data)
     reopened = LocalProfileStore(store.path)
     assert reopened.get(one["id"])["password"] == "legacy-secret"
-    assert reopened.get(two["id"])["password"] == "387520"
+    assert reopened.get(two["id"])["password"] == second_password
     assert "password" not in reopened.public_detail(one["id"])
 
 
