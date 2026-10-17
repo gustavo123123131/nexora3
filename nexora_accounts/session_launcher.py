@@ -9,6 +9,8 @@ import importlib
 import itertools
 import threading
 import uuid
+import queue
+from urllib.parse import urlsplit
 
 from nexora_accounts.local_profiles import LocalProfileStore
 from nexora_accounts.proxy_store import ProxyStore
@@ -44,6 +46,87 @@ class AccountLauncher:
     def _set_state(self, profile_id: int, state: str, message: str):
         with self._lock:
             self._results[profile_id] = {"state": state, "message": message[:220]}
+
+
+    @staticmethod
+    def _probe_existing_page(page):
+        """Read-only provider health using the saved Chromium's native client.
+
+        Never export auth headers, tokens, cookies or response bodies.
+        A success proves API reachability, not that the provider UID was checked.
+        """
+        try:
+            current = urlsplit(str(page.url or ""))
+            if current.scheme != "https" or current.hostname not in ("5gbet.com", "www.5gbet.com"):
+                return {"state": "wrong-site", "message": "Abra a plataforma suportada neste navegador."}
+            outcome = page.evaluate(r"""async () => {
+              const urls=[
+                ...performance.getEntriesByType("resource").map(x=>x.name),
+                ...Array.from(document.querySelectorAll("script[src]"),x=>x.src)
+              ];
+              const sdk=urls.find(x=>/\/commonChunk\.[^/?]+\.js(?:[?#]|$)/i.test(x));
+              if (!sdk) return {state:"missing-sdk"};
+              try {
+                const module=await import(sdk);
+                if(typeof module.n?.request!=="function")return {state:"missing-sdk"};
+                const response=await module.n.request({
+                  method:"POST",url:"/api/member/user/security/status"
+                },{merge:false,maxRetryCount:0,cache:{useCache:false}});
+                return {state:Number(response?.data?.code)===1?"api-reachable":"provider-rejected"};
+              } catch {
+                return {state:"provider-unavailable"};
+              }
+            }""")
+            state = outcome.get("state") if isinstance(outcome, dict) else None
+            messages = {
+                "api-reachable": "API de segurança respondeu nesta sessão. UID ainda requer validação.",
+                "missing-sdk": "Cliente HTTP original não foi carregado nesta página.",
+                "provider-rejected": "A plataforma não confirmou a consulta de segurança.",
+                "provider-unavailable": "A consulta à plataforma falhou nesta sessão.",
+            }
+            if state not in messages:
+                state = "invalid-result"
+            return {"state": state, "message": messages.get(state, "Resposta inesperada da sessão.")}
+        except Exception:
+            return {"state": "browser-error", "message": "Navegador indisponível; confira a sessão aberta."}
+
+    def check_pix_browser_session(self, profile_id: int, account_id: str, *, timeout=12) -> dict:
+        """Dispatch on the owning Playwright thread only, never a new browser."""
+        from nexora_accounts.local_profiles import LocalProfileError
+        profile = LocalProfileStore().public_detail(profile_id)
+        if profile.get("accountId") != account_id:
+            raise LocalProfileError("A conta selecionada mudou. Atualize Operações.")
+        if not profile.get("platformUserId"):
+            return {"state": "unverified-id", "message": "ID real da conta ainda não verificado."}
+        with self._lock:
+            info = self._running.get(profile_id)
+            if not info or info["stop"].is_set() or self._results.get(profile_id, {}).get("state") != "ready":
+                return {"state": "not-running", "message": "Abra esta conta em Contas e aguarde o navegador iniciar."}
+            response = queue.Queue(maxsize=1)
+            job = {"accountId": account_id, "profileId": profile_id, "result": response}
+            try:
+                info["requests"].put_nowait(job)
+            except queue.Full:
+                return {"state": "busy", "message": "Há uma verificação em andamento nesta conta."}
+        try:
+            return response.get(timeout=timeout)
+        except queue.Empty:
+            return {"state": "timeout", "message": "A sessão não respondeu a tempo; nenhum cadastro foi enviado."}
+
+    def _process_browser_request(self, profile_id: int, account_id: str, request_queue, page):
+        """Called ONLY inside the worker that owns this account's Playwright page."""
+        try:
+            job = request_queue.get_nowait()
+        except queue.Empty:
+            return
+        if job.get("accountId") != account_id or job.get("profileId") != profile_id:
+            result = {"state": "account-mismatch", "message": "Sessão de outra conta bloqueada."}
+        else:
+            result = self._probe_existing_page(page)
+        try:
+            job["result"].put_nowait(result)
+        except queue.Full:
+            pass
 
     def close(self, profile_id: int) -> dict:
         with self._lock:
@@ -120,12 +203,13 @@ class AccountLauncher:
         instance_idx = next(self._instance_numbers)
         run_id = str(uuid.uuid4())
         stop_event = threading.Event()
+        request_queue = queue.Queue(maxsize=1)
         with self._lock:
             if profile_id in self._running:
                 raise AccountBusyError(
                     f"{profile['label']} já está aberta. Feche a janela antes de abrir novamente."
                 )
-            self._running[profile_id] = {"stop": stop_event}
+            self._running[profile_id] = {"stop": stop_event, "requests": request_queue}
             self._results[profile_id] = {
                 "state": "starting", "message": "Inicializando a sessão da conta."
             }
@@ -215,6 +299,9 @@ class AccountLauncher:
                     "account_profile": profile,
                     "run_id": run_id,
                     "browser_id": instance_idx,
+                    "on_browser_command_tick": lambda page: self._process_browser_request(
+                        profile_id, str(profile["accountId"]), request_queue, page
+                    ),
                     "on_browser_ready": lambda: (
                         self._set_state(profile_id, "ready", "Chromium abriu a sessão desta conta."),
                         LocalProfileStore().record_session(profile_id, "ready", run_id),
