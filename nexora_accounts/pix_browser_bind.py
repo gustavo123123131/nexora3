@@ -205,7 +205,8 @@ def bind_in_page(page, *, name: str, cpf: str, pin: str, key: str, kind: str) ->
             row = {"stage": item["stage"], "event": item["event"]}
             for field in ("providerCode", "httpStatus", "elapsedMs"):
                 value = item.get(field)
-                if type(value) is int and 0 <= value <= 999999:
+                lower = 0 if field == "elapsedMs" else -999999
+                if type(value) is int and lower <= value <= 999999:
                     row[field] = value
             if item.get("responseShape") in allowed_shapes:
                 row["responseShape"] = item["responseShape"]
