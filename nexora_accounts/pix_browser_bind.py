@@ -14,7 +14,7 @@ FINAL_STATES = frozenset((
 
 _JS = r"""async ({name, cpf, pin, key, kind}) => {
   const safe = (state, stage, message, code=null) =>
-    ({state, stage, message, providerCode: Number.isSafeInteger(Number(code)) ?
+    ({state, stage, message, providerCode: code !== null && Number.isSafeInteger(Number(code)) ?
         Number(code) : null});
   if (location.protocol !== 'https:' ||
       !['www.5gbet.com', '5gbet.com'].includes(location.hostname.toLowerCase()))
