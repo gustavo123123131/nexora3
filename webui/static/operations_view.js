@@ -1,4 +1,4 @@
-/* Operations workspace: local Pix binding preparation only, without external execution. */
+/* Operations workspace: one selected account, one saved Pix key, one local action. */
 'use strict';
 (function () {
   // Future implementations live in separate modules; the catalog only
@@ -26,7 +26,7 @@
     const heading = el('header', 'operations-heading');
     const intro = el('div');
     intro.append(el('h1', '', 'Operações'),
-      el('p', '', 'Selecione uma conta e prepare uma chave Pix. Nenhuma solicitação financeira é enviada nesta versão.'));
+      el('p', '', 'Selecione a conta e uma chave Pix. Os dados são lidos automaticamente de Contas → Detalhes.'));
     const count = el('span', 'accounts-count', '0 contas');
     heading.append(intro, count);
 
@@ -67,8 +67,8 @@
     pixPanel.append(
       el('h2', '', 'Cadastrar chave Pix'),
       el('p', 'operations-hint',
-        'Selecione o tipo e uma chave salva na aba Chave Pix. ' +
-        'O sistema prepara um registro local; a API da plataforma ainda não está habilitada.')
+        'Escolha uma chave salva. A preparação usa os dados da conta selecionada; ' +
+        'o envio externo ainda não está integrado.')
     );
     const pixControls = el('div', 'operations-controls operations-pix-controls');
     const typeLabel = el('label', '', 'Tipo de chave Pix');
@@ -85,32 +85,15 @@
     keySelector.append(new Option('Escolha primeiro o tipo', ''));
     keyLabel.append(keySelector);
     pixControls.append(typeLabel, keyLabel);
-    const acknowledgment = el('label', 'operations-ownership');
-    const ownershipCheckbox = el('input');
-    ownershipCheckbox.type = 'checkbox';
-    ownershipCheckbox.setAttribute('aria-label', 'Confirmar autorização da chave Pix');
-    acknowledgment.append(ownershipCheckbox, el('span', '',
-      'Declaro que tenho autorização para utilizar esta chave Pix. ' +
-      'Isso não comprova titularidade perante a plataforma.'));
     const pixFeedback = el('p', 'operations-pix-feedback');
     pixFeedback.setAttribute('role', 'status');
-    const prepareButton = el('button', 'accounts-open operations-pix-prepare', 'Preparar cadastro');
+    const prepareButton = el('button', 'accounts-open operations-pix-prepare', 'Preparar chave Pix');
     prepareButton.type = 'button';
     prepareButton.disabled = true;
-    const readinessButton = el('button', 'accounts-details operations-pix-readiness', 'Verificar requisitos da API');
-    readinessButton.type = 'button';
-    readinessButton.disabled = true;
-    const sessionButton = el('button', 'accounts-details operations-pix-session', 'Testar API na conta aberta');
-    sessionButton.type = 'button';
-    sessionButton.disabled = true;
-    const verifyIdButton = el('button', 'accounts-details operations-verify-identity', 'Verificar ID da plataforma');
-    verifyIdButton.type = 'button';
-    verifyIdButton.disabled = true;
     const preview = el('div', 'operations-pix-preview');
     const historyHeading = el('h3', 'operations-history-heading', 'Histórico local da conta');
     const history = el('div', 'operations-history');
-    pixPanel.append(pixControls, acknowledgment, preview,
-      prepareButton, readinessButton, sessionButton, verifyIdButton,
+    pixPanel.append(pixControls, preview, prepareButton,
       pixFeedback, historyHeading, history);
     node.append(heading, selectorPanel, pixPanel, sections);
 
@@ -139,15 +122,7 @@
     function updatePixPreview() {
       const selected = selectedAccount;
       const key = activeKey();
-      const enabled = typeof post === 'function' && !preparing &&
-        !!selected && !!selected.platformId && !!key && ownershipCheckbox.checked;
-      prepareButton.disabled = !enabled;
-      readinessButton.disabled = !selected || !key;
-      // A read-only diagnostic must be usable before identity verification.
-      // Financial submission still requires an independently verified ID.
-      sessionButton.disabled = typeof post !== 'function' || !selected || !selected.platformId;
-      verifyIdButton.disabled = typeof post !== 'function' ||
-        !selected || selected.identityStatus !== 'observed';
+      prepareButton.disabled = typeof post !== 'function' || preparing || !selected || !key;
       preview.replaceChildren(
         summaryRow('Conta', selected ? 'Conta ' + selected.profileId : 'Não selecionada'),
         summaryRow('Identidade', selected ? (
@@ -241,104 +216,36 @@
       }
     }
     typeSelector.addEventListener('change', () => {
-      ownershipCheckbox.checked = false;
       pixFeedback.textContent = '';
       renderKeys();
     });
-    keySelector.addEventListener('change', () => {
-      ownershipCheckbox.checked = false;
-      updatePixPreview();
-    });
-    ownershipCheckbox.addEventListener('change', updatePixPreview);
-    sessionButton.addEventListener('click', async () => {
-      const selected = getSelectedAccount();
-      if (!selected || !selected.platformId) return;
-      sessionButton.disabled = true;
-      pixFeedback.textContent = 'Testando somente a conexão de segurança nesta conta; cadastro Pix não será enviado...';
-      try {
-        const response = await post('/api/operations/pix/check-session', {
-          profileId: selected.profileId,
-          accountId: selected.accountId
-        });
-        if (!selectedAccount || selectedAccount.accountId !== selected.accountId ||
-            selectedAccount.profileId !== selected.profileId) return;
-        pixFeedback.textContent = response.message || 'Resultado da sessão não identificado.';
-      } catch (error) {
-        if (selectedAccount && selectedAccount.accountId === selected.accountId) {
-          pixFeedback.textContent = 'Falha ao testar a sessão: ' + error.message;
-        }
-      } finally {
-        updatePixPreview();
-      }
-    });
-    verifyIdButton.addEventListener('click', async () => {
-      const selected = getSelectedAccount();
-      if (!selected || selected.identityStatus !== 'observed') return;
-      verifyIdButton.disabled = true;
-      pixFeedback.textContent = 'Consultando dados autenticados desta conta; nenhuma chave Pix será enviada...';
-      try {
-        const result = await post('/api/operations/pix/verify-identity', {
-          profileId: selected.profileId, accountId: selected.accountId
-        });
-        if (!selectedAccount || selectedAccount.profileId !== selected.profileId ||
-            selectedAccount.accountId !== selected.accountId) return;
-        if (result.state === 'verified') {
-          await loadDetail(selected.profileId, selected.accountId);
-        }
-        pixFeedback.textContent = result.message || 'Verificação sem confirmação de identidade.';
-      } catch (error) {
-        if (selectedAccount && selectedAccount.accountId === selected.accountId) {
-          pixFeedback.textContent = 'Verificação de identidade não concluída: ' + error.message;
-        }
-      } finally {
-        updatePixPreview();
-      }
-    });
-    readinessButton.addEventListener('click', async () => {
-      const selected = getSelectedAccount(), key = activeKey();
-      if (!selected || !key) return;
-      readinessButton.disabled = true;
-      pixFeedback.textContent = 'Conferindo identidade, PIN de saque e chave vinculada à conta...';
-      try {
-        const result = await post('/api/operations/pix/readiness', {
-          profileId: selected.profileId,
-          accountId: selected.accountId,
-          keyId: key.id,
-          keyType: typeSelector.value
-        });
-        if (!selectedAccount || selectedAccount.accountId !== selected.accountId) return;
-        pixFeedback.textContent = result.missingRequirements?.length
-          ? 'Antes da API externa: ' + result.missingRequirements.join(' ')
-          : 'Dados locais conferidos. O executor externo ainda não está disponível na sessão Windows.';
-      } catch (error) {
-        pixFeedback.textContent = 'Verificação não concluída: ' + error.message;
-      } finally { updatePixPreview(); }
-    });
+    keySelector.addEventListener('change', updatePixPreview);
     prepareButton.addEventListener('click', async () => {
       const selected = getSelectedAccount();
       const key = activeKey();
-      if (!selected || !key || !ownershipCheckbox.checked ||
-          typeof post !== 'function' || preparing) return;
+      if (!selected || !key || typeof post !== 'function' || preparing) return;
       preparing = true;
       updatePixPreview();
-      pixFeedback.textContent = 'Validando conta e chave no servidor local...';
+      pixFeedback.textContent = 'Utilizando os detalhes da conta e a chave Pix salvos...';
       try {
         const result = await post('/api/operations/pix/prepare', {
           profileId: selected.profileId,
           accountId: selected.accountId,
           keyId: key.id,
-          keyType: typeSelector.value,
-          ownershipAcknowledged: true
+          keyType: typeSelector.value
         });
         if (selectedAccount && selectedAccount.profileId === selected.profileId &&
             selectedAccount.accountId === selected.accountId) {
           pixFeedback.textContent = result.reused
-            ? 'Preparação existente recuperada. Nenhuma requisição externa foi enviada.'
-            : 'Preparação salva localmente. Integração da plataforma ainda não disponível.';
+            ? 'Preparação desta conta já estava salva. Nenhum cadastro externo foi enviado.'
+            : 'Preparação salva nesta conta. Cadastro externo ainda não integrado.';
           await loadHistory();
         }
       } catch (error) {
-        pixFeedback.textContent = 'Falha na preparação: ' + error.message;
+        if (selectedAccount && selectedAccount.profileId === selected.profileId &&
+            selectedAccount.accountId === selected.accountId) {
+          pixFeedback.textContent = 'Não foi possível preparar esta chave: ' + error.message;
+        }
       } finally {
         preparing = false;
         updatePixPreview();
@@ -361,7 +268,6 @@
       details.replaceChildren();
       hint.hidden = false;
       feedback.textContent = message || '';
-      ownershipCheckbox.checked = false;
       ++historyRevision;
       history.replaceChildren();
       updatePixPreview();
@@ -386,9 +292,10 @@
         summaryRow('UUID da conta', detail.accountId),
         summaryRow('ID da plataforma', remoteId || 'Não identificado'),
         summaryRow('Username', detail.username || 'Não informado'),
-        summaryRow('Nome real para operações', detail.financialRealName || 'Não confirmado; ajuste na aba Contas'),
-        summaryRow('CPF financeiro', detail.financialCpf ? 'Salvo nos detalhes da conta' : 'Não confirmado'),
-        summaryRow('PIN de saque', detail.hasWithdrawPin ? 'Protegido no Windows' : 'Não salvo'),
+        summaryRow('Nome completo do perfil', detail.fullName || 'Não informado'),
+        summaryRow('CPF do perfil', detail.cpf ? 'Salvo na conta' : 'Não informado'),
+        summaryRow('Titular financeiro confirmado', detail.financialRealName || 'Não informado'),
+        summaryRow('Senha de acesso', detail.hasLoginPassword ? 'Salva no cofre da conta' : 'Não informada'),
         summaryRow('Identificação', kind === 'verified' ? 'Verificado' :
           kind === 'observed' ? 'Observado, não verificado' : 'Não identificado')
       );
@@ -397,7 +304,7 @@
       loadHistory();
       feedback.textContent = kind === 'unidentified'
         ? 'Esta conta ainda não possui um ID da plataforma identificado.'
-        : 'Identificação carregada somente para consulta. Operações ainda indisponíveis.';
+        : 'Dados da conta carregados. Selecione uma chave Pix abaixo.';
     }
 
     async function loadDetail(profileId, uuid) {
@@ -433,7 +340,6 @@
       }
       selectedId = item.id;
       selectedUuid = item.accountId;
-      ownershipCheckbox.checked = false;
       ++historyRevision;
       history.replaceChildren();
       updatePixPreview();
