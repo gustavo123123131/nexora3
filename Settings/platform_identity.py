@@ -248,7 +248,7 @@ class PlatformIdentityObserver:
         elif self._official_site:
             self._log_once(
                 "navigation-official",
-                "Domínio oficial após redirecionamento; captura de ID ativa.",
+                "Origem após navegação: oficial; captura de ID ativa.",
             )
 
     def _on_frame_navigated(self, frame):
