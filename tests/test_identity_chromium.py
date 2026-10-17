@@ -116,7 +116,7 @@ def test_real_chromium_separate_contexts_never_share_request_headers():
             browser.new_context(ignore_https_errors=True),
         ]
         for ctx, uid in zip(contexts, (9342156, 9342157)):
-            ctx.route("**/*", lambda route, uid=uid: _route(route, uid))
+            ctx.route("**/*", lambda route, _request, uid=uid: _route(route, uid))
         pages = [ctx.new_page() for ctx in contexts]
         for page in pages:
             page.set_default_timeout(6000)
