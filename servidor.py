@@ -383,6 +383,19 @@ async def pix_operation_history(profileId: int):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@app.post('/api/operations/pix/readiness')
+async def pix_operation_readiness(body: dict):
+    """Validate selected account, verified UID, owner, PIN and saved key locally."""
+    from nexora_accounts.pix_operations import PixOperationStore, PixPreparationError
+    from starlette.concurrency import run_in_threadpool
+    try:
+        return await run_in_threadpool(lambda: PixOperationStore().readiness(
+            profile_id=body.get("profileId"), account_id=body.get("accountId"),
+            key_id=body.get("keyId"), key_type=body.get("keyType")))
+    except PixPreparationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @app.post('/api/operations/pix/prepare')
 async def prepare_pix_operation(body: dict):
     """Prepare an auditable local draft. NEVER bind Pix remotely."""
