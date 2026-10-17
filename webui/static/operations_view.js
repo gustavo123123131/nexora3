@@ -141,7 +141,7 @@
       readinessButton.disabled = !selected || !key;
       // A read-only diagnostic must be usable before identity verification.
       // Financial submission still requires an independently verified ID.
-      sessionButton.disabled = !selected || !selected.platformId;
+      sessionButton.disabled = typeof post !== 'function' || !selected || !selected.platformId;
       preview.replaceChildren(
         summaryRow('Conta', selected ? 'Conta ' + selected.profileId : 'Não selecionada'),
         summaryRow('Identidade', selected ? (
