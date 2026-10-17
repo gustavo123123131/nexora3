@@ -5,7 +5,7 @@ from Settings.platform_identity import (
     provider_identity_contract,
 )
 from nexora_accounts.local_profiles import LocalProfileStore, LocalProfileError
-from tests.test_x_object_id import Page, make, send, PAGE
+from test_x_object_id import Page, make, send, PAGE
 
 @pytest.fixture
 def store(tmp_path, monkeypatch):
