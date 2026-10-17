@@ -95,7 +95,9 @@ def test_pix_readiness_checks_verified_owner_account_pin_and_saved_type(tmp_path
     initial = service.readiness(**args)
     assert initial["readyForProvider"] is False
     assert initial["externalExecutionEnabled"] is False
-    assert any("Nome real" in item for item in initial["missingRequirements"])
+    # Existing fullName/cpf in Contas are sufficient as local inputs.
+    assert not any("Nome real" in item for item in initial["missingRequirements"])
+    assert any("PIN" in item for item in initial["missingRequirements"])
     with pytest.raises(PixPreparationError):
         service.readiness(**{**args, "account_id": two["accountId"]})
     with pytest.raises(PixPreparationError):
@@ -104,3 +106,22 @@ def test_pix_readiness_checks_verified_owner_account_pin_and_saved_type(tmp_path
     ready = service.readiness(**args)
     assert ready["readyForProvider"] is False
     assert any("PIN" in item for item in ready["missingRequirements"])
+
+
+def test_pin_can_be_saved_without_reverifying_observed_platform_id(tmp_path, monkeypatch):
+    from nexora_accounts import credential_vault
+    store = LocalProfileStore(tmp_path / "saved-profiles.json")
+    profile = store.create("mae")
+    assert store.public_detail(profile["id"])["platformUserId"] is None
+    monkeypatch.setattr(credential_vault, "is_available", lambda: True)
+    saved = {}
+    monkeypatch.setattr(credential_vault, "write_withdraw_pin",
+                        lambda path, uid, pin: saved.setdefault(uid, pin) and
+                        "withdraw-dpapi:" + uid)
+    with pytest.raises(LocalProfileError):
+        store.set_withdraw_pin(profile["id"], str(uuid4()), "123456")
+    result = store.set_withdraw_pin(profile["id"], profile["accountId"], "123456")
+    assert result["hasWithdrawPin"] is True
+    assert result["platformUserId"] is None
+    assert saved[profile["accountId"]] == "123456"
+    assert "123456" not in str(result)
