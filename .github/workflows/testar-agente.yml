@@ -1,7 +1,7 @@
 name: Testar painel e agente Windows
 on:
   push:
-    branches: [main, fix/remover-criacao-contas, fix/identity-early-lifetime-diagnostics]
+    branches: [main, fix/remover-criacao-contas]
   workflow_dispatch:
 jobs:
   smoke-tests:
