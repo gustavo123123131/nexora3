@@ -256,7 +256,10 @@
         detail.append(
           textRow('Username', profile.username),
           textRow('E-mail', profile.email),
-          textRow('ID da plataforma', profile.platformUserId || 'Não identificado'),
+          textRow('ID da plataforma', profile.platformUserId ||
+            (profile.platformObservedUserId
+              ? profile.platformObservedUserId + ' (observado, não verificado)'
+              : 'Não identificado')),
           textRow('Tipo', profile.origin === 'mae' ? 'Mãe' : 'Filha'),
           textRow('Telefone', profile.phone),
           textRow('Dispositivo', deviceName(profile)),
@@ -356,7 +359,15 @@
             expanded.append(
               textRow('Nome', stored.fullName),
               textRow('Status do cadastro', labels[stored.status] || 'Não confirmada'),
-              textRow('ID da plataforma', stored.platformUserId || 'Não identificado'),
+              textRow('ID da plataforma', stored.platformUserId ||
+                (stored.platformObservedUserId
+                  ? stored.platformObservedUserId + ' (observado, não verificado)'
+                  : 'Não identificado')),
+              textRow('Estado da identificação',
+                stored.platformUserId ? 'Verificado' :
+                stored.platformObservedUserId ? 'Somente observado; autenticação não confirmada' :
+                'Não identificado'),
+              textRow('Fonte observada', stored.platformObservedSource || 'Nenhuma'),
               textRow('Origem do ID remoto', stored.platformIdSource || 'Não comprovada'),
               textRow('ID verificado em', stored.platformIdVerifiedAt || 'Não verificado'),
               textRow('Fonte da confirmação',

@@ -173,6 +173,7 @@ class LocalProfileStore:
                 changed = True
             for key in (
                 "platformUserId", "platformIdSource", "platformIdVerifiedAt",
+                "platformObservedUserId", "platformObservedSource", "platformObservedAt",
                 "registrationConfirmedAt", "registrationConfirmationSource",
             ):
                 if key not in item:
@@ -754,6 +755,82 @@ class LocalProfileStore:
             self._write(state)
             return item.copy()
 
+
+    def save_observed_platform_id(
+        self, profile_id: int, account_id: str, run_id: str, *,
+        site_origin: str, observed_identity,
+    ) -> dict:
+        """Persist a safely labeled candidate WITHOUT assigning platformUserId.
+
+        Independent remote authentication has NOT been established. This
+        operation must not alter status, confirmedAt, or verifiedAt.
+        """
+        from Settings.platform_identity import (
+            ObservedPlatformIdentity, site_origin as normalize_origin,
+            FIVEGBET_SITE_ORIGINS,
+        )
+        if (type(profile_id) is not int or not account_id or not run_id
+            or not isinstance(observed_identity, ObservedPlatformIdentity)
+            or observed_identity.profile_id != profile_id
+            or observed_identity.account_id != account_id
+            or observed_identity.run_id != run_id):
+            raise LocalProfileError("ID observado não pertence à execução desta conta.")
+        actual = normalize_origin(site_origin)
+        value, source = observed_identity.user_id, observed_identity.source
+        if (actual not in FIVEGBET_SITE_ORIGINS
+            or normalize_origin(observed_identity.platform_origin) != actual
+            or not isinstance(value, str) or not value.isdecimal()
+            or not 0 < int(value) <= 2**53 - 1
+            or source not in (
+                "5gbet:x-object-id.uid:observed", "5gbet:storage:observed",
+                "5gbet:header+storage:observed"
+            )):
+            raise LocalProfileError("Candidato observado ou plataforma inválidos.")
+        with _LOCK:
+            data = self._read()
+            item = next((p for p in data["profiles"] if p["id"] == profile_id), None)
+            if (item is None or item.get("accountId") != account_id
+                or item.get("lastSessionId") != run_id
+                or normalize_origin(item.get("startUrl")) != actual):
+                raise LocalProfileError("Sessão expirada ou perfil divergente.")
+            if item.get("platformUserId") not in (None, value):
+                raise LocalProfileError("ID observado conflita com ID já verificado.")
+            old = item.get("platformObservedUserId")
+            if old is not None and old != value:
+                raise LocalProfileError("Conflito de IDs observados; não sobrescrever.")
+            if any(
+                other.get("id") != profile_id
+                and (other.get("platformObservedUserId") == value
+                     or other.get("platformUserId") == value)
+                and normalize_origin(other.get("startUrl")) in FIVEGBET_SITE_ORIGINS
+                for other in data["profiles"]
+            ):
+                raise LocalProfileError("ID observado já associado a outra conta.")
+            if old == value and item.get("platformObservedSource") == source:
+                return item.copy()
+            item["platformObservedUserId"] = value
+            item["platformObservedSource"] = source
+            item["platformObservedAt"] = self._now()
+            self._event(item, "platform-id.observed", "Candidato não verificado nesta sessão")
+            self._write(data)
+            return item.copy()
+
+    def invalidate_observed_platform_id(self, profile_id: int, account_id: str, run_id: str):
+        """Discard only the candidate of a conflicted active session."""
+        with _LOCK:
+            data = self._read()
+            item = next((p for p in data["profiles"] if p["id"] == profile_id), None)
+            if (item is None or item.get("accountId") != account_id
+                or item.get("lastSessionId") != run_id):
+                raise LocalProfileError("Execução divergente.")
+            if item.get("platformObservedUserId") is None:
+                return
+            for key in ("platformObservedUserId", "platformObservedSource",
+                        "platformObservedAt"):
+                item[key] = None
+            self._event(item, "platform-id.conflict", "IDs observados divergentes")
+            self._write(data)
+
     def save_verified_platform_id(
         self, profile_id: int, account_id: str, run_id: str, *,
         site_origin: str, platform_user_id: str, platform_id_source: str,
@@ -1115,6 +1192,9 @@ class LocalProfileStore:
                 "status": "pending",
                 "statusMessage": "Aguardando confirmação do cadastro pelo site.",
                 "platformUserId": None,
+                "platformObservedUserId": None,
+                "platformObservedSource": None,
+                "platformObservedAt": None,
                 "platformIdSource": None,
                 "platformIdVerifiedAt": None,
                 "registrationConfirmedAt": None,
