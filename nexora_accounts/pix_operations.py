@@ -99,7 +99,8 @@ class PixOperationStore:
                     not _is_uuid(op.get("accountId")) or
                     not _is_uuid(op.get("keyId")) or
                     type(op.get("profileId")) is not int or
-                    op.get("status") != "prepared" or
+                    op.get("status") not in ("prepared", "queued", "confirmed",
+                        "already_registered", "accepted_unconfirmed", "uncertain", "failed") or
                     op.get("keyType") not in TYPES or
                     not isinstance(op.get("events"), list)):
                     raise ValueError("record")
@@ -137,7 +138,7 @@ class PixOperationStore:
             return {"operations": [
                 dict(op) for op in reversed(operations)
                 if profile_id is None or op["profileId"] == profile_id
-            ][:60], "providerIntegration": "unavailable"}
+            ][:60], "providerIntegration": "account-browser"}
 
     def readiness(self, *, profile_id, account_id, key_id, key_type) -> dict:
         """Recheck owner/UID/PIN/Pix binding for the selected account; no network.
@@ -183,6 +184,120 @@ class PixOperationStore:
             "externalExecutionEnabled": False,
             "reason": "Executor remoto ainda não validado na sessão Windows selecionada.",
         }
+
+
+    def begin_remote(self, *, profile_id, account_id, key_id, key_type, run_id):
+        """Reserve one browser-owned attempt, using saved account/key details."""
+        from nexora_accounts.pix_key_store import normalize_key, _cpf
+        if (type(profile_id) is not int or profile_id < 1 or
+                not _is_uuid(account_id) or not _is_uuid(key_id) or
+                key_type not in TYPES or not _is_uuid(run_id)):
+            raise PixPreparationError("Conta, chave ou sessão inválida.")
+        try:
+            profile = self.profiles.public_detail(profile_id)
+        except LocalProfileError as exc:
+            raise PixPreparationError("Conta não encontrada.") from exc
+        if profile.get("accountId") != account_id or profile.get("lastSessionId") != run_id:
+            raise PixPreparationError("A conta selecionada ou sessão Chromium mudou.")
+        uid = profile.get("platformUserId") or profile.get("platformObservedUserId")
+        if not str(uid or "").isdecimal():
+            raise PixPreparationError("ID da plataforma ausente em Contas → Detalhes.")
+        if (profile.get("financialIdentitySource") != "operator-confirmed" or
+                not profile.get("financialRealName")):
+            raise PixPreparationError("Nome real do titular não confirmado nos detalhes da conta.")
+        cpf = _cpf(profile.get("financialCpf") or "")
+        if not cpf:
+            raise PixPreparationError("CPF real do titular não confirmado nos detalhes da conta.")
+        if not profile.get("hasWithdrawPin"):
+            raise PixPreparationError("PIN de saque não salvo no cofre Windows desta conta.")
+        key = next((k for k in self.keys.list().get("keys", [])
+                    if k.get("id") == key_id and k.get("type") == key_type), None)
+        if key is None:
+            raise PixPreparationError("Chave Pix selecionada não encontrada.")
+        try:
+            _, normalized = normalize_key(key["value"], key_type)
+        except (PixKeyError, KeyError, TypeError) as exc:
+            raise PixPreparationError("Chave Pix salva inválida.") from exc
+        if key_type == "CPF" and normalized != cpf:
+            raise PixPreparationError("A chave Pix CPF difere do CPF do titular salvo.")
+        with self._locked():
+            data = self._read()
+            # Do not repeat a remote write with uncertain outcome.
+            for op in reversed(data["operations"]):
+                if (op.get("profileId") == profile_id and
+                    op.get("accountId") == account_id and
+                    op.get("keyId") == key_id and op.get("keyType") == key_type and
+                    op.get("keyUpdatedAt") == key.get("updatedAt") and
+                    op.get("status") in ("queued", "confirmed", "already_registered",
+                                         "accepted_unconfirmed", "uncertain")):
+                    return {"operation": dict(op), "reused": True}
+            now = _now()
+            op = {
+                "operationId": str(uuid4()), "profileId": profile_id,
+                "accountId": account_id, "runId": run_id, "keyId": key_id,
+                "keyType": key_type, "keyUpdatedAt": key.get("updatedAt"),
+                "keyMasked": masked(normalized, key_type),
+                "platformIdentityRef": remote_ref(uid),
+                "identityStatus": "verified" if profile.get("platformUserId") else "observed",
+                "status": "queued", "providerStatus": "queued",
+                "externalRequestSent": False, "createdAt": now,
+                "updatedAt": now, "events": [_event("queued")],
+                "missingRequirements": [],
+            }
+            data["operations"].append(op)
+            self._write(data)
+            return {"operation": dict(op), "reused": False}
+
+    def get_remote(self, operation_id, *, profile_id, account_id, run_id):
+        with self._locked():
+            op = next((x for x in self._read()["operations"] if
+                       x.get("operationId") == operation_id and
+                       x.get("profileId") == profile_id and
+                       x.get("accountId") == account_id and
+                       x.get("runId") == run_id), None)
+            if op is None:
+                raise PixPreparationError("Operação Pix pertence a outra conta ou sessão.")
+            return dict(op)
+
+    def finish_remote(self, operation_id, *, profile_id, account_id, run_id, result):
+        state = result.get("state")
+        if state not in ("confirmed", "already_registered",
+                         "accepted_unconfirmed", "uncertain", "failed"):
+            state = "uncertain"
+        stage = result.get("stage")
+        if stage not in ("site", "client", "withdrawInfoV2-antes",
+                         "verifyWithdrawalPasswordV2", "bindalipayV3",
+                         "withdrawInfoV2-depois", "browser"):
+            stage = "unknown"
+        messages = {
+            "confirmed": "Cadastro confirmado na lista de saques da conta.",
+            "already_registered": "Chave já cadastrada nesta conta.",
+            "accepted_unconfirmed": "API aceitou o cadastro, mas a listagem não confirmou.",
+            "uncertain": "Resultado incerto; confira a plataforma antes de repetir.",
+            "failed": "Cadastro recusado ou interrompido; veja a etapa informada.",
+        }
+        with self._locked():
+            data = self._read()
+            op = next((x for x in data["operations"] if
+                       x.get("operationId") == operation_id and
+                       x.get("profileId") == profile_id and
+                       x.get("accountId") == account_id and
+                       x.get("runId") == run_id), None)
+            if op is None:
+                raise PixPreparationError("Operação não corresponde à conta selecionada.")
+            if op["status"] != "queued":
+                return dict(op)
+            op["status"] = state
+            op["providerStatus"] = state
+            op["externalRequestSent"] = stage in ("bindalipayV3", "withdrawInfoV2-depois")
+            op["stage"] = stage
+            code = result.get("providerCode")
+            op["providerCode"] = code if type(code) is int else None
+            op["message"] = messages[state]
+            op["updatedAt"] = _now()
+            op["events"].append(_event("provider." + state, reason=stage))
+            self._write(data)
+            return dict(op)
 
     def prepare(self, *, profile_id, account_id, key_id, key_type,
                 ownership_acknowledged=None):
