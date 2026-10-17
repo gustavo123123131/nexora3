@@ -59,7 +59,7 @@ def test_remote_attempt_isolated_persisted_and_never_leaks_credentials(tmp_path)
     assert again["status"]=="confirmed"
     import json
     raw=(tmp_path/"pix-operations.json").read_text()
-    for sensitive in ("11987654321","Maria Silva","52998224725","772104783","000007"):
+    for sensitive in ("11987654321","Maria Silva","52998224725","772104783","387520"):
         assert sensitive not in raw
     assert store.list(11)["operations"][0]["status"]=="confirmed"
 
@@ -69,7 +69,6 @@ def test_remote_attempt_isolated_persisted_and_never_leaks_credentials(tmp_path)
       "fullName":None},"Nome completo"),
     ({"financialRealName":None,"financialCpf":None,
       "cpf":None},"CPF"),
-    ({"hasWithdrawPin":False},"PIN de saque"),
     ({"platformUserId":None,"platformObservedUserId":None},"ID da plataforma"),
 ])
 def test_specific_missing_saved_detail_reports_field(tmp_path,change,expected):
@@ -194,8 +193,7 @@ def test_browser_worker_passes_saved_profile_name_and_cpf_without_extra_gate(
             assert pid == 11
             return dict(p)
         def read_withdraw_pin(self, pid):
-            assert pid == 11
-            return "000007"
+            raise AssertionError("Pix não deve exigir PIN salvo por conta")
     monkeypatch.setattr(launcher_module, "LocalProfileStore", SavedAccountStore)
     monkeypatch.setattr(operations, "PixOperationStore", lambda: store)
     monkeypatch.setattr(key_module, "PixKeyStore", lambda: store.keys)
@@ -210,4 +208,21 @@ def test_browser_worker_passes_saved_profile_name_and_cpf_without_extra_gate(
     )
     assert saved["status"] == "confirmed"
     assert calls == [(page, "Marina Souza", "52998224725",
-                      "000007", "11987654321", "PHONE")]
+                      "387520", "11987654321", "PHONE")]
+
+
+def test_pin_387520_is_available_for_all_accounts_even_without_saved_vault(tmp_path):
+    from nexora_accounts.pix_operations import PIX_WITHDRAW_PIN
+    store, profiles, keys, run = setup_store(tmp_path)
+    assert PIX_WITHDRAW_PIN == "387520"
+    for identifier in (11, 12):
+        account = profiles[identifier]
+        account["hasWithdrawPin"] = False
+        first = store.begin_remote(
+            profile_id=identifier, account_id=account["accountId"],
+            key_id=keys[0]["id"], key_type="PHONE", run_id=run,
+        )
+        assert first["operation"]["status"] == "queued"
+        assert first["operation"]["accountId"] == account["accountId"]
+    records = (tmp_path / "pix-operations.json").read_text(encoding="utf-8")
+    assert "387520" not in records

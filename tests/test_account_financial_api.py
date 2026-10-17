@@ -84,7 +84,7 @@ def test_withdraw_pin_is_distinct_from_login_password_and_hidden(tmp_path, monke
     assert "387520" not in str(result)
 
 
-def test_pix_readiness_checks_verified_owner_account_pin_and_saved_type(tmp_path):
+def test_pix_readiness_uses_existing_account_owner_and_global_withdraw_pin(tmp_path):
     store, one, two = _verified_store(tmp_path)
     pix = PixKeyStore(tmp_path / "keys.json")
     key = pix.add("contato@example.org", "EMAIL")["key"]
@@ -93,19 +93,20 @@ def test_pix_readiness_checks_verified_owner_account_pin_and_saved_type(tmp_path
     args = dict(profile_id=one["id"], account_id=one["accountId"],
                 key_id=key["id"], key_type="EMAIL")
     initial = service.readiness(**args)
-    assert initial["readyForProvider"] is False
-    assert initial["externalExecutionEnabled"] is False
+    assert initial["readyForProvider"] is True
+    assert initial["externalExecutionEnabled"] is True
     # Existing fullName/cpf in Contas are sufficient as local inputs.
     assert not any("Nome real" in item for item in initial["missingRequirements"])
-    assert any("PIN" in item for item in initial["missingRequirements"])
+    assert not any("PIN" in item for item in initial["missingRequirements"])
     with pytest.raises(PixPreparationError):
         service.readiness(**{**args, "account_id": two["accountId"]})
     with pytest.raises(PixPreparationError):
         service.readiness(**{**args, "key_type": "PHONE"})
     store.set_financial_identity(one["id"], one["accountId"], "Eduardo Moreira", "52998224725")
     ready = service.readiness(**args)
-    assert ready["readyForProvider"] is False
-    assert any("PIN" in item for item in ready["missingRequirements"])
+    assert ready["readyForProvider"] is True
+    assert ready["externalExecutionEnabled"] is True
+    assert not any("PIN" in item for item in ready["missingRequirements"])
 
 
 def test_pin_can_be_saved_without_reverifying_observed_platform_id(tmp_path, monkeypatch):

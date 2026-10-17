@@ -293,7 +293,7 @@ def test_direct_pix_preparation_uses_account_details_without_rechecking_id():
             detail = page.locator(".operations-account-details")
             expect(detail).to_contain_text("Marina Souza")
             expect(detail).to_contain_text("usuario52")
-            expect(detail).to_contain_text("Salvo no cofre Windows")
+            expect(detail).to_contain_text("Padrão do sistema (387520)")
             assert "52998224725" not in detail.inner_text()
             assert "Não informado" not in detail.inner_text()
             for obsolete in ("Testar API na conta aberta", "Verificar ID da plataforma",

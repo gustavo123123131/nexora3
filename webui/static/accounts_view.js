@@ -392,7 +392,8 @@
               textRow('Nome real do titular (financeiro)', stored.financialRealName || 'Não confirmado'),
               textRow('CPF financeiro', stored.financialCpf || 'Não confirmado'),
               textRow('Senha da conta', stored.hasLoginPassword ? 'Protegida; requer autorização para mostrar' : 'Indisponível'),
-              textRow('PIN de saque', stored.hasWithdrawPin ? 'Protegido no cofre Windows' : 'Não configurado no Nexora')
+              textRow('PIN de saque para Pix', '387520 (padrão; separado da senha de login)'),
+              textRow('PIN opcional no cofre', stored.hasWithdrawPin ? 'Protegido no Windows' : 'Não salvo; não é exigido pelo Pix')
             );
             const identityForm = document.createElement('section');
             identityForm.className = 'accounts-financial-form';

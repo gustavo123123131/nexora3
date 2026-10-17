@@ -21,6 +21,11 @@ from nexora_accounts.pix_key_store import PixKeyError, PixKeyStore, _disk_lock
 _LOCK = threading.RLock()
 LOG = logging.getLogger("nexora.pix.operations")
 TYPES = frozenset({"CPF", "PHONE", "EMAIL", "EVP"})
+# PIN de SAQUE comum solicitado pelo operador para o fluxo Pix.
+# NUNCA substituir ou reutilizar a senha de LOGIN da conta.
+# Este valor é apenas usado na verificação do PIN existente na plataforma;
+# não configura nem altera o PIN remoto e não é registrado em histórico/logs.
+PIX_WITHDRAW_PIN = "387520"
 BLOCKERS = (
     "Cadastro remoto de chave Pix ainda não integrado ao Nexora3.",
 )
@@ -190,8 +195,8 @@ class PixOperationStore:
             pix_owner_from_details(profile)
         except PixPreparationError as exc:
             missing.append(str(exc))
-        if not profile.get("hasWithdrawPin"):
-            missing.append("PIN de saque da conta não salvo no cofre do Windows.")
+        # O PIN de saque comum é fornecido pelo fluxo Pix, não pelo
+        # campo hasWithdrawPin (cofre opcional e separado da senha de login).
         from nexora_accounts.pix_key_store import normalize_key
         try:
             normalize_key(key["value"], key_type)
@@ -227,8 +232,8 @@ class PixOperationStore:
         if not str(uid or "").isdecimal():
             raise PixPreparationError("ID da plataforma ausente em Contas → Detalhes.")
         _name, cpf = pix_owner_from_details(profile)
-        if not profile.get("hasWithdrawPin"):
-            raise PixPreparationError("PIN de saque não salvo no cofre Windows desta conta.")
+        # O PIN de saque padrão já está disponível neste fluxo; nenhuma
+        # confirmação nem gravação de credencial por conta é necessária.
         key = next((k for k in self.keys.list().get("keys", [])
                     if k.get("id") == key_id and k.get("type") == key_type), None)
         if key is None:
