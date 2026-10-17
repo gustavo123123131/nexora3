@@ -396,6 +396,21 @@ async def pix_operation_readiness(body: dict):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@app.post('/api/operations/pix/check-session')
+async def check_pix_browser_session(body: dict):
+    """Read-only security API health on the selected account's live Chromium."""
+    from nexora_accounts.local_profiles import LocalProfileError
+    from starlette.concurrency import run_in_threadpool
+    try:
+        return await run_in_threadpool(
+            lambda: ACCOUNT_LAUNCHER.check_pix_browser_session(
+                body.get("profileId"), body.get("accountId")
+            )
+        )
+    except (LocalProfileError, ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail="Conta selecionada inválida ou divergente.") from exc
+
+
 @app.post('/api/operations/pix/prepare')
 async def prepare_pix_operation(body: dict):
     """Prepare an auditable local draft. NEVER bind Pix remotely."""
