@@ -372,6 +372,36 @@ async def delete_pix_key(body: dict):
     )
 
 
+@app.get('/api/operations/pix/history')
+async def pix_operation_history(profileId: int):
+    """Read-only local audit history; no external calls or secrets."""
+    from nexora_accounts.pix_operations import PixOperationStore, PixPreparationError
+    from starlette.concurrency import run_in_threadpool
+    try:
+        return await run_in_threadpool(lambda: PixOperationStore().list(profileId))
+    except PixPreparationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post('/api/operations/pix/prepare')
+async def prepare_pix_operation(body: dict):
+    """Prepare an auditable local draft. NEVER bind Pix remotely."""
+    from nexora_accounts.pix_operations import PixOperationStore, PixPreparationError
+    from starlette.concurrency import run_in_threadpool
+    try:
+        return await run_in_threadpool(
+            lambda: PixOperationStore().prepare(
+                profile_id=body.get("profileId"),
+                account_id=body.get("accountId"),
+                key_id=body.get("keyId"),
+                key_type=body.get("keyType"),
+                ownership_acknowledged=body.get("ownershipAcknowledged"),
+            )
+        )
+    except PixPreparationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @app.get('/api/local-profiles')
 async def list_local_profiles():
     from nexora_accounts.local_profiles import LocalProfileStore
