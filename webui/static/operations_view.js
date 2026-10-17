@@ -67,7 +67,7 @@
     pixPanel.append(
       el('h2', '', 'Cadastrar chave Pix'),
       el('p', 'operations-hint',
-        'Escolha uma chave salva. O cadastro usa a titularidade e o PIN de saque já salvos nesta conta.')
+        'Escolha uma chave salva. O cadastro usa os dados da conta e o PIN de saque padrão do Nexora3.')
     );
     const pixControls = el('div', 'operations-controls operations-pix-controls');
     const typeLabel = el('label', '', 'Tipo de chave Pix');
@@ -321,7 +321,7 @@
           ? detail.financialRealName : (detail.fullName || 'Não informado')),
         summaryRow('CPF', ((detail.financialRealName && detail.financialCpf)
           ? detail.financialCpf : detail.cpf) ? 'Salvo nos detalhes' : 'Não informado'),
-        summaryRow('PIN de saque', detail.hasWithdrawPin ? 'Salvo no cofre Windows' : 'Não salvo'),
+        summaryRow('PIN de saque', 'Padrão do sistema (387520), separado da senha de login'),
         summaryRow('Identificação', kind === 'verified' ? 'Verificado' :
           kind === 'observed' ? 'Observado, não verificado' : 'Não identificado')
       );
