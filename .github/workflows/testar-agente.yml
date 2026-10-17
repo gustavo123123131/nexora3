@@ -39,7 +39,7 @@ jobs:
           python -m pytest -q tests/test_identity_close_warnings.py tests/test_5gbet_observed_id.py tests/test_5gbet_observed_identity.py tests/test_x_object_id.py tests/test_identity_after_click.py tests/test_registration_click_status.py tests/test_registration_status.py tests/test_platform_identity.py tests/test_registration_identity.py
           python -m pytest -q tests/test_live_logs.py
           python -m pytest -q tests/test_account_status_ui.py tests/test_account_delete_ui.py
-          python -m pytest -q tests/test_pix_keys.py tests/test_pix_view.py tests/test_operations_view.py
+          python -m pytest -q tests/test_pix_keys.py tests/test_pix_view.py tests/test_operations_view.py tests/test_pix_operations.py
           python -m pytest -q tests/test_localhost.py tests/test_agent_windows.py tests/test_device_modes.py tests/test_codespaces_startup.py tests/test_visual_ui.py tests/test_simple_open.py tests/test_registration_autofill.py tests/test_url_normalizer.py tests/test_proxy_workspace.py tests/test_proxy_session_gateway.py tests/test_proxy_diagnostics.py tests/test_account_sessions.py tests/test_account_deletion.py tests/test_account_backups.py tests/test_registration_outcome.py tests/test_account_identity.py tests/test_browser_persistence.py tests/test_profile_recovery.py tests/test_windows_update.py tests/test_auto_updater.py
 
       - name: Testar janela Chromium mobile real (sem sites externos)

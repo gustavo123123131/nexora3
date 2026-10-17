@@ -1,4 +1,4 @@
-/* Operations workspace: account selection only. No financial actions or endpoints. */
+/* Operations workspace: local Pix binding preparation only, without external execution. */
 'use strict';
 (function () {
   // Future implementations live in separate modules; the catalog only
@@ -21,12 +21,12 @@
     return element;
   };
 
-  function create({get}) {
+  function create({get, post}) {
     const node = el('section', 'operations-local');
     const heading = el('header', 'operations-heading');
     const intro = el('div');
     intro.append(el('h1', '', 'Operações'),
-      el('p', '', 'Selecione uma conta para consultar sua identificação. Nenhuma operação está ativa nesta etapa.'));
+      el('p', '', 'Selecione uma conta e prepare uma chave Pix. Nenhuma solicitação financeira é enviada nesta versão.'));
     const count = el('span', 'accounts-count', '0 contas');
     heading.append(intro, count);
 
@@ -62,7 +62,47 @@
       cards.append(card);
     }
     sections.append(cards);
-    node.append(heading, selectorPanel, sections);
+
+    const pixPanel = el('section', 'operations-panel operations-pix-panel');
+    pixPanel.append(
+      el('h2', '', 'Cadastrar chave Pix'),
+      el('p', 'operations-hint',
+        'Selecione o tipo e uma chave salva na aba Chave Pix. ' +
+        'O sistema prepara um registro local; a API da plataforma ainda não está habilitada.')
+    );
+    const pixControls = el('div', 'operations-controls operations-pix-controls');
+    const typeLabel = el('label', '', 'Tipo de chave Pix');
+    const typeSelector = el('select', 'operations-pix-type');
+    typeSelector.setAttribute('aria-label', 'Escolher tipo de chave Pix');
+    for (const [value, title] of [
+      ['', 'Selecione um tipo'], ['PHONE', 'Telefone'],
+      ['EMAIL', 'E-mail'], ['CPF', 'CPF'], ['EVP', 'Aleatória (EVP)']
+    ]) typeSelector.append(new Option(title, value));
+    typeLabel.append(typeSelector);
+    const keyLabel = el('label', '', 'Chave disponível');
+    const keySelector = el('select', 'operations-pix-key');
+    keySelector.setAttribute('aria-label', 'Escolher chave Pix cadastrada');
+    keySelector.append(new Option('Escolha primeiro o tipo', ''));
+    keyLabel.append(keySelector);
+    pixControls.append(typeLabel, keyLabel);
+    const acknowledgment = el('label', 'operations-ownership');
+    const ownershipCheckbox = el('input');
+    ownershipCheckbox.type = 'checkbox';
+    ownershipCheckbox.setAttribute('aria-label', 'Confirmar autorização da chave Pix');
+    acknowledgment.append(ownershipCheckbox, el('span', '',
+      'Declaro que tenho autorização para utilizar esta chave Pix. ' +
+      'Isso não comprova titularidade perante a plataforma.'));
+    const pixFeedback = el('p', 'operations-pix-feedback');
+    pixFeedback.setAttribute('role', 'status');
+    const prepareButton = el('button', 'accounts-open operations-pix-prepare', 'Preparar cadastro');
+    prepareButton.type = 'button';
+    prepareButton.disabled = true;
+    const preview = el('div', 'operations-pix-preview');
+    const historyHeading = el('h3', 'operations-history-heading', 'Histórico local da conta');
+    const history = el('div', 'operations-history');
+    pixPanel.append(pixControls, acknowledgment, preview,
+      prepareButton, pixFeedback, historyHeading, history);
+    node.append(heading, selectorPanel, pixPanel, sections);
 
     let listRevision = 0;
     let detailRevision = 0;
@@ -70,6 +110,160 @@
     let selectedUuid = null; // immutable internal accountId UUID
     let selectedAccount = null;
     let profiles = [];
+    let pixKeys = [];
+    let pixRevision = 0;
+    let historyRevision = 0;
+    let preparing = false;
+
+    function maskedKey(key) {
+      if (!key) return '—';
+      return {PHONE: '(**) *****-****', EMAIL: '***@***',
+        CPF: '***.***.***-**', EVP: '********-****-****-****-************'}[key.type] || '••••';
+    }
+
+    function activeKey() {
+      return pixKeys.find(k => k.id === keySelector.value &&
+        k.type === typeSelector.value) || null;
+    }
+
+    function updatePixPreview() {
+      const selected = selectedAccount;
+      const key = activeKey();
+      const enabled = typeof post === 'function' && !preparing &&
+        !!selected && !!selected.platformId && !!key && ownershipCheckbox.checked;
+      prepareButton.disabled = !enabled;
+      preview.replaceChildren(
+        summaryRow('Conta', selected ? 'Conta ' + selected.profileId : 'Não selecionada'),
+        summaryRow('Identidade', selected ? (
+          selected.identityStatus === 'verified' ? 'Verificada' :
+            selected.identityStatus === 'observed' ? 'Observada, não verificada' : 'Ausente'
+        ) : '—'),
+        summaryRow('Chave', key ? maskedKey(key) : 'Nenhuma selecionada'),
+        summaryRow('Execução', 'Somente preparação local — sem envio externo')
+      );
+    }
+
+    function renderKeys() {
+      const kind = typeSelector.value;
+      const choices = pixKeys.filter(k => k.type === kind);
+      keySelector.replaceChildren(new Option(
+        !kind ? 'Selecione primeiro o tipo' : choices.length
+          ? 'Selecione a chave' : 'Nenhuma chave deste tipo encontrada', ''));
+      for (const [index, key] of choices.entries()) {
+        keySelector.append(new Option(
+          (kind === 'PHONE' ? 'Telefone' : kind === 'EMAIL' ? 'E-mail' :
+            kind === 'CPF' ? 'CPF' : 'Aleatória') + ' #' + (index + 1) +
+            ' — ' + maskedKey(key), key.id));
+      }
+      if (choices.length === 1) keySelector.value = choices[0].id;
+      if (kind && !choices.length) {
+        pixFeedback.textContent = 'Nenhuma chave Pix deste tipo está salva. Use a aba Chave Pix.';
+      }
+      updatePixPreview();
+    }
+
+    async function loadPixKeys() {
+      if (typeof post !== 'function') return;
+      const revision = ++pixRevision;
+      try {
+        const data = await get('/api/pix-keys');
+        if (revision !== pixRevision) return;
+        pixKeys = Array.isArray(data.keys) ? data.keys.filter(k =>
+          k && typeof k.id === 'string' && typeof k.type === 'string') : [];
+        const previous = keySelector.value;
+        renderKeys();
+        if (pixKeys.some(k => k.id === previous && k.type === typeSelector.value)) {
+          keySelector.value = previous;
+          updatePixPreview();
+        }
+      } catch (error) {
+        if (revision === pixRevision) {
+          pixKeys = [];
+          renderKeys();
+          pixFeedback.textContent = 'Não foi possível ler as chaves Pix: ' + error.message;
+        }
+      }
+    }
+
+    function renderHistory(ops) {
+      history.replaceChildren();
+      if (!ops.length) {
+        history.append(el('p', 'operations-hint', 'Nenhuma preparação registrada nesta conta.'));
+        return;
+      }
+      for (const op of ops) {
+        const entry = el('article', 'operations-history-item');
+        entry.append(
+          el('strong', '', 'Preparado localmente — ' + op.keyType),
+          el('span', '', 'Operação: ' + op.operationId),
+          el('span', '', 'Estado: ' + op.status + ' / envio remoto: não realizado'),
+          el('span', '', 'Registrado em: ' + op.createdAt),
+          el('small', '', (op.missingRequirements || []).join(' ')),
+        );
+        history.append(entry);
+      }
+    }
+
+    async function loadHistory() {
+      const current = ++historyRevision;
+      const profile = selectedAccount && selectedAccount.profileId;
+      if (!profile || typeof post !== 'function') {
+        history.replaceChildren();
+        return;
+      }
+      try {
+        const data = await get('/api/operations/pix/history?profileId=' +
+          encodeURIComponent(profile));
+        if (current !== historyRevision ||
+            !selectedAccount || selectedAccount.profileId !== profile) return;
+        renderHistory(Array.isArray(data.operations) ? data.operations : []);
+      } catch (error) {
+        if (current === historyRevision) {
+          history.replaceChildren(el('p', 'operations-hint',
+            'Falha ao consultar histórico local: ' + error.message));
+        }
+      }
+    }
+    typeSelector.addEventListener('change', () => {
+      ownershipCheckbox.checked = false;
+      pixFeedback.textContent = '';
+      renderKeys();
+    });
+    keySelector.addEventListener('change', () => {
+      ownershipCheckbox.checked = false;
+      updatePixPreview();
+    });
+    ownershipCheckbox.addEventListener('change', updatePixPreview);
+    prepareButton.addEventListener('click', async () => {
+      const selected = getSelectedAccount();
+      const key = activeKey();
+      if (!selected || !key || !ownershipCheckbox.checked ||
+          typeof post !== 'function' || preparing) return;
+      preparing = true;
+      updatePixPreview();
+      pixFeedback.textContent = 'Validando conta e chave no servidor local...';
+      try {
+        const result = await post('/api/operations/pix/prepare', {
+          profileId: selected.profileId,
+          accountId: selected.accountId,
+          keyId: key.id,
+          keyType: typeSelector.value,
+          ownershipAcknowledged: true
+        });
+        if (selectedAccount && selectedAccount.profileId === selected.profileId &&
+            selectedAccount.accountId === selected.accountId) {
+          pixFeedback.textContent = result.reused
+            ? 'Preparação existente recuperada. Nenhuma requisição externa foi enviada.'
+            : 'Preparação salva localmente. Integração da plataforma ainda não disponível.';
+          await loadHistory();
+        }
+      } catch (error) {
+        pixFeedback.textContent = 'Falha na preparação: ' + error.message;
+      } finally {
+        preparing = false;
+        updatePixPreview();
+      }
+    });
 
     function summaryRow(title, value) {
       const row = el('div', 'account-summary-row');
@@ -87,6 +281,10 @@
       details.replaceChildren();
       hint.hidden = false;
       feedback.textContent = message || '';
+      ownershipCheckbox.checked = false;
+      ++historyRevision;
+      history.replaceChildren();
+      updatePixPreview();
     }
 
     function showDetail(detail) {
@@ -111,6 +309,8 @@
           kind === 'observed' ? 'Observado, não verificado' : 'Não identificado')
       );
       hint.hidden = true;
+      updatePixPreview();
+      loadHistory();
       feedback.textContent = kind === 'unidentified'
         ? 'Esta conta ainda não possui um ID da plataforma identificado.'
         : 'Identificação carregada somente para consulta. Operações ainda indisponíveis.';
@@ -149,11 +349,18 @@
       }
       selectedId = item.id;
       selectedUuid = item.accountId;
+      ownershipCheckbox.checked = false;
+      ++historyRevision;
+      history.replaceChildren();
+      updatePixPreview();
       loadDetail(selectedId, selectedUuid);
     }
 
     selector.addEventListener('change', () => chooseAccount(selector.value));
-    refreshButton.addEventListener('click', () => refresh());
+    refreshButton.addEventListener('click', () => {
+      refresh();
+      loadPixKeys();
+    });
 
     async function refresh() {
       const revision = ++listRevision;
@@ -203,7 +410,10 @@
       return selectedAccount ? {...selectedAccount} : null;
     }
 
-    return Object.freeze({node, onShow: refresh, getSelectedAccount});
+    return Object.freeze({node, onShow: () => {
+      refresh();
+      loadPixKeys();
+    }, getSelectedAccount});
   }
 
   Object.defineProperty(window, 'NexoraOperationsView', {
