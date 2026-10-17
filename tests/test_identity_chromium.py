@@ -75,6 +75,8 @@ def test_real_chromium_catches_initial_navigation_header_and_diagnoses_rejection
         context = browser.new_context(ignore_https_errors=True)
         context.route("**/*", lambda route: _route(route, 82193475))
         page = context.new_page()
+        page.set_default_timeout(6000)
+        page.set_default_navigation_timeout(6000)
         obs = PlatformIdentityObserver(
             page, logs.append,
             _profile(79),
@@ -116,6 +118,9 @@ def test_real_chromium_separate_contexts_never_share_request_headers():
         for ctx, uid in zip(contexts, (9342156, 9342157)):
             ctx.route("**/*", lambda route, uid=uid: _route(route, uid))
         pages = [ctx.new_page() for ctx in contexts]
+        for page in pages:
+            page.set_default_timeout(6000)
+            page.set_default_navigation_timeout(6000)
         obs = [
             PlatformIdentityObserver(pages[0], logs_a.append, _profile(79),
                                      expected_origin=ROOT),
