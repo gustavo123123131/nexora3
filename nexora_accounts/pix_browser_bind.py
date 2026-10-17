@@ -13,9 +13,29 @@ FINAL_STATES = frozenset((
 ))
 
 _JS = r"""async ({name, cpf, pin, key, kind}) => {
-  const safe = (state, stage, message, code=null) =>
-    ({state, stage, message, providerCode: code !== null && Number.isSafeInteger(Number(code)) ?
-        Number(code) : null});
+  // Keep ONLY bounded, enumerated metadata; never log PIN, Pix, CPF,
+  // response bodies, request bodies, tokens or browser exceptions.
+  const timeline = [];
+  const mark = (step, event, fields={}) => {
+    if (timeline.length >= 32) return;
+    timeline.push({
+      stage:step, event,
+      elapsedMs: Number.isSafeInteger(fields.elapsedMs) ? fields.elapsedMs : null,
+      providerCode: Number.isSafeInteger(fields.providerCode) ? fields.providerCode : null,
+      httpStatus: Number.isSafeInteger(fields.httpStatus) ? fields.httpStatus : null,
+      responseShape: fields.responseShape || null
+    });
+  };
+  const codeOf = value => {
+    if (value === null || value === undefined || value === '') return null;
+    const n = Number(value);
+    return Number.isSafeInteger(n) ? n : null;
+  };
+  const safe = (state, step, message, code=null) => {
+    mark(step, 'result', {providerCode:codeOf(code)});
+    return {state, stage:step, message,
+      providerCode:codeOf(code), trace:timeline};
+  };
   if (location.protocol !== 'https:' ||
       !['www.5gbet.com', '5gbet.com'].includes(location.hostname.toLowerCase()))
     return safe('failed', 'site', 'Navegador da conta não está no domínio autorizado.');
@@ -50,14 +70,37 @@ _JS = r"""async ({name, cpf, pin, key, kind}) => {
   let bindAccepted=false;
   let stage='withdrawInfoV2-antes';
   async function post(route, data) {
-    const response = await api.request({
-      url: '/api/' + route, method: 'POST',
-      ...(data === undefined ? {} : {data})
-    }, {merge:false, maxRetryCount:0, cache:{useCache:false}});
+    // stage is one of the pre-defined routes below; never capture payload.
+    const started=performance.now();
+    mark(stage, 'request_start');
+    let response;
+    try {
+      response = await api.request({
+        url: '/api/' + route, method: 'POST',
+        ...(data === undefined ? {} : {data})
+      }, {merge:false, maxRetryCount:0, cache:{useCache:false}});
+    } catch (error) {
+      // SDK may reject requests directly (no normal response). Extract
+      // ONLY numerical status/code from known locations, never error.message.
+      const httpStatus=codeOf(error?.response?.status);
+      const code=codeOf(error?.response?.data?.code ??
+                        error?.data?.code ?? error?.code);
+      mark(stage, 'request_exception', {
+        elapsedMs:Math.round(performance.now()-started),
+        providerCode:code, httpStatus, responseShape:'exception'
+      });
+      throw new ProviderError(stage,code);
+    }
     const outer = response?.data ?? response;
-    const code = Number(outer?.code);
-    if (code !== 1) throw new ProviderError(stage,
-      Number.isSafeInteger(code) ? code : null);
+    const code=codeOf(outer?.code);
+    const httpStatus=codeOf(response?.status);
+    const elapsedMs=Math.round(performance.now()-started);
+    const responseShape=code===null ? 'missing_code' :
+      response?.data !== undefined ? 'wrapped_code' : 'direct_code';
+    mark(stage, code===1 ? 'api_accepted' : 'api_rejected', {
+      providerCode:code, httpStatus, elapsedMs, responseShape
+    });
+    if (code !== 1) throw new ProviderError(stage,code);
     return outer?.data ?? {};
   }
   const list = data => {
@@ -74,6 +117,7 @@ _JS = r"""async ({name, cpf, pin, key, kind}) => {
   try {
     const before = await post('finance/certify/withdrawInfoV2');
     const beforeList=list(before);
+    mark(stage, 'list_check', {responseShape:beforeList ? 'list_found' : 'list_missing'});
     if (listed(beforeList,key)) return safe('already_registered',stage,
       'A chave já consta na lista de saques desta conta.');
     const serverCpf=String(before?.cpf || '').replace(/\D/g,'');
@@ -86,10 +130,16 @@ _JS = r"""async ({name, cpf, pin, key, kind}) => {
     const authorization=await post('finance/certify/verifyWithdrawalPasswordV2', {
       withdrawalPassword:pin, addWithdrawAccountType:5
     });
-    if (authorization.twoStepVerify) return safe('failed',stage,
-      'A plataforma exige verificação adicional. Conclua-a pelo procedimento oficial.');
-    if (typeof authorization.key !== 'string' || !authorization.key)
+    if (authorization.twoStepVerify) {
+      mark(stage, 'two_step_required');
+      return safe('failed',stage,
+        'A plataforma exige verificação adicional. Conclua-a pelo procedimento oficial.');
+    }
+    if (typeof authorization.key !== 'string' || !authorization.key) {
+      mark(stage, 'authorization_missing');
       return safe('failed',stage,'A plataforma não retornou autorização temporária de cadastro.');
+    }
+    mark(stage, 'authorization_received'); // never include the actual key
     stage='bindalipayV3';
     bindStarted=true;
     await post('finance/certify/bindalipayV3', {
@@ -102,6 +152,7 @@ _JS = r"""async ({name, cpf, pin, key, kind}) => {
     bindAccepted=true;
     stage='withdrawInfoV2-depois';
     const after=await post('finance/certify/withdrawInfoV2');
+    mark(stage, 'list_check', {responseShape:list(after) ? 'list_found' : 'list_missing'});
     if (listed(list(after),key)) return safe('confirmed',stage,
       'Chave Pix confirmada na lista de saques da conta.');
     return safe('accepted_unconfirmed',stage,
@@ -132,11 +183,36 @@ def bind_in_page(page, *, name: str, cpf: str, pin: str, key: str, kind: str) ->
         if not isinstance(result, dict) or result.get("state") not in FINAL_STATES:
             return {"state": "uncertain", "stage": "client",
                     "message": "Resultado inesperado; confira a plataforma antes de repetir."}
-        return {key: result[key] for key in
-                ("state", "stage", "message", "providerCode")
-                if key in result and
-                (key != "providerCode" or type(result[key]) is int) and
-                (key != "message" or isinstance(result[key], str))}
+        output = {key: result[key] for key in
+                  ("state", "stage", "message", "providerCode")
+                  if key in result and
+                  (key != "providerCode" or type(result[key]) is int) and
+                  (key != "message" or isinstance(result[key], str))}
+        allowed_stages = {"site", "client", "withdrawInfoV2-antes",
+                          "verifyWithdrawalPasswordV2", "bindalipayV3",
+                          "withdrawInfoV2-depois"}
+        allowed_events = {"request_start", "request_exception", "api_accepted",
+                          "api_rejected", "result", "list_check",
+                          "authorization_missing", "authorization_received",
+                          "two_step_required"}
+        allowed_shapes = {"exception", "missing_code", "wrapped_code",
+                          "direct_code", "list_found", "list_missing"}
+        trace = []
+        for item in result.get("trace", [])[:32] if isinstance(result.get("trace"), list) else []:
+            if (not isinstance(item, dict) or item.get("stage") not in allowed_stages
+                or item.get("event") not in allowed_events):
+                continue
+            row = {"stage": item["stage"], "event": item["event"]}
+            for field in ("providerCode", "httpStatus", "elapsedMs"):
+                value = item.get(field)
+                lower = 0 if field == "elapsedMs" else -999999
+                if type(value) is int and lower <= value <= 999999:
+                    row[field] = value
+            if item.get("responseShape") in allowed_shapes:
+                row["responseShape"] = item["responseShape"]
+            trace.append(row)
+        output["trace"] = trace
+        return output
     except Exception:
         return {"state": "uncertain", "stage": "browser",
                 "message": "Navegador indisponível; confira se a chave foi cadastrada antes de repetir."}

@@ -265,7 +265,10 @@ class AccountLauncher:
         """Run a single Pix request on THIS account's existing Chromium worker."""
         from nexora_accounts.browser_sessions import active_account_session
         from nexora_accounts.local_profiles import LocalProfileError
-        from nexora_accounts.pix_operations import PixOperationStore, PixPreparationError
+        from nexora_accounts.pix_operations import (PixOperationStore, PixPreparationError,
+                                                     _pix_live)
+        if type(profile_id) is int:
+            _pix_live(profile_id, "inicio", "solicitação recebida; validando conta e navegador")
         if type(profile_id) is not int or not isinstance(account_id, str):
             raise PixPreparationError("Conta selecionada inválida.")
         profile = LocalProfileStore().public_detail(profile_id)
@@ -279,6 +282,7 @@ class AccountLauncher:
         run_id = session.get("runId")
         if not run_id or run_id != profile.get("lastSessionId"):
             raise PixPreparationError("Sessão Chromium divergente da conta selecionada.")
+        _pix_live(profile_id, "inicio", "sessão Chromium ativa e conta correspondente")
         store = PixOperationStore()
         reservation = store.begin_remote(
             profile_id=profile_id, account_id=account_id,
@@ -286,6 +290,8 @@ class AccountLauncher:
         )
         operation = reservation["operation"]
         if reservation["reused"]:
+            _pix_live(profile_id, operation["operationId"],
+                      f"operação anterior reutilizada; estado={operation['status']}; nenhum reenvio")
             return {"operation": operation, "reused": True}
         reply = queue.Queue(maxsize=1)
         job = {"kind": "pix-bind", "profileId": profile_id,
@@ -294,6 +300,8 @@ class AccountLauncher:
                "result": reply}
         try:
             session["requests"].put_nowait(job)
+            _pix_live(profile_id, operation["operationId"],
+                      "pedido enviado à fila Playwright desta conta")
         except queue.Full:
             operation = store.finish_remote(
                 operation["operationId"], profile_id=profile_id,
@@ -304,6 +312,8 @@ class AccountLauncher:
         try:
             operation = reply.get(timeout=timeout)
         except queue.Empty:
+            _pix_live(profile_id, operation["operationId"],
+                      "tempo de espera local excedido; não reenviar automaticamente")
             # The queued worker might still be performing the remote POST.
             # Never reissue it automatically.
             operation = store.get_remote(
@@ -316,7 +326,7 @@ class AccountLauncher:
                                   operation_id, page):
         """Get secrets only on the owning Windows worker; never into logs."""
         from nexora_accounts.pix_operations import (PixOperationStore,
-            pix_owner_from_details, PIX_WITHDRAW_PIN)
+            pix_owner_from_details, PIX_WITHDRAW_PIN, _pix_live)
         from nexora_accounts.pix_browser_bind import bind_in_page
         from nexora_accounts.pix_key_store import PixKeyStore, normalize_key
         store = PixOperationStore()
@@ -325,6 +335,7 @@ class AccountLauncher:
                                   account_id=account_id, run_id=run_id)
             if op["status"] != "queued":
                 return op
+            _pix_live(profile_id, operation_id, "worker Playwright recebeu operação")
             details = LocalProfileStore().public_detail(profile_id)
             if (details.get("accountId") != account_id or
                 details.get("lastSessionId") != run_id):
@@ -343,11 +354,15 @@ class AccountLauncher:
             # Read the same saved owner pair used by begin_remote. No
             # duplicate registration, confirmation, or login-password reuse.
             name, cpf = pix_owner_from_details(details)
+            _pix_live(profile_id, operation_id,
+                      "nome e CPF lidos da conta; chave Pix recuperada; PIN de saque configurado")
             # O PIN de saque comum não é a senha de login.
             # Nunca realizar leitura de senha da conta para cadastro Pix.
             result = bind_in_page(page, name=name,
                 cpf=cpf, pin=PIX_WITHDRAW_PIN, key=key, kind=op["keyType"])
-        except Exception:
+        except Exception as exc:
+            _pix_live(profile_id, operation_id,
+                      f"falha interna no worker: classe={type(exc).__name__}; nenhum dado sensível registrado")
             result = {"state": "uncertain", "stage": "browser"}
         return store.finish_remote(operation_id, profile_id=profile_id,
             account_id=account_id, run_id=run_id, result=result)
