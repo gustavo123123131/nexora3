@@ -50,7 +50,7 @@ def test_operations_selects_correct_internal_account_and_labels_observed_uid():
             open_view(page)
             expect(page.get_by_role("heading", name="Operações", exact=True)).to_be_visible()
             expect(page.locator(".operations-card")).to_have_count(4)
-            expect(page.get_by_text("Não disponível")).to_have_count(4)
+            expect(page.get_by_text("Não disponível")).to_have_count(3)
             chooser = page.get_by_role("combobox", name="Selecionar conta para operações")
             expect(chooser.locator("option")).to_have_count(4)
             assert page.evaluate("window.ops.getSelectedAccount()") is None
@@ -213,13 +213,13 @@ def test_pix_prepare_ui_four_types_uses_local_routes_and_keeps_history():
               };
               const post = async (url,body) => {
                 window.calls.push('POST ' + url);
-                if(url !== '/api/operations/pix/prepare') throw Error('Unexpected POST');
+                if(url !== '/api/operations/pix/bind') throw Error('Unexpected POST');
                 const key = keys.find(k=>k.id===body.keyId);
                 if(!key||key.type!==body.keyType||body.accountId!=='uuid-a') throw Error('mismatch');
                 const operation = {
                   operationId:'test-operation-'+history.length, keyType:key.type,
-                  status:'prepared', createdAt:'2026-10-17T00:00Z',
-                  missingRequirements:['Contrato da plataforma não comprovado.']
+                  status:'confirmed', createdAt:'2026-10-17T00:00Z',
+                  message:'Cadastro confirmado na lista de saques da conta.'
                 };
                 history=[operation,...history];
                 return {operation, reused:false};
@@ -232,14 +232,14 @@ def test_pix_prepare_ui_four_types_uses_local_routes_and_keeps_history():
             selector.select_option("11")
             type_selector = page.get_by_role("combobox", name="Escolher tipo de chave Pix")
             key_selector = page.get_by_role("combobox", name="Escolher chave Pix cadastrada")
-            prepare = page.get_by_role("button", name="Preparar chave Pix")
+            prepare = page.get_by_role("button", name="Cadastrar")
             for typ, key in [("PHONE","a"),("EMAIL","b"),("CPF","c"),("EVP","d")]:
                 type_selector.select_option(typ)
                 expect(key_selector).to_have_value(key)
                 expect(prepare).to_be_enabled()
                 prepare.click()
                 expect(page.locator(".operations-pix-feedback")).to_contain_text(
-                    "Preparação salva nesta conta."
+                    "Cadastro Pix confirmado na listagem"
                 )
                 expect(page.locator(".operations-history-item")).to_have_count(
                     ["PHONE","EMAIL","CPF","EVP"].index(typ)+1
@@ -249,7 +249,7 @@ def test_pix_prepare_ui_four_types_uses_local_routes_and_keeps_history():
                 assert secret not in page.locator(".operations-pix-panel").inner_text()
             paths = page.evaluate("window.calls")
             assert len([p for p in paths if p.startswith("POST ")]) == 4
-            assert all('/api/operations/pix/prepare' in p
+            assert all('/api/operations/pix/bind' in p
                        for p in paths if p.startswith("POST "))
         finally:
             browser.close()
@@ -281,9 +281,9 @@ def test_direct_pix_preparation_uses_account_details_without_rechecking_id():
                 };
                 const post = async (path, data) => {
                     window.posts.push({path, data});
-                    if (path !== '/api/operations/pix/prepare')
+                    if (path !== '/api/operations/pix/bind')
                         throw Error('Unexpected POST');
-                    return {reused:false, operation:{operationId:'test-op'}};
+                    return {reused:false, operation:{operationId:'test-op',status:'confirmed'}};
                 };
                 const view=NexoraOperationsView.create({get,post});
                 document.querySelector('#mount').append(view.node);
@@ -299,14 +299,14 @@ def test_direct_pix_preparation_uses_account_details_without_rechecking_id():
                              "Verificar requisitos da API", "Confirmar autorização da chave Pix"):
                 assert page.get_by_text(obsolete, exact=True).count() == 0
             page.get_by_role("combobox", name="Escolher tipo de chave Pix").select_option("PHONE")
-            prepare=page.get_by_role("button", name="Preparar chave Pix")
+            prepare=page.get_by_role("button", name="Cadastrar")
             expect(prepare).to_be_enabled()
             prepare.click()
             expect(page.locator(".operations-pix-feedback")).to_contain_text(
-                "Cadastro externo ainda não integrado.")
+                "Cadastro Pix confirmado na listagem")
             entries=page.evaluate("window.posts")
             assert len(entries)==1
-            assert entries[0]["path"]=="/api/operations/pix/prepare"
+            assert entries[0]["path"]=="/api/operations/pix/bind"
             assert entries[0]["data"]=={
                 "profileId":52,"accountId":"acct-local-52",
                 "keyId":"key-52","keyType":"PHONE"

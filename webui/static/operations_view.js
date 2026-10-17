@@ -1,4 +1,4 @@
-/* Operations workspace: one selected account, one saved Pix key, one local action. */
+/* Operations workspace: authenticated Pix API via selected account Chromium. */
 'use strict';
 (function () {
   // Future implementations live in separate modules; the catalog only
@@ -26,7 +26,7 @@
     const heading = el('header', 'operations-heading');
     const intro = el('div');
     intro.append(el('h1', '', 'Operações'),
-      el('p', '', 'Selecione a conta e uma chave Pix. Os dados são lidos automaticamente de Contas → Detalhes.'));
+      el('p', '', 'Selecione a conta e uma chave Pix. Os dados são lidos automaticamente da conta selecionada.'));
     const count = el('span', 'accounts-count', '0 contas');
     heading.append(intro, count);
 
@@ -52,12 +52,12 @@
     const sections = el('section', 'operations-catalog');
     sections.append(el('h2', '', 'Áreas de operações'),
       el('p', 'operations-hint',
-        'Estrutura preparada para futuras integrações. Nenhuma ação financeira está disponível.'));
+        'O cadastro Pix está disponível abaixo. Demais operações continuam indisponíveis.'));
     const cards = el('div', 'operations-grid');
     for (const item of CATALOG) {
       const card = el('article', 'operations-card');
       card.dataset.operation = item.id;
-      card.append(el('span', 'operations-card-status', 'Não disponível'),
+      card.append(el('span', 'operations-card-status', item.id === 'pix-bind' ? 'Disponível' : 'Não disponível'),
         el('h3', '', item.title), el('p', '', item.description));
       cards.append(card);
     }
@@ -67,8 +67,7 @@
     pixPanel.append(
       el('h2', '', 'Cadastrar chave Pix'),
       el('p', 'operations-hint',
-        'Escolha uma chave salva. A preparação usa os dados da conta selecionada; ' +
-        'o envio externo ainda não está integrado.')
+        'Escolha uma chave salva. O cadastro usa a titularidade e o PIN de saque já salvos nesta conta.')
     );
     const pixControls = el('div', 'operations-controls operations-pix-controls');
     const typeLabel = el('label', '', 'Tipo de chave Pix');
@@ -87,7 +86,7 @@
     pixControls.append(typeLabel, keyLabel);
     const pixFeedback = el('p', 'operations-pix-feedback');
     pixFeedback.setAttribute('role', 'status');
-    const prepareButton = el('button', 'accounts-open operations-pix-prepare', 'Preparar chave Pix');
+    const prepareButton = el('button', 'accounts-open operations-pix-prepare', 'Cadastrar');
     prepareButton.type = 'button';
     prepareButton.disabled = true;
     const preview = el('div', 'operations-pix-preview');
@@ -130,7 +129,7 @@
             selected.identityStatus === 'observed' ? 'Observada, não verificada' : 'Ausente'
         ) : '—'),
         summaryRow('Chave', key ? maskedKey(key) : 'Nenhuma selecionada'),
-        summaryRow('Execução', 'Somente preparação local — sem envio externo')
+        summaryRow('Execução', 'API da plataforma na sessão desta conta')
       );
     }
 
@@ -179,15 +178,17 @@
     function renderHistory(ops) {
       history.replaceChildren();
       if (!ops.length) {
-        history.append(el('p', 'operations-hint', 'Nenhuma preparação registrada nesta conta.'));
+        history.append(el('p', 'operations-hint', 'Nenhuma operação registrada nesta conta.'));
         return;
       }
       for (const op of ops) {
         const entry = el('article', 'operations-history-item');
         entry.append(
-          el('strong', '', 'Preparado localmente — ' + op.keyType),
+          el('strong', '', 'Chave Pix — ' + op.keyType),
           el('span', '', 'Operação: ' + op.operationId),
-          el('span', '', 'Estado: ' + op.status + ' / envio remoto: não realizado'),
+          el('span', '', 'Estado: ' + (op.message || op.status)),
+          el('span', '', 'Etapa: ' + (op.stage || '—') +
+            (Number.isInteger(op.providerCode) ? ' / código: ' + op.providerCode : '')),
           el('span', '', 'Registrado em: ' + op.createdAt),
           el('small', '', (op.missingRequirements || []).join(' ')),
         );
@@ -226,9 +227,9 @@
       if (!selected || !key || typeof post !== 'function' || preparing) return;
       preparing = true;
       updatePixPreview();
-      pixFeedback.textContent = 'Utilizando os detalhes da conta e a chave Pix salvos...';
+      pixFeedback.textContent = 'Cadastrando chave Pix pela sessão Chromium desta conta...';
       try {
-        const result = await post('/api/operations/pix/prepare', {
+        const result = await post('/api/operations/pix/bind', {
           profileId: selected.profileId,
           accountId: selected.accountId,
           keyId: key.id,
@@ -236,15 +237,39 @@
         });
         if (selectedAccount && selectedAccount.profileId === selected.profileId &&
             selectedAccount.accountId === selected.accountId) {
-          pixFeedback.textContent = result.reused
-            ? 'Preparação desta conta já estava salva. Nenhum cadastro externo foi enviado.'
-            : 'Preparação salva nesta conta. Cadastro externo ainda não integrado.';
+          const op = result.operation || {};
+          const messages = {
+            confirmed: 'Cadastro Pix confirmado na listagem da plataforma.',
+            already_registered: 'A chave Pix já estava cadastrada.',
+            accepted_unconfirmed: 'API aceitou o cadastro; listagem ainda não confirmou. Não repita agora.',
+            uncertain: 'Resultado incerto: confira a plataforma antes de repetir.',
+            failed: 'Falha no cadastro Pix. Veja a etapa e o código no histórico.',
+            queued: 'Operação enviada à sessão Chromium. Aguardando resultado.'
+          };
+          pixFeedback.textContent = (result.reused ? 'Operação existente: ' : '') +
+            (messages[op.status] || op.message || 'Resultado desconhecido.');
           await loadHistory();
+          if (op.status === 'queued') {
+            for (let i = 0; i < 12; i++) {
+              await new Promise(resolve => setTimeout(resolve, 2500));
+              if (!selectedAccount || selectedAccount.profileId !== selected.profileId ||
+                  selectedAccount.accountId !== selected.accountId) break;
+              const data = await get('/api/operations/pix/history?profileId=' +
+                encodeURIComponent(selected.profileId));
+              const updated = (data.operations || []).find(x => x.operationId === op.operationId);
+              if (!updated) break;
+              renderHistory(data.operations || []);
+              if (updated.status !== 'queued') {
+                pixFeedback.textContent = messages[updated.status] || updated.message || updated.status;
+                break;
+              }
+            }
+          }
         }
       } catch (error) {
         if (selectedAccount && selectedAccount.profileId === selected.profileId &&
             selectedAccount.accountId === selected.accountId) {
-          pixFeedback.textContent = 'Não foi possível preparar esta chave: ' + error.message;
+          pixFeedback.textContent = 'Não foi possível cadastrar esta chave: ' + error.message;
         }
       } finally {
         preparing = false;

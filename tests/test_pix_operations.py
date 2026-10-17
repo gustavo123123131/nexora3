@@ -64,7 +64,7 @@ def test_four_pix_types_prepare_without_external_sends_and_survive_restart(
     result = reopened.list(profile["id"])
     assert len(result["operations"]) == 1
     assert result["operations"][0]["operationId"] == op["operationId"]
-    assert result["providerIntegration"] == "unavailable"
+    assert result["providerIntegration"] == "account-browser"
     assert "value" not in str(result["operations"][0])
     assert "772104782" not in str(result)
 
@@ -123,7 +123,7 @@ def test_missing_selected_key_type_returns_no_record(tmp_path):
     assert service.list()["operations"] == []
 
 
-def test_pix_preparation_api_uses_existing_csrf_and_never_exposes_a_bind_route(
+def test_pix_apis_use_existing_csrf_and_reject_invalid_accounts(
         tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
     import servidor
@@ -133,7 +133,7 @@ def test_pix_preparation_api_uses_existing_csrf_and_never_exposes_a_bind_route(
                         lambda: tmp_path / "pix_operations.json")
     with TestClient(servidor.app) as client:
         assert client.get("/api/operations/pix/history?profileId=17").json() == {
-            "operations": [], "providerIntegration": "unavailable",
+            "operations": [], "providerIntegration": "account-browser",
         }
         body = {"profileId": 17, "accountId": str(uuid4()),
                 "keyId": str(uuid4()), "keyType": "PHONE",
@@ -144,9 +144,9 @@ def test_pix_preparation_api_uses_existing_csrf_and_never_exposes_a_bind_route(
                              json=body, headers=protected)
         assert result.status_code == 422
         assert "Conta" in result.json()["detail"]
-        # These routes must not exist until provider authorization is proven.
+        # Binding requires an existing account-owned Chromium session.
         assert client.post("/api/operations/pix/bind",
-                           json=body, headers=protected).status_code == 404
+                           json=body, headers=protected).status_code == 422
         assert client.get("/api/operations/pix/history?profileId=0").status_code == 422
         assert not (tmp_path / "pix_operations.json").exists()
 

@@ -474,6 +474,29 @@ async def prepare_pix_operation(body: dict):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+
+@app.post('/api/operations/pix/bind')
+async def bind_pix_operation(body: dict):
+    """One user-triggered request on the selected account's Chromium session.
+
+    Source of truth: LocalProfileStore + PixKeyStore + Windows PIN vault.
+    No account credentials, PIN, UID or raw Pix key are accepted in POST body.
+    """
+    from nexora_accounts.pix_operations import PixPreparationError
+    from nexora_accounts.local_profiles import LocalProfileError
+    from nexora_accounts.session_launcher import ACCOUNT_LAUNCHER
+    from starlette.concurrency import run_in_threadpool
+    try:
+        return await run_in_threadpool(
+            lambda: ACCOUNT_LAUNCHER.bind_pix_key(
+                body.get("profileId"), body.get("accountId"),
+                body.get("keyId"), body.get("keyType"),
+            )
+        )
+    except (PixPreparationError, LocalProfileError, ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @app.get('/api/local-profiles')
 async def list_local_profiles():
     from nexora_accounts.local_profiles import LocalProfileStore
