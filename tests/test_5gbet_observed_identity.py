@@ -98,3 +98,65 @@ def test_header_conflict_does_not_persist(store):
         assert store.get(p["id"])["platformObservedUserId"] is None
     finally:
         m.close()
+
+class StoragePage(Page):
+    def __init__(self, uid, *, key="appState", kind="json"):
+        super().__init__()
+        self.storage_uid = uid
+        self.key = key
+        self.kind = kind
+        self.evaluations = 0
+
+    def evaluate(self, script):
+        self.evaluations += 1
+        if self.storage_uid is None:
+            return []
+        return [{
+            "uid": self.storage_uid, "area": "local", "key": self.key,
+            "path": ["session", "uid"] if self.kind == "json" else ["jwt", "u"],
+            "kind": self.kind
+        }]
+
+@pytest.mark.parametrize("kind", ["json", "jwt-payload"])
+def test_storage_candidate_is_observed_not_verified(store, kind):
+    p = make(store, "mae", "run-storage")
+    page = StoragePage("772104782", kind=kind)
+    m = watcher(page, p, "run-storage")
+    try:
+        found = m.observe_candidate()
+        assert found.user_id == "772104782"
+        assert found.source == "5gbet:storage:observed"
+        assert m._storage_descriptor[3] == kind
+        assert m.identify(wait_seconds=0) is None
+        store.save_observed_platform_id(p["id"], p["accountId"], "run-storage",
+            site_origin=PAGE, observed_identity=found)
+        state = store.public_detail(p["id"])
+        assert state["platformObservedUserId"] == "772104782"
+        assert state["platformUserId"] is None
+        assert state["platformIdVerifiedAt"] is None
+    finally:
+        m.close()
+
+def test_storage_header_mismatch_rejected(store):
+    p = make(store, "mae", "run-mismatch")
+    page = StoragePage("987654321")
+    m = watcher(page, p, "run-mismatch")
+    try:
+        send(page, 123456789)
+        assert m.observe_candidate() is None
+        assert m.observation_conflict
+        assert store.get(p["id"])["platformObservedUserId"] is None
+    finally:
+        m.close()
+
+def test_wrong_account_evidence_is_rejected(store):
+    a, b = make(store, "mae", "run-a"), make(store, "filha", "run-b")
+    page = StoragePage("123456789")
+    m = watcher(page, a, "run-a")
+    try:
+        candidate = m.observe_candidate()
+        with pytest.raises(LocalProfileError, match="não pertence"):
+            store.save_observed_platform_id(b["id"], b["accountId"], "run-b",
+                site_origin=PAGE, observed_identity=candidate)
+    finally:
+        m.close()
