@@ -156,3 +156,56 @@ def test_header_storage_crosscheck_and_click_status_unchanged(store):
         assert d["platformUserId"] is None
         assert d["registrationReviewRequired"] is True
     finally:o.close()
+
+
+def test_proxy_ip_check_temporarily_suspends_and_restores_identity(store):
+    """The same Chromium tab visits an IP checker before the 5gbet page."""
+    p = create(store, "mae", "run-proxy")
+    page = Page()
+    messages = []
+    observer = PlatformIdentityObserver(
+        page, messages.append, {**p, "runId": "run-proxy"},
+        expected_origin=SITE,
+    )
+    observer.start()
+    try:
+        observer.note_navigation("https://api.ipify.org/?format=json")
+        page.url = "https://api.ipify.org/?format=json"
+        assert observer._official_site is False
+        request = emit(page, API_CO, 111111)
+        assert request.headers_calls == 0
+        assert observer.observe_candidate() is None
+
+        # The original approved site comes back after proxy verification.
+        observer.note_navigation(SITE + "/")
+        page.url = SITE + "/"
+        assert observer._official_site is True
+        request = emit(page, API_CO, 882104799)
+        candidate = observer.observe_candidate()
+        assert request.headers_calls == 1
+        assert candidate is not None
+        assert candidate.user_id == "882104799"
+        assert any("reativada" in message for message in messages)
+        save(store, p, "run-proxy", candidate)
+        assert store.public_detail(p["id"])["platformObservedUserId"] == "882104799"
+        assert store.public_detail(p["id"])["platformUserId"] is None
+    finally:
+        observer.close()
+
+
+def test_untrusted_initial_site_never_activates_after_redirect(store):
+    p = create(store, "mae", "run-untrusted")
+    page = Page()
+    observer = PlatformIdentityObserver(
+        page, lambda _: None, {**p, "runId": "run-untrusted"},
+        expected_origin="https://untrusted.invalid",
+    )
+    observer.start()
+    try:
+        observer.note_navigation(SITE + "/")
+        assert observer._official_site is False
+        request = emit(page, API_CO, 882104799)
+        assert request.headers_calls == 0
+        assert observer.observe_candidate() is None
+    finally:
+        observer.close()

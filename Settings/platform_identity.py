@@ -138,7 +138,12 @@ class PlatformIdentityObserver:
             "username": account.get("username"),
         }
         self.origin = site_origin(expected_origin)
-        self._official_site = self.origin in FIVEGBET_SITE_ORIGINS
+        # Trust is anchored to the configured starting site. Proxy IP checks
+        # navigate this SAME page through external hosts before visiting the
+        # target; suspend collection there, but re-enable it on return to the
+        # original, explicitly permitted site.
+        self._initial_official_site = self.origin in FIVEGBET_SITE_ORIGINS
+        self._official_site = self._initial_official_site
         self._last_site_origin = self.origin
         self._diagnosed = set()
         self._request_route_seen = False
@@ -206,27 +211,44 @@ class PlatformIdentityObserver:
                 pass
 
     def note_navigation(self, url):
-        """Diagnose the final host and any allowed apex/www redirect."""
+        """Suspend on foreign pages; resume on the allowlisted site.
+
+        Proxy verification deliberately navigates the owning Chromium page
+        to an IP-check host *before* the 5gbet URL. Never capture identities
+        while on that other host, but do not revoke a previously authorized
+        session forever. An initially untrusted start URL still cannot acquire
+        5gbet permissions by redirecting into an official host.
+        """
         new_origin = site_origin(url)
         if not new_origin or new_origin == self._last_site_origin:
             return
         self._last_site_origin = new_origin
-        if self._official_site:
-            self._official_site = new_origin in FIVEGBET_SITE_ORIGINS
-            label = ("oficial" if self._official_site else "fora da lista permitida")
+        if not self._initial_official_site:
+            if new_origin in FIVEGBET_SITE_ORIGINS:
+                self._log_once(
+                    "unexpected-redirect",
+                    "Redirecionamento para domínio oficial observado, mas "
+                    "origem inicial não autorizada; não capturando ID.",
+                )
+            return
+        previously_active = self._official_site
+        self._official_site = new_origin in FIVEGBET_SITE_ORIGINS
+        if self._official_site and not previously_active:
             self._log_once(
-                "navigation-" + label,
-                "Origem após navegação: " + label
-                + (f" ({new_origin})" if self._official_site else "")
-                + "; adaptador " + ("ativo." if self._official_site else "suspenso."),
+                "navigation-restored",
+                "Página oficial recuperada após navegação intermediária; "
+                "captura de ID reativada.",
             )
-        elif new_origin in FIVEGBET_SITE_ORIGINS:
-            # An untrusted initial domain must not automatically inherit
-            # 5gbet identity or overwrite its recorded startUrl.
+        elif not self._official_site and previously_active:
             self._log_once(
-                "unexpected-redirect",
-                "Redirecionamento para domínio oficial observado, mas "
-                "origem inicial não autorizada; não capturando ID.",
+                "navigation-suspended",
+                "Navegação temporária fora da 5gbet; "
+                "captura de ID suspensa até retornar à página oficial.",
+            )
+        elif self._official_site:
+            self._log_once(
+                "navigation-official",
+                "Origem após navegação: oficial; captura de ID ativa.",
             )
 
     def _on_frame_navigated(self, frame):
@@ -869,9 +891,14 @@ class PlatformIdentityObserver:
                 "candidate-pending", "ID observado, mas ainda não verificado "
                 "por resposta de autenticação independente; ID não salvo.",
             )
-        elif self._clicked_at is not None:
+        elif (self._clicked_at is not None
+              and time.monotonic() - self._clicked_at >= 3.0):
+            # Register click is asynchronous: showing a missing-ID warning in
+            # the same second misleads operators while login is still pending.
+            # Do not sleep or stop polling: the GUI continues checking every
+            # second throughout the Chromium session.
             self._log_once(
-                "no-uid", "Ainda não foi encontrado uid autenticado nesta sessão; "
-                "o monitor continuará ativo.",
+                "no-uid", "Cadastro/autenticação ainda sem UID após 3 segundos; "
+                "o monitor continuará procurando enquanto o navegador estiver aberto.",
             )
         return None
