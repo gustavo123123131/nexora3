@@ -125,7 +125,8 @@ def _safe_pix_trace(trace):
         if not isinstance(item, dict):
             continue
         stage, event = item.get("stage"), item.get("event")
-        if stage not in stages or event not in events:
+        if (type(stage) is not str or type(event) is not str or
+                stage not in stages or event not in events):
             continue
         row = _event("api." + str(stage) + "." + str(event))
         for key in ("elapsedMs", "providerCode", "httpStatus"):
