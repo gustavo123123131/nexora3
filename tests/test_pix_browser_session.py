@@ -4,7 +4,6 @@ Fake pages only; no credentials, Pix binding or live provider requests.
 """
 from queue import Queue
 import threading
-from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -39,7 +38,7 @@ def test_browser_probe_accepts_only_supported_https_site():
     assert AccountLauncher._probe_existing_page(page)["state"] == "wrong-site"
     page.url = "https://www.5gbet.com/account"
     assert AccountLauncher._probe_existing_page(page)["state"] == "api-reachable"
-    assert "UID ainda requer validação" in result.get("message", "") or True
+    assert "UID ainda requer validação" in AccountLauncher._probe_existing_page(page)["message"]
 
 
 def test_live_probe_runs_on_worker_and_never_crosses_account(monkeypatch):
