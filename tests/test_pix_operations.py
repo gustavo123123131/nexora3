@@ -122,3 +122,31 @@ def test_missing_selected_key_type_returns_no_record(tmp_path):
     with pytest.raises(PixPreparationError, match="Chave Pix não encontrada"):
         service.prepare(**args)
     assert service.list()["operations"] == []
+
+
+def test_pix_preparation_api_uses_existing_csrf_and_never_exposes_a_bind_route(
+        tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    import servidor
+    import nexora_accounts.pix_operations as operations_module
+
+    monkeypatch.setattr(operations_module, "_default_path",
+                        lambda: tmp_path / "pix_operations.json")
+    with TestClient(servidor.app) as client:
+        assert client.get("/api/operations/pix/history?profileId=17").json() == {
+            "operations": [], "providerIntegration": "unavailable",
+        }
+        body = {"profileId": 17, "accountId": str(uuid4()),
+                "keyId": str(uuid4()), "keyType": "PHONE",
+                "ownershipAcknowledged": True}
+        assert client.post("/api/operations/pix/prepare", json=body).status_code == 403
+        protected = {"X-LixoCPA-CSRF": servidor._CSRF_TOKEN}
+        result = client.post("/api/operations/pix/prepare",
+                             json=body, headers=protected)
+        assert result.status_code == 422
+        assert "Conta" in result.json()["detail"]
+        # These routes must not exist until provider authorization is proven.
+        assert client.post("/api/operations/pix/bind",
+                           json=body, headers=protected).status_code == 404
+        assert client.get("/api/operations/pix/history?profileId=0").status_code == 422
+        assert not (tmp_path / "pix_operations.json").exists()
