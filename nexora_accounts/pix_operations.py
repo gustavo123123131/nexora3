@@ -96,6 +96,48 @@ def _event(stage: str, *, reason: str = "", elapsed_ms: int = 0) -> dict:
             "endpoint": None, "httpStatus": None, "responseShape": None}
 
 
+def _pix_live(profile_id, operation_id, message):
+    """Append metadata-only Pix diagnostics to the existing global panel."""
+    try:
+        from webui.live_logs import publish
+        prefix = f"[Pix] Conta #{int(profile_id)} op={str(operation_id)[:8]}"
+        publish("Sistema", prefix + " " + message)
+    except Exception:
+        # The logging UI must never interrupt a financial operation.
+        LOG.debug("Não foi possível publicar evento Pix.", exc_info=False)
+
+
+def _safe_pix_trace(trace):
+    """Accept ONLY the browser's enumerated diagnostic data, never raw bodies."""
+    if not isinstance(trace, list):
+        return []
+    stages = {"site", "client", "withdrawInfoV2-antes",
+              "verifyWithdrawalPasswordV2", "bindalipayV3",
+              "withdrawInfoV2-depois"}
+    events = {"request_start", "request_exception", "api_accepted",
+              "api_rejected", "result", "list_check",
+              "authorization_missing", "authorization_received",
+              "two_step_required"}
+    shapes = {"exception", "missing_code", "wrapped_code", "direct_code",
+              "list_found", "list_missing"}
+    rows = []
+    for item in trace[:32]:
+        if not isinstance(item, dict):
+            continue
+        stage, event = item.get("stage"), item.get("event")
+        if stage not in stages or event not in events:
+            continue
+        row = _event("api." + str(stage) + "." + str(event))
+        for key in ("elapsedMs", "providerCode", "httpStatus"):
+            val = item.get(key)
+            if type(val) is int and 0 <= val <= 999999:
+                row[key] = val
+        if item.get("responseShape") in shapes:
+            row["responseShape"] = item["responseShape"]
+        rows.append(row)
+    return rows
+
+
 def _is_uuid(value) -> bool:
     try:
         return isinstance(value, str) and str(UUID(value)) == value
@@ -270,6 +312,8 @@ class PixOperationStore:
             }
             data["operations"].append(op)
             self._write(data)
+            _pix_live(profile_id, op["operationId"],
+                      f"fila criada; tipo={key_type}; identidade={op['identityStatus']}; sem novo teste de ID")
             return {"operation": dict(op), "reused": False}
 
     def get_remote(self, operation_id, *, profile_id, account_id, run_id):
@@ -319,8 +363,22 @@ class PixOperationStore:
             op["providerCode"] = code if type(code) is int else None
             op["message"] = messages[state]
             op["updatedAt"] = _now()
+            trace = _safe_pix_trace(result.get("trace"))
+            op["events"].extend(trace)
             op["events"].append(_event("provider." + state, reason=stage))
             self._write(data)
+            for row in trace:
+                details = []
+                for field, label in (("httpStatus", "http"),
+                                     ("providerCode", "codigo"),
+                                     ("elapsedMs", "tempoMs"),
+                                     ("responseShape", "formato")):
+                    if field in row and row[field] is not None:
+                        details.append(f"{label}={row[field]}")
+                _pix_live(profile_id, operation_id,
+                          row["stage"] + " " + " ".join(details))
+            _pix_live(profile_id, operation_id,
+                      f"resultado={state}; etapa={stage}; codigo={op.get('providerCode')}")
             return dict(op)
 
     def prepare(self, *, profile_id, account_id, key_id, key_type,
