@@ -118,7 +118,8 @@ def _safe_pix_trace(trace):
     events = {"request_start", "request_exception", "api_accepted",
               "api_rejected", "result", "list_check",
               "authorization_missing", "authorization_received",
-              "two_step_required", "withdraw_pin_initialized"}
+              "two_step_required", "withdraw_pin_initialized",
+              "key_matched", "list_growth_confirmed", "list_no_growth"}
     shapes = {"exception", "missing_code", "wrapped_code", "direct_code",
               "list_found", "list_missing"}
     rows = []
