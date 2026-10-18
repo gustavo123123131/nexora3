@@ -416,7 +416,9 @@ class AccountLauncher:
 
     def _inspect_withdrawal_on_owner_thread(self, *, profile_id, account_id,
                                              run_id, operation_id, page):
-        from nexora_accounts.withdrawal_operations import WithdrawalStore, _live
+        from nexora_accounts.withdrawal_operations import (
+            WithdrawalStore, _live, diagnostic_log_summary
+        )
         from nexora_accounts.withdrawal_browser import inspect_withdrawal_preflight
         store = WithdrawalStore()
         op = store.get(operation_id, profile_id=profile_id,
@@ -432,8 +434,7 @@ class AccountLauncher:
             result = inspect_withdrawal_preflight(page)
         operation = store.finish(operation_id, profile_id=profile_id,
                                  account_id=account_id, run_id=run_id, result=result)
-        _live(profile_id, operation_id,
-              f"diagnóstico={operation['stage']}; saque enviado=não; status={operation['status']}")
+        _live(profile_id, operation_id, diagnostic_log_summary(operation))
         return operation
 
     def _process_browser_request(self, profile_id: int, account_id: str,
