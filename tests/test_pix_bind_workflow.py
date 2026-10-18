@@ -55,6 +55,13 @@ def test_remote_attempt_isolated_persisted_and_never_leaks_credentials(tmp_path)
         result={"state":"confirmed","stage":"withdrawInfoV2-depois"})
     assert completed["status"]=="confirmed"
     assert completed["externalRequestSent"] is True
+    second_key={"id":str(uuid4()),"type":"EMAIL",
+                "value":"another@example.com","updatedAt":"t2"}
+    keys.append(second_key)
+    second=store.begin_remote(profile_id=11,
+        account_id=profiles[11]["accountId"],key_id=second_key["id"],
+        key_type="EMAIL",run_id=run)
+    assert second["operation"]["initializeWithdrawPin"] is False
     again=store.finish_remote(op["operationId"],profile_id=11,
         account_id=profiles[11]["accountId"],run_id=run,
         result={"state":"failed","stage":"site"})
