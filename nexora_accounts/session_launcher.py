@@ -369,6 +369,73 @@ class AccountLauncher:
         return store.finish_remote(operation_id, profile_id=profile_id,
             account_id=account_id, run_id=run_id, result=result)
 
+    def preflight_withdrawal(self, profile_id: int, account_id: str, *,
+                             timeout=40):
+        """Use only the live worker for this account; no money POST is sent."""
+        from nexora_accounts.browser_sessions import active_account_session
+        from nexora_accounts.withdrawal_operations import (
+            WithdrawalStore, WithdrawalPreparationError, _live
+        )
+        if type(profile_id) is not int or not isinstance(account_id, str):
+            raise WithdrawalPreparationError("Conta inválida.")
+        profile = LocalProfileStore().public_detail(profile_id)
+        if profile.get("accountId") != account_id:
+            raise WithdrawalPreparationError("A conta selecionada é divergente.")
+        session = active_account_session(profile.get("origin"), profile_id, account_id)
+        if session is None or session["stop"].is_set() or not session.get("ready"):
+            raise WithdrawalPreparationError("A sessão Chromium desta conta não está aberta.")
+        run_id = session.get("runId")
+        if not run_id or run_id != profile.get("lastSessionId"):
+            raise WithdrawalPreparationError("A sessão Chromium não corresponde à conta.")
+        store = WithdrawalStore()
+        reserved = store.reserve(profile_id=profile_id, account_id=account_id,
+                                 run_id=run_id)
+        operation = reserved["operation"]
+        if reserved["reused"]:
+            return {"operation": operation, "reused": True}
+        reply = queue.Queue(maxsize=1)
+        job = {"kind": "withdraw-preflight", "profileId": profile_id,
+               "accountId": account_id, "runId": run_id,
+               "operationId": operation["operationId"], "result": reply}
+        try:
+            session["requests"].put_nowait(job)
+            _live(profile_id, operation["operationId"], "consulta segura enviada à sessão Chromium")
+        except queue.Full:
+            operation = store.finish(operation["operationId"], profile_id=profile_id,
+                account_id=account_id, run_id=run_id,
+                result={"stage": "local",
+                        "message": "Pré-requisitos não verificados; nenhum saque enviado."})
+            return {"operation": operation, "reused": False}
+        try:
+            operation = reply.get(timeout=timeout)
+        except queue.Empty:
+            # Pending audit survives restart; do not silently create a new job.
+            operation = store.get(operation["operationId"], profile_id=profile_id,
+                                  account_id=account_id, run_id=run_id)
+        return {"operation": operation, "reused": False}
+
+    def _inspect_withdrawal_on_owner_thread(self, *, profile_id, account_id,
+                                             run_id, operation_id, page):
+        from nexora_accounts.withdrawal_operations import WithdrawalStore, _live
+        from nexora_accounts.withdrawal_browser import inspect_withdrawal_preflight
+        store = WithdrawalStore()
+        op = store.get(operation_id, profile_id=profile_id,
+                       account_id=account_id, run_id=run_id)
+        if op["status"] != "queued":
+            return op
+        detail = LocalProfileStore().public_detail(profile_id)
+        if (detail.get("accountId") != account_id or
+                detail.get("lastSessionId") != run_id):
+            result = {"stage": "local",
+                      "message": "Sessão da conta não corresponde à operação."}
+        else:
+            result = inspect_withdrawal_preflight(page)
+        operation = store.finish(operation_id, profile_id=profile_id,
+                                 account_id=account_id, run_id=run_id, result=result)
+        _live(profile_id, operation_id,
+              f"diagnóstico={operation['stage']}; saque enviado=não; status={operation['status']}")
+        return operation
+
     def _process_browser_request(self, profile_id: int, account_id: str,
                                  request_queue, page, *, run_id=None):
         """Consume only the exact account's request on its Playwright thread."""
@@ -385,6 +452,15 @@ class AccountLauncher:
                 result = self._bind_pix_on_owner_thread(
                     profile_id=profile_id, account_id=account_id, run_id=run_id,
                     operation_id=job.get("operationId"), page=page,
+                )
+        elif job.get("kind") == "withdraw-preflight":
+            if not run_id or job.get("runId") != run_id:
+                result = {"state": "stale-session",
+                          "message": "Sessão de saque divergente."}
+            else:
+                result = self._inspect_withdrawal_on_owner_thread(
+                    profile_id=profile_id, account_id=account_id,
+                    run_id=run_id, operation_id=job.get("operationId"), page=page,
                 )
         elif job.get("kind") == "verify-identity":
             if not run_id or job.get("runId") != run_id:
