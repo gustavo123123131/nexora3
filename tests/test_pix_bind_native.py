@@ -36,7 +36,7 @@ def test_real_chromium_routes_native_pix_api_without_external_network(
     js = r"""
       window.__calls=[];
       window.__bound=false;
-      export const n = {request:async ({url, method, data},opts) => {
+      export const n = {name:'lobby', setupCustomConfig(){}, Request:class Request {}, request:async ({url, method, data},opts) => {
         window.__calls.push({url,method,data});
         const out=(payload,code=1)=>({data:{code,data:payload}});
         if(url.endsWith('/member/user/security/status')){
@@ -158,6 +158,18 @@ def test_real_chromium_routes_native_pix_api_without_external_network(
                 assert secret not in audit
         finally:
             browser.close()
+
+
+def test_other_configured_platform_uses_its_own_session():
+    class FakePage:
+        url = "https://www.80win.net/home"
+        def evaluate(self, script, arguments):
+            assert arguments["expectedHost"] == "80win.net"
+            return {"state":"failed", "stage":"client", "message":"Cliente ausente", "trace":[]}
+    result = bind_in_page(FakePage(), name="Maria Silva", cpf=CPF,
+                          pin=PIN, key=KEY, kind="PHONE",
+                          expected_host="80win.net")
+    assert result["stage"] == "client"
 
 
 def test_wrong_browser_origin_makes_no_remote_request():
