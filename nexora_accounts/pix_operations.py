@@ -23,8 +23,8 @@ LOG = logging.getLogger("nexora.pix.operations")
 TYPES = frozenset({"CPF", "PHONE", "EMAIL", "EVP"})
 # PIN de SAQUE comum solicitado pelo operador para o fluxo Pix.
 # NUNCA substituir ou reutilizar a senha de LOGIN da conta.
-# Este valor é apenas usado na verificação do PIN existente na plataforma;
-# não configura nem altera o PIN remoto e não é registrado em histórico/logs.
+# Este valor é usado tanto na configuração inicial automática quanto na
+# verificação remota; nunca é gravado em histórico/logs nem afeta login.
 PIX_WITHDRAW_PIN = "387520"
 BLOCKERS = (
     "Cadastro remoto de chave Pix ainda não integrado ao Nexora3.",
@@ -260,12 +260,9 @@ class PixOperationStore:
         }
 
 
-    def begin_remote(self, *, profile_id, account_id, key_id, key_type, run_id,
-                     initialize_pin=False):
+    def begin_remote(self, *, profile_id, account_id, key_id, key_type, run_id):
         """Reserve one browser-owned attempt, using saved account/key details."""
         from nexora_accounts.pix_key_store import normalize_key
-        if type(initialize_pin) is not bool:
-            raise PixPreparationError("Opção de PIN inicial inválida.")
         if (type(profile_id) is not int or profile_id < 1 or
                 not _is_uuid(account_id) or not _is_uuid(key_id) or
                 key_type not in TYPES or not _is_uuid(run_id)):
@@ -303,6 +300,25 @@ class PixOperationStore:
                     op.get("status") in ("queued", "confirmed", "already_registered",
                                          "accepted_unconfirmed", "uncertain")):
                     return {"operation": dict(op), "reused": True}
+            # Initial withdrawal-PIN setup is automatic per account. Reuse
+            # earlier evidence that the default PIN was successfully set
+            # (including an operation that later failed for an unrelated
+            # reason), or that a Pix binding was authorized. Never infer a
+            # remote PIN from hasWithdrawPin: that flag is only a LOCAL vault.
+            pin_configured = any(
+                old.get("accountId") == account_id and
+                old.get("profileId") == profile_id and (
+                    old.get("status") in ("confirmed", "accepted_unconfirmed") or
+                    any(
+                        isinstance(event, dict) and
+                        event.get("stage") ==
+                        "api.verifyWithdrawPass.withdraw_pin_initialized"
+                        for event in old.get("events", ())
+                    )
+                )
+                for old in data["operations"]
+            )
+            initialize_pin = not pin_configured
             now = _now()
             op = {
                 "operationId": str(uuid4()), "profileId": profile_id,
@@ -320,7 +336,7 @@ class PixOperationStore:
             data["operations"].append(op)
             self._write(data)
             _pix_live(profile_id, op["operationId"],
-                      f"fila criada; tipo={key_type}; identidade={op['identityStatus']}; sem novo teste de ID")
+                      f"fila criada; tipo={key_type}; identidade={op['identityStatus']}; PIN inicial automático={'sim' if initialize_pin else 'já configurado'}")
             return {"operation": dict(op), "reused": False}
 
     def get_remote(self, operation_id, *, profile_id, account_id, run_id):

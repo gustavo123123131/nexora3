@@ -39,9 +39,11 @@ def test_remote_attempt_isolated_persisted_and_never_leaks_credentials(tmp_path)
     assert first["reused"] is False
     op=first["operation"]
     assert op["status"]=="queued"
+    assert op["initializeWithdrawPin"] is True
     other=store.begin_remote(profile_id=12, account_id=profiles[12]["accountId"],
                              key_id=key,key_type="PHONE",run_id=run)
     assert other["operation"]["operationId"]!=op["operationId"]
+    assert other["operation"]["initializeWithdrawPin"] is True
     assert other["operation"]["platformIdentityRef"]!=op["platformIdentityRef"]
     assert store.begin_remote(profile_id=11,account_id=profiles[11]["accountId"],
                              key_id=key,key_type="PHONE",run_id=run)["reused"]
@@ -53,6 +55,13 @@ def test_remote_attempt_isolated_persisted_and_never_leaks_credentials(tmp_path)
         result={"state":"confirmed","stage":"withdrawInfoV2-depois"})
     assert completed["status"]=="confirmed"
     assert completed["externalRequestSent"] is True
+    second_key={"id":str(uuid4()),"type":"EMAIL",
+                "value":"another@example.com","updatedAt":"t2"}
+    keys.append(second_key)
+    second=store.begin_remote(profile_id=11,
+        account_id=profiles[11]["accountId"],key_id=second_key["id"],
+        key_type="EMAIL",run_id=run)
+    assert second["operation"]["initializeWithdrawPin"] is False
     again=store.finish_remote(op["operationId"],profile_id=11,
         account_id=profiles[11]["accountId"],run_id=run,
         result={"state":"failed","stage":"site"})
@@ -61,7 +70,9 @@ def test_remote_attempt_isolated_persisted_and_never_leaks_credentials(tmp_path)
     raw=(tmp_path/"pix-operations.json").read_text()
     for sensitive in ("11987654321","Maria Silva","52998224725","772104783","387520"):
         assert sensitive not in raw
-    assert store.list(11)["operations"][0]["status"]=="confirmed"
+    assert any(item["operationId"]==op["operationId"] and
+               item["status"]=="confirmed"
+               for item in store.list(11)["operations"])
 
 
 @pytest.mark.parametrize("change,expected", [
@@ -197,7 +208,7 @@ def test_browser_worker_passes_saved_profile_name_and_cpf_without_extra_gate(
     monkeypatch.setattr(launcher_module, "LocalProfileStore", SavedAccountStore)
     monkeypatch.setattr(operations, "PixOperationStore", lambda: store)
     monkeypatch.setattr(key_module, "PixKeyStore", lambda: store.keys)
-    def fake_bind(page, *, name, cpf, pin, key, kind):
+    def fake_bind(page, *, name, cpf, pin, key, kind, initialize_pin=False):
         calls.append((page, name, cpf, pin, key, kind))
         return {"state":"confirmed", "stage":"withdrawInfoV2-depois"}
     monkeypatch.setattr(browser_module, "bind_in_page", fake_bind)
@@ -226,3 +237,28 @@ def test_pin_387520_is_available_for_all_accounts_even_without_saved_vault(tmp_p
         assert first["operation"]["accountId"] == account["accountId"]
     records = (tmp_path / "pix-operations.json").read_text(encoding="utf-8")
     assert "387520" not in records
+
+
+def test_pin_setup_evidence_persists_when_later_pix_step_fails(tmp_path):
+    store, profiles, keys, run = setup_store(tmp_path)
+    profile = profiles[11]
+    first = store.begin_remote(
+        profile_id=11, account_id=profile["accountId"],
+        key_id=keys[0]["id"], key_type="PHONE", run_id=run
+    )["operation"]
+    assert first["initializeWithdrawPin"] is True
+    store.finish_remote(
+        first["operationId"], profile_id=11,
+        account_id=profile["accountId"], run_id=run,
+        result={"state":"failed", "stage":"verifyWithdrawalPasswordV2",
+                "trace":[{"stage":"verifyWithdrawPass",
+                          "event":"withdraw_pin_initialized"}]}
+    )
+    different={"id":str(uuid4()),"type":"EMAIL",
+               "value":"second@example.com","updatedAt":"t2"}
+    keys.append(different)
+    next_op = store.begin_remote(
+        profile_id=11, account_id=profile["accountId"],
+        key_id=different["id"], key_type="EMAIL", run_id=run
+    )["operation"]
+    assert next_op["initializeWithdrawPin"] is False

@@ -67,7 +67,7 @@
     pixPanel.append(
       el('h2', '', 'Cadastrar chave Pix'),
       el('p', 'operations-hint',
-        'Escolha uma chave salva. O cadastro usa os dados da conta e o PIN de saque padrão do Nexora3.')
+        'Escolha uma chave salva. O Nexora3 configura automaticamente o PIN de saque padrão (387520) quando necessário, sem alterar a senha de login.')
     );
     const pixControls = el('div', 'operations-controls operations-pix-controls');
     const typeLabel = el('label', '', 'Tipo de chave Pix');
@@ -84,13 +84,6 @@
     keySelector.append(new Option('Escolha primeiro o tipo', ''));
     keyLabel.append(keySelector);
     pixControls.append(typeLabel, keyLabel);
-    const pinSetupLabel = el('label', 'operations-pix-new-pin');
-    const pinSetupToggle = document.createElement('input');
-    pinSetupToggle.type = 'checkbox';
-    pinSetupToggle.setAttribute('aria-label', 'Esta conta ainda não tem PIN de saque');
-    pinSetupLabel.append(pinSetupToggle, document.createTextNode(
-      ' Esta conta AINDA não tem PIN de saque (configurar antes)'
-    ));
     const pixFeedback = el('p', 'operations-pix-feedback');
     pixFeedback.setAttribute('role', 'status');
     const prepareButton = el('button', 'accounts-open operations-pix-prepare', 'Cadastrar');
@@ -99,7 +92,7 @@
     const preview = el('div', 'operations-pix-preview');
     const historyHeading = el('h3', 'operations-history-heading', 'Histórico local da conta');
     const history = el('div', 'operations-history');
-    pixPanel.append(pixControls, pinSetupLabel, preview, prepareButton,
+    pixPanel.append(pixControls, preview, prepareButton,
       pixFeedback, historyHeading, history);
     node.append(heading, selectorPanel, pixPanel, sections);
 
@@ -287,7 +280,6 @@
           keyId: key.id,
           keyType: typeSelector.value
         };
-        if (pinSetupToggle.checked) request.initializeWithdrawPin = true;
         const result = await post('/api/operations/pix/bind', request);
         if (selectedAccount && selectedAccount.profileId === selected.profileId &&
             selectedAccount.accountId === selected.accountId) {
@@ -343,7 +335,6 @@
       selectedId = null;
       selectedUuid = null;
       selectedAccount = null;
-      pinSetupToggle.checked = false;
       selector.value = '';
       details.replaceChildren();
       hint.hidden = false;
