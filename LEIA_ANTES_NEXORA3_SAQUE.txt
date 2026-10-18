@@ -1,0 +1,36 @@
+NEXORA3 — INTEGRAÇÃO DE SAQUE NA SESSÃO DA CONTA
+
+INCLUÍDO: botão Sacar, POST /api/operations/withdraw/submit, endpoint de consulta
+de pedidos, atualização read-only de orderInfo, worker da conta selecionada,
+PIN guardado no Windows (DPAPI), bloqueio contra repetição e testes simulados.
+
+ATENÇÃO: ESTE CÓDIGO PODE REALIZAR UM PEDIDO DE SAQUE REAL APÓS
+O USUÁRIO CLICAR NO BOTÃO. NÃO EXECUTE EM UMA CONTA REAL SEM ANTES
+VERIFICAR A DESTINAÇÃO E A AUTORIZAÇÃO DA SESSÃO.
+
+A implementação usa apenas www.5gbet.com e reaproveita o SDK original do site.
+Os exemplos recebidos mostram um pedido ACEITO e orderInfo status 1, não
+um pagamento finalizado. Estado 1 é mantido como pendente.
+Não foi executado nenhum pedido externo nestes testes.
+
+PARA PUBLICAR: carregue os nove arquivos mantendo seus CAMINHOS RELATIVOS.
+NÃO crie uma pasta chamada NEXORA3_SAQUE... no repositório.
+Prefira GitHub Desktop, em uma branch nova baseada em
+fix/remover-criacao-contas, para revisar antes de atualizar o agente Windows.
+
+1) Abra Github Desktop e faça clone do repositório.
+2) Selecione a branch fix/remover-criacao-contas.
+3) Crie uma branch nova: feat/saque-api-confirmado.
+4) Extraia o ZIP SOMENTE_ARQUIVOS na pasta raiz do clone, substituindo
+   os arquivos correspondentes, preservando webui/static, nexora_accounts, tests.
+5) Faça commit, push, e crie PR para fix/remover-criacao-contas.
+6) Só faça merge depois de conferir código, CI e testar em ambiente autorizado.
+
+TESTES: 68 testes relevantes aprovados, 1 cenário Playwright bloqueado
+pela política do navegador neste ambiente. Nenhum teste prova a execução
+financeira real no Windows Agent.
+
+OBSERVAÇÃO: Para sacar, antes salve o PIN válido de 6 dígitos no cofre
+de Contas (Windows). Se não existir ou não puder ser lido, o botão é
+bloqueado sem enviar cashV3. Não é permitido reutilizar automaticamente
+a senha de login como PIN.

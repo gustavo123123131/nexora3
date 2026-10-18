@@ -46,3 +46,12 @@ O padrão é ativar `uvicorn` com reload: a cada alteração de `.py`, `.js`, `.
 - Para alterar HTML/CSS, edite `webui/static/`. Para adicionar suporte a widgets, edite `webui/ctk_compat.py`. O código da regra de negócio está nas pastas originais de `Settings/`.
 
 **Limitação de testes**: os testes automatizados locais exercitam inicialização, abas, controles, vinculação de sessões e fluxos simulados, mas não validam operações reais em plataformas externas.
+
+
+## Saque por API na sessão da conta (5GBet)
+
+- Botão **Sacar — enviar pedido real** na seção Operações: consulta destino remoto único, saldo e taxa; usa o PIN de saque **já salvo no cofre do Windows**; envia uma única tentativa `cashV3` pela sessão Chromium correspondente; consulta `orderInfo` e registra número e estado observado.
+- É necessário salvar o PIN em **Contas → Detalhes**, abrir e autenticar o Chromium da conta e confirmar que existe exatamente um destino Pix vinculado. O botão não cria PIN, contas, destinos nem novas sessões.
+- Um pedido aceito não é sinônimo de pagamento concluído: a interface mantém o estado de acompanhamento até comprovação independente. **Atualizar estado do pedido** consulta novamente `orderInfo` sem enviar outro saque.
+- Tentativas incertas, pendentes ou aceitas bloqueiam novo envio para a mesma conta, inclusive após reinicialização. Em caso de timeout, confira a plataforma antes de qualquer intervenção manual.
+- **Limitação:** o script de referência demonstrou aceitação em uma sessão específica da `www.5gbet.com`; isso não comprova o contrato das demais casas. O envio é restrito a essa origem. Testes automatizados usam objetos simulados, não movimentam dinheiro.
