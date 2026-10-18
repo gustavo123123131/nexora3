@@ -491,6 +491,7 @@ async def bind_pix_operation(body: dict):
             lambda: ACCOUNT_LAUNCHER.bind_pix_key(
                 body.get("profileId"), body.get("accountId"),
                 body.get("keyId"), body.get("keyType"),
+                initialize_pin=body.get("initializeWithdrawPin", False),
             )
         )
     except (PixPreparationError, LocalProfileError, ValueError, TypeError) as exc:
