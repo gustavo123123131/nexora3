@@ -1,7 +1,7 @@
-"""Read-only withdrawal prerequisite checks, bound to one existing account.
+"""Read-only withdrawal prerequisites and history for a selected account.
 
-No withdrawal is submitted: the provider's production money/fee/order
-contract has not been validated. The saved state survives process restarts.
+This module records consultation results; it does not submit cashV3 requests.
+Saved records survive application restarts.
 """
 from __future__ import annotations
 
@@ -50,6 +50,55 @@ def _live(profile_id, op_id, message):
         publish("Sistema", f"[Saque] Conta #{int(profile_id)} op={str(op_id)[:8]} {message}")
     except Exception:
         pass
+
+
+def describe_preflight_for_log(operation: dict) -> str:
+    """Show the stored preflight cause, never the network payload or credentials."""
+    stage = operation.get("stage", "client")
+    if stage not in _STAGES:
+        stage = "client"
+    status = operation.get("status", "indeterminate")
+    if status not in _STATES:
+        status = "indeterminate"
+    # The cause comes from the existing WithdrawalStore.finish() allowlist.
+    # Unknown or legacy entries are deliberately not echoed as raw text.
+    cause = operation.get("message", "")
+    allowed_causes = {
+        "PIN de saque não confirmado pela plataforma.",
+        "Nenhum destino de saque vinculado nesta conta.",
+        "Mais de um destino remoto: seleção precisa de contrato validado.",
+        "Conta de destino sem identificador remoto comprovado.",
+        "Consulta de saldo falhou ou não é suportada.",
+        "Consulta de taxa falhou ou não é suportada.",
+        "Limites de saque não foram identificados.",
+        "Saldo realmente sacável não foi identificado em userInfos.game_gold.",
+        "Saldo disponível inferior ao mínimo permitido.",
+        "Tipo de saque remoto não identificado.",
+        "Taxa do saque não foi confirmada.",
+        "Consultas de saque válidas; envio financeiro requer contrato autorizado.",
+        "Não foi possível consultar a conta de saque.",
+        "Não foi possível carregar o cliente autenticado da página.",
+        "Navegador fora do domínio autorizado.",
+        "O valor realmente sacável e os campos de envio ainda não foram validados no domínio real.",
+        "Dados de saque não retornaram no formato esperado.",
+        "Sessão da conta não corresponde à operação.",
+        "Pré-requisitos não verificados; nenhum saque enviado.",
+    }
+    if cause not in allowed_causes:
+        cause = "Motivo não identificado; consulte o histórico da operação."
+    parts = [f"diagnóstico={stage}", f"status={status}", f"motivo={cause}"]
+    for event in reversed(operation.get("events", [])):
+        if not isinstance(event, dict) or event.get("stage") != stage:
+            continue
+        if event.get("event") not in {"api_accepted", "api_rejected", "request_exception"}:
+            continue
+        for name, title in (("httpStatus", "HTTP"), ("providerCode", "códigoAPI")):
+            value = event.get(name)
+            if type(value) is int and 0 <= value <= 999999:
+                parts.append(f"{title}={value}")
+        break
+    parts.append("saque enviado=não")
+    return "; ".join(parts)
 
 
 class WithdrawalStore:

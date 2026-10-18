@@ -1,7 +1,7 @@
-"""One-click local Pix preparation bound to existing Contas detail records.
+"""Prepare and track Pix-key registration for an existing Nexora account.
 
-The remote Pix registration protocol is not established in this repository.
-This module does not submit financial changes to a third-party platform.
+This module reads local account/key records, reserves one operation and records
+the outcome. The selected Chromium session handles remote platform requests.
 """
 from __future__ import annotations
 

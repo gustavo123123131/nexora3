@@ -1,4 +1,4 @@
-/* Operations tab: compact read-only scaffold matching Contas/Pix. */
+/* Operations workspace styled consistently with Contas and Pix. */
 .operations-local { width: 100%; max-width: 980px; min-height: 100%; margin: 0 auto;
   padding: 20px 0 36px; color: #e8eef7; }
 .operations-heading { display: flex; justify-content: space-between; align-items: flex-start;
@@ -40,7 +40,7 @@
   .operations-panel, .operations-catalog { padding: 13px 12px; }
 }
 
-/* Pix: local-only preparation; all data is masked in this workspace. */
+/* Pix section: registration actions are handled by the selected account session. */
 .operations-pix-panel { margin-top: 14px; }
 .operations-pix-panel > .operations-hint { margin: 0 0 13px; }
 .operations-pix-controls { margin-bottom: 12px; }

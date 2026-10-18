@@ -6,8 +6,8 @@
   const CATALOG = Object.freeze([
     Object.freeze({id: 'pix-bind', title: 'Cadastrar chave Pix',
       description: 'Vinculação de chave à conta selecionada.'}),
-    Object.freeze({id: 'withdraw', title: 'Saques',
-      description: 'Solicitações e acompanhamento de retiradas.'}),
+    Object.freeze({id: 'withdraw', title: 'Consulta de saque',
+      description: 'Consulta de requisitos e histórico de verificações.'}),
     Object.freeze({id: 'account-info', title: 'Informações da conta',
       description: 'Consulta de informações autorizadas da plataforma.'}),
     Object.freeze({id: 'future', title: 'Outras operações',
@@ -52,7 +52,7 @@
     const sections = el('section', 'operations-catalog');
     sections.append(el('h2', '', 'Áreas de operações'),
       el('p', 'operations-hint',
-        'O cadastro Pix está disponível abaixo. Demais operações continuam indisponíveis.'));
+        'O cadastro de chave Pix está disponível abaixo; a verificação de saque pode ser feita nesta aba.'));
     const cards = el('div', 'operations-grid');
     for (const item of CATALOG) {
       const card = el('article', 'operations-card');
@@ -96,9 +96,9 @@
       pixFeedback, historyHeading, history);
     const withdrawPanel = el('section', 'operations-panel operations-withdraw-panel');
     withdrawPanel.append(
-      el('h2', '', 'Solicitar Saque'),
+      el('h2', '', 'Verificar saque'),
       el('p', 'operations-hint',
-        'Verifica destino, limite, saldo usado pelo frontend e taxa da conta selecionada. Não envia saque enquanto o contrato financeiro não estiver validado.')
+        'Consulta o destino, os limites, os dados de saldo e a taxa da conta selecionada quando disponíveis. Esta ação não envia pedido de saque.')
     );
     const checkWithdraw = el('button', 'accounts-details operations-withdraw-check',
       'Verificar conta de saque');

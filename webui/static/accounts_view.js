@@ -389,8 +389,8 @@
             );
             expanded.append(
               textRow('Username', stored.username || 'Não informado'),
-              textRow('Nome real do titular (financeiro)', stored.financialRealName || 'Não confirmado'),
-              textRow('CPF financeiro', stored.financialCpf || 'Não confirmado'),
+              textRow('Nome completo do titular', stored.financialRealName || 'Não confirmado'),
+              textRow('CPF do titular', stored.financialCpf || 'Não confirmado'),
               textRow('Senha da conta', stored.hasLoginPassword ? 'Protegida; requer autorização para mostrar' : 'Indisponível'),
               textRow('PIN de saque para Pix', '387520 (padrão; separado da senha de login)'),
               textRow('PIN opcional no cofre', stored.hasWithdrawPin ? 'Protegido no Windows' : 'Não salvo; não é exigido pelo Pix')
@@ -398,7 +398,7 @@
             const identityForm = document.createElement('section');
             identityForm.className = 'accounts-financial-form';
             const financialTitle = document.createElement('h3');
-            financialTitle.textContent = 'Identidade financeira desta conta';
+            financialTitle.textContent = 'Dados do titular desta conta';
             const owner = document.createElement('input');
             owner.placeholder = 'Nome real completo registrado na plataforma';
             owner.setAttribute('aria-label', 'Nome real completo do titular');
@@ -419,7 +419,7 @@
             const saveOwner = document.createElement('button');
             saveOwner.type = 'button';
             saveOwner.className = 'accounts-details';
-            saveOwner.textContent = 'Salvar titular financeiro';
+            saveOwner.textContent = 'Salvar dados do titular';
             saveOwner.addEventListener('click', async () => {
               if (!consent.checked) { feedback.textContent = 'Confirme a titularidade.'; return; }
               saveOwner.disabled = true;

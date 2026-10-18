@@ -7,8 +7,8 @@ perfis persistentes separados, interface no navegador e gerenciador de proxy.
 
 - Duas abas de abertura: **Mãe** e **Filha**, com links, quantidade de janelas,
   modo desktop/Android/iPhone, pausa entre aberturas e logs.
-- Botão **Abrir Navegadores**: abre os links sem gerar nomes, documentos,
-  emails, usernames, senhas nem registros de contas.
+- Abertura de navegadores pela interface Mãe e Filha, com perfis e
+  dispositivos individuais quando a operação utiliza uma conta salva.
 - Multi-login: cada instância Chromium usa sua própria pasta de perfil;
   diretórios e sessões existentes são preservados.
 - Aba **Proxy**: salvar, listar, editar, remover, testar conectividade TCP,
@@ -16,24 +16,24 @@ perfis persistentes separados, interface no navegador e gerenciador de proxy.
 - Pareamento entre painel privado no Codespaces e agente Windows, com
   proteção CSRF e chave de agente.
 
-## Componentes de cadastro retirados
+## Contas e operações na versão atual
 
-Foram removidos do fluxo e do código ativo:
+- A aba **Contas** apresenta perfis individuais, detalhes de identificação,
+  associação de dispositivo, abertura de sessão e opções de exclusão/backup.
+- A aba **Chave Pix** mantém o cadastro local de chaves. A seção
+  **Operações** possui tentativa de vinculação pela sessão Chromium da
+  conta selecionada; o resultado precisa ser confirmado pela plataforma.
+- A seção **Verificar saque** consulta os pré-requisitos conhecidos e mantém
+  histórico do diagnóstico. **Não realiza envio de pedido de saque** nesta
+  versão; nenhuma ação de `cashV3` está implementada no botão.
+- Existem módulos de preparação/preenchimento e observação de cadastro no
+  código, portanto esta versão não deve ser descrita como um navegador sem
+  recursos de contas. Um clique em Registrar, isoladamente, não comprova a
+  conclusão do cadastro remoto.
 
-- Geração automática de identidades, CPF, telefone, email, username e senha;
-- Preenchimento automático de formulários de cadastro e botão Registro;
-- Observadores do envio de cadastro e tentativas de confirmação;
-- Antigo cadastro/login automático de contas salvas;
-- Aba **Contas**, API de criação de contas e biblioteca de cadastro;
-- O antigo pacote experimental de cadastro ProxyBet.
-
-O projeto **não faz cadastro automático em sites**. A navegação normal nos
-sites abertos permanece a cargo do usuário.
-
-**Dados anteriores não são apagados:** se já houver `accounts.json`,
-`contas/registros.json` ou pastas `__profiles` no Windows, esses arquivos
-permanecem no disco. Eles não são mais produzidos ou consultados pelo novo
-fluxo de abertura de navegadores. Faça backup antes de qualquer limpeza manual.
+**Preservação dos dados:** perfis Chromium, sessões, proxies e backups
+existentes não são alterados por esta revisão documental. Faça backup antes
+de qualquer limpeza ou atualização manual.
 
 ## Instalação e uso
 

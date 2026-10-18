@@ -1,6 +1,6 @@
 # Lixo CPA pelo navegador — adaptação mínima
 
-O Nexora utiliza os módulos originais de navegador de `Settings`, sem o código antigo de criação e cadastro de contas. A pasta `webui` emula os componentes visuais mais usados de `customtkinter` e mostra as telas originais num navegador por uma API Python local. O painel não gera identidades nem preenche formulários de cadastro. O servidor local roda em `127.0.0.1`.
+O Nexora utiliza os módulos de navegador de `Settings`, com gerenciamento de contas, perfis isolados, proxies e recursos de registro presentes nesta versão. A pasta `webui` apresenta os controles em um navegador por uma API Python local. O painel pode se comunicar com o agente Windows associado; quando executado exclusivamente no computador local, usa o endereço `127.0.0.1`.
 
 ## Windows (ambiente original)
 
@@ -34,7 +34,7 @@ O padrão é ativar `uvicorn` com reload: a cada alteração de `.py`, `.js`, `.
 
 - A interface apresenta os controles originais, mas **a aparência de widgets do CustomTkinter é aproximada em CSS**. Não há garantia de fidelidade pixel a pixel em todos os tamanhos de tela.
 - As instâncias Playwright permanecem **no computador onde o servidor Python roda**, em janelas Chromium separadas ou modo headless, como antes. Elas **não são embutidas** em abas do navegador do painel. Sites de terceiros não permitem incorporação universal e os perfis do Chromium são vinculados ao navegador controlado.
-- A aba **Área Pix** pode iniciar sessões de bancos externas ao painel; sua automação exige login/autorizações e acesso às integrações pré-existentes. Nenhuma ação real de cadastro, saque ou transação bancária é feita nos testes.
+- A aba **Chave Pix** gerencia registros locais. A seção **Operações** pode tentar vincular a chave na sessão autenticada da conta selecionada. A seção **Verificar saque** consulta informações e não envia pedidos. Os testes automatizados não devem executar operações externas.
 - `tkinter.messagebox` e `tkinter.simpledialog` são transportados para prompts/alertas nativos do navegador. Janelas de seleção personalizadas de `CTkToplevel` são modais HTML.
 - A interface do painel usa um único estado global do programa: **apenas um usuário local** deve utilizá-la. O servidor inclui proteção básica contra acesso por host/origem estranhos. Nunca altere o endereço do servidor para `0.0.0.0` sem adicionar autenticação.
 - Os diretórios `Settings/Criar_Mae/__profiles` e `Settings/Criar_Filha/__profiles` incluem cookies, sessões e caches do Chromium. Devem continuar locais e privados. Arquivos do projeto original foram mantidos no ZIP final. Não faça upload desse ZIP para locais públicos.
@@ -45,4 +45,4 @@ O padrão é ativar `uvicorn` com reload: a cada alteração de `.py`, `.js`, `.
 - Se o Playwright disser que não encontra o navegador: `py -m playwright install chromium`.
 - Para alterar HTML/CSS, edite `webui/static/`. Para adicionar suporte a widgets, edite `webui/ctk_compat.py`. O código da regra de negócio está nas pastas originais de `Settings/`.
 
-**Limitação de testes**: os testes automatizados locais exercitam inicialização, abas, controles, sincronização de opções e bloqueio de origens, mas não simulam logins de bancos ou cadastros em serviços externos.
+**Limitação de testes**: os testes automatizados locais exercitam inicialização, abas, controles, vinculação de sessões e fluxos simulados, mas não validam operações reais em plataformas externas.

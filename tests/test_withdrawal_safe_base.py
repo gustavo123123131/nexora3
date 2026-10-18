@@ -86,3 +86,21 @@ def test_read_only_browser_checks_balance_and_fee_without_sending_cash():
             assert result["stage"] == "contract"
         finally:
             browser.close()
+
+
+def test_diagnostic_message_exposes_block_cause_but_not_raw_data():
+    from nexora_accounts.withdrawal_operations import describe_preflight_for_log
+
+    stored = {"stage": "withdrawInfoV2", "status": "blocked",
+              "message": "PIN de saque não confirmado pela plataforma.",
+              "events": [{"stage": "withdrawInfoV2", "event": "api_accepted",
+                          "httpStatus": 200, "providerCode": 1,
+                          "secret": "DO_NOT_PRINT"}]}
+    rendered = describe_preflight_for_log(stored)
+    assert "motivo=PIN de saque não confirmado pela plataforma." in rendered
+    assert "HTTP=200" in rendered and "códigoAPI=1" in rendered
+    assert "DO_NOT_PRINT" not in rendered
+    assert "saque enviado=não" in rendered
+
+    untrusted = dict(stored, message="token-FAKE-SECRET")
+    assert "FAKE-SECRET" not in describe_preflight_for_log(untrusted)
