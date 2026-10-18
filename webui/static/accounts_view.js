@@ -392,8 +392,7 @@
               textRow('Nome completo do titular', stored.financialRealName || 'Não confirmado'),
               textRow('CPF do titular', stored.financialCpf || 'Não confirmado'),
               textRow('Senha da conta', stored.hasLoginPassword ? 'Protegida; requer autorização para mostrar' : 'Indisponível'),
-              textRow('PIN de saque para Pix', '387520 (padrão; separado da senha de login)'),
-              textRow('PIN opcional no cofre', stored.hasWithdrawPin ? 'Protegido no Windows' : 'Não salvo; não é exigido pelo Pix')
+              textRow('PIN padrão de Pix e saque', '387520 (validado pela plataforma; sem configuração no cofre)')
             );
             const identityForm = document.createElement('section');
             identityForm.className = 'accounts-financial-form';
@@ -435,37 +434,8 @@
                 feedback.textContent = 'Não foi possível salvar: ' + error.message;
               } finally { saveOwner.disabled = false; }
             });
-            const pin = document.createElement('input');
-            pin.type = 'password';
-            pin.inputMode = 'numeric';
-            pin.maxLength = 6;
-            pin.autocomplete = 'new-password';
-            pin.placeholder = 'PIN de saque existente (6 números)';
-            pin.setAttribute('aria-label', 'PIN de saque desta conta');
-            const useTestPin = document.createElement('button');
-            useTestPin.type = 'button';
-            useTestPin.className = 'accounts-details';
-            useTestPin.textContent = 'Usar PIN de saque de teste (387520)';
-            useTestPin.addEventListener('click', () => {
-              // Explicit operator choice. Does NOT change login or provider PIN.
-              pin.value = '387520';
-              feedback.textContent = 'PIN de teste preenchido somente para saque. Salve apenas se já for o PIN desta conta na plataforma.';
-            });
-            const savePin = document.createElement('button');
-            savePin.type = 'button';
-            savePin.className = 'accounts-details';
-            savePin.textContent = 'Salvar PIN no cofre Windows';
-            savePin.addEventListener('click', async () => {
-              savePin.disabled = true;
-              try {
-                await post('/api/local-profiles/withdraw-pin', {
-                  profileId: stored.id, accountId: stored.accountId, pin: pin.value
-                });
-                feedback.textContent = 'PIN de saque protegido separadamente da senha de login.';
-              } catch (error) {
-                feedback.textContent = 'Não foi possível salvar o PIN.';
-              } finally { pin.value = ''; savePin.disabled = false; }
-            });
+            // Pix and withdrawal use the same operator-defined default PIN.
+            // No extra PIN entry or Windows vault setup is needed in Contas.
             const reveal = document.createElement('button');
             reveal.type = 'button';
             reveal.className = 'accounts-details';
@@ -497,7 +467,7 @@
               } finally { reveal.disabled = false; }
             });
             identityForm.append(financialTitle, owner, cpf, acknowledged, saveOwner,
-              pin, useTestPin, savePin, reveal, feedback);
+              reveal, feedback);
             expanded.append(identityForm);
             if (stored.runtimeConfig) {
               expanded.append(textRow('User-Agent salvo', stored.runtimeConfig.user_agent));
