@@ -21,6 +21,8 @@ HTML = "<html><body><script src='/commonChunk.test.js' type='module'></script></
 @pytest.mark.parametrize("scenario,expected,expected_posts", [
     ("ok", "confirmed", 1),
     ("not-listed", "accepted_unconfirmed", 1),
+    ("masked-growing", "confirmed", 1),
+    ("masked-same-count", "accepted_unconfirmed", 1),
     ("bad-pin", "failed", 0),
     ("security-failure", "failed", 0),
     ("setup-ok", "confirmed", 1),
@@ -56,6 +58,15 @@ def test_real_chromium_routes_native_pix_api_without_external_network(
           const list=window.__bound || "SCENARIO"==="already" ?
             [{account:"11987654321"}]:[];
           if(window.__bound && "SCENARIO"==="not-listed")list.length=0;
+          if("SCENARIO"==="masked-growing"){
+            list.length=0;
+            list.push({account:"22888888888"});
+            if(window.__bound)list.push({account:"(**) *****-****"});
+          }
+          if("SCENARIO"==="masked-same-count"){
+            list.length=0;
+            list.push({account:"22888888888"});
+          }
           return out({cpf:"52998224725",withdrawMethodList:[
             {withdrawType:7,subTypes:["PHONE","EMAIL","CPF","EVP"]}],
             withdrawAccounts:list});
@@ -134,6 +145,14 @@ def test_real_chromium_routes_native_pix_api_without_external_network(
                     "withdrawalPassword": "387520",
                     "addWithdrawAccountType": 5,
                 }
+            if scenario == "masked-growing":
+                assert result["state"] == "confirmed"
+                assert any(row["event"] == "list_growth_confirmed"
+                           for row in result["trace"])
+            if scenario == "masked-same-count":
+                assert result["state"] == "accepted_unconfirmed"
+                assert any(row["event"] == "list_no_growth"
+                           for row in result["trace"])
             audit=json.dumps(result,ensure_ascii=False)
             for secret in (PIN, CPF, KEY, "Maria Silva"):
                 assert secret not in audit
