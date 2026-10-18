@@ -261,7 +261,7 @@ class AccountLauncher:
 
 
     def bind_pix_key(self, profile_id: int, account_id: str, key_id: str,
-                     key_type: str, *, timeout=50):
+                     key_type: str, *, initialize_pin=False, timeout=50):
         """Run a single Pix request on THIS account's existing Chromium worker."""
         from nexora_accounts.browser_sessions import active_account_session
         from nexora_accounts.local_profiles import LocalProfileError
@@ -271,6 +271,8 @@ class AccountLauncher:
             _pix_live(profile_id, "inicio", "solicitação recebida; validando conta e navegador")
         if type(profile_id) is not int or not isinstance(account_id, str):
             raise PixPreparationError("Conta selecionada inválida.")
+        if type(initialize_pin) is not bool:
+            raise PixPreparationError("Opção de PIN inicial inválida.")
         profile = LocalProfileStore().public_detail(profile_id)
         if profile.get("accountId") != account_id:
             raise PixPreparationError("Conta selecionada divergente.")
@@ -287,6 +289,7 @@ class AccountLauncher:
         reservation = store.begin_remote(
             profile_id=profile_id, account_id=account_id,
             key_id=key_id, key_type=key_type, run_id=run_id,
+            initialize_pin=initialize_pin,
         )
         operation = reservation["operation"]
         if reservation["reused"]:
@@ -359,7 +362,8 @@ class AccountLauncher:
             # O PIN de saque comum não é a senha de login.
             # Nunca realizar leitura de senha da conta para cadastro Pix.
             result = bind_in_page(page, name=name,
-                cpf=cpf, pin=PIX_WITHDRAW_PIN, key=key, kind=op["keyType"])
+                cpf=cpf, pin=PIX_WITHDRAW_PIN, key=key, kind=op["keyType"],
+                initialize_pin=op.get("initializeWithdrawPin") is True)
         except Exception as exc:
             _pix_live(profile_id, operation_id,
                       f"falha interna no worker: classe={type(exc).__name__}; nenhum dado sensível registrado")
