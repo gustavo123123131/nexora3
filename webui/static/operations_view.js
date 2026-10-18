@@ -278,13 +278,14 @@
       updatePixPreview();
       pixFeedback.textContent = 'Cadastrando chave Pix pela sessão Chromium desta conta...';
       try {
-        const result = await post('/api/operations/pix/bind', {
+        const request = {
           profileId: selected.profileId,
           accountId: selected.accountId,
           keyId: key.id,
-          keyType: typeSelector.value,
-          initializeWithdrawPin: pinSetupToggle.checked
-        });
+          keyType: typeSelector.value
+        };
+        if (pinSetupToggle.checked) request.initializeWithdrawPin = true;
+        const result = await post('/api/operations/pix/bind', request);
         if (selectedAccount && selectedAccount.profileId === selected.profileId &&
             selectedAccount.accountId === selected.accountId) {
           const op = result.operation || {};
