@@ -19,7 +19,7 @@ from nexora_accounts.pix_key_store import _disk_lock
 _LOCK = threading.RLock()
 _STATES = {"queued", "blocked", "indeterminate"}
 _STAGES = {"local", "site", "client", "withdrawInfoV2",
-           "gameCenter/gold", "contract"}
+           "gameCenter/gold", "getWithdrawFee", "contract"}
 _EVENTS = {"request_start", "api_accepted", "api_rejected",
            "request_exception", "result", "shape_checked"}
 
@@ -150,6 +150,13 @@ class WithdrawalStore:
             "Mais de um destino remoto: seleção precisa de contrato validado.",
             "Conta de destino sem identificador remoto comprovado.",
             "Consulta de saldo falhou ou não é suportada.",
+            "Consulta de taxa falhou ou não é suportada.",
+            "Limites de saque não foram identificados.",
+            "Saldo realmente sacável não foi identificado em userInfos.game_gold.",
+            "Saldo disponível inferior ao mínimo permitido.",
+            "Tipo de saque remoto não identificado.",
+            "Taxa do saque não foi confirmada.",
+            "Consultas de saque válidas; envio financeiro requer contrato autorizado.",
             "Não foi possível consultar a conta de saque.",
             "Não foi possível carregar o cliente autenticado da página.",
             "Navegador fora do domínio autorizado.",
