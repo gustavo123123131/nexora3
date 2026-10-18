@@ -92,13 +92,16 @@ def test_real_chromium_routes_native_pix_api_without_external_network(
             context.route("**/*",route_handler)
             page = context.new_page()
             page.goto(SITE,wait_until="domcontentloaded")
-            setup = scenario.startswith("setup-")
+            setup = scenario.startswith("setup-") or scenario == "security-failure"
             result=bind_in_page(page, name="Maria Silva",cpf=CPF,pin=PIN,
                                 key=KEY,kind="PHONE",initialize_pin=setup)
             assert result["state"]==expected, result
             calls=page.evaluate("""() => window.__calls.map(x=>x.url)""")
-            assert calls[0] == "/api/member/user/security/status"
-            assert any(row["stage"] == "security/status" for row in result["trace"])
+            if setup:
+                assert calls[0] == "/api/member/user/security/status"
+                assert any(row["stage"] == "security/status" for row in result["trace"])
+            else:
+                assert calls[0] == "/api/finance/certify/withdrawInfoV2")
             if scenario == "security-failure":
                 assert result["stage"] == "security/status"
                 assert len(calls) == 1
@@ -110,7 +113,7 @@ def test_real_chromium_routes_native_pix_api_without_external_network(
                 assert result["stage"] == "verifyWithdrawPass"
                 assert calls[2].endswith("/verifyWithdrawPass")
                 assert len(calls) == 3
-            if setup:
+            if setup and scenario != "security-failure":
                 assert calls[1].endswith("/modifyWithdrawPass")
                 if scenario != "setup-failure":
                     assert calls[2].endswith("/verifyWithdrawPass")
