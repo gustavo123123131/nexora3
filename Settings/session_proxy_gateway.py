@@ -242,6 +242,9 @@ def verify_browser_exit_ip(page, gateway, *, timeout_ms=10000):
     failures = []
     for host, url in targets:
         previous = gateway.connect_count(host)
+        previous_bytes = (gateway.traffic_count(host)
+                          if callable(getattr(gateway, "traffic_count", None))
+                          else None)
         try:
             separator = "&" if "?" in url else "?"
             response = page.goto(
@@ -256,7 +259,12 @@ def verify_browser_exit_ip(page, gateway, *, timeout_ms=10000):
             if not ip_value:
                 failures.append("IP_CHECK_INVALID_REPLY")
                 continue
-            if gateway.connect_count(host) <= previous:
+            connect_observed = gateway.connect_count(host) > previous
+            traffic_observed = (
+                previous_bytes is not None
+                and gateway.traffic_count(host) > previous_bytes
+            )
+            if not (connect_observed or traffic_observed):
                 saw_direct_success = True
                 continue
             return ip_value
