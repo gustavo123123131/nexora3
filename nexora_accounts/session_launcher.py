@@ -361,9 +361,10 @@ class AccountLauncher:
                       "nome e CPF lidos da conta; chave Pix recuperada; PIN de saque configurado")
             # O PIN de saque comum não é a senha de login.
             # Nunca realizar leitura de senha da conta para cadastro Pix.
+            extra = ({"initialize_pin": True}
+                     if op.get("initializeWithdrawPin") is True else {})
             result = bind_in_page(page, name=name,
-                cpf=cpf, pin=PIX_WITHDRAW_PIN, key=key, kind=op["keyType"],
-                initialize_pin=op.get("initializeWithdrawPin") is True)
+                cpf=cpf, pin=PIX_WITHDRAW_PIN, key=key, kind=op["keyType"], **extra)
         except Exception as exc:
             _pix_live(profile_id, operation_id,
                       f"falha interna no worker: classe={type(exc).__name__}; nenhum dado sensível registrado")
