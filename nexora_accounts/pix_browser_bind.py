@@ -165,11 +165,25 @@ _JS = r"""async ({name, cpf, pin, key, kind, initializePin=false}) => {
     bindAccepted=true;
     stage='withdrawInfoV2-depois';
     const after=await post('finance/certify/withdrawInfoV2');
-    mark(stage, 'list_check', {responseShape:list(after) ? 'list_found' : 'list_missing'});
-    if (listed(list(after),key)) return safe('confirmed',stage,
-      'Chave Pix confirmada na lista de saques da conta.');
+    const afterList=list(after);
+    mark(stage, 'list_check', {responseShape:afterList ? 'list_found' : 'list_missing'});
+    if (listed(afterList,key)) {
+      mark(stage, 'key_matched');
+      return safe('confirmed',stage,
+        'Chave Pix identificada na lista de saques da conta.');
+    }
+    // Some provider lists mask the saved key. The operator's working flow
+    // therefore also checks whether a new account entry appeared after an
+    // accepted bind. Never infer success from merely finding an array.
+    if (Array.isArray(beforeList) && Array.isArray(afterList) &&
+        afterList.length > beforeList.length) {
+      mark(stage, 'list_growth_confirmed');
+      return safe('confirmed',stage,
+        'API aceitou o cadastro e a listagem ganhou nova entrada; chave individual não identificável.');
+    }
+    mark(stage,'list_no_growth');
     return safe('accepted_unconfirmed',stage,
-      'O cadastro foi aceito pela API, mas a chave ainda não apareceu na listagem.');
+      'API aceitou o cadastro, mas a consulta final não identificou a chave nem acréscimo na listagem.');
   } catch (error) {
     const code=error instanceof ProviderError ? error.code : null;
     if (bindAccepted) return safe('accepted_unconfirmed',stage,
@@ -211,7 +225,9 @@ def bind_in_page(page, *, name: str, cpf: str, pin: str, key: str,
         allowed_events = {"request_start", "request_exception", "api_accepted",
                           "api_rejected", "result", "list_check",
                           "authorization_missing", "authorization_received",
-                          "two_step_required", "withdraw_pin_initialized"}
+                          "two_step_required", "withdraw_pin_initialized",
+                          "key_matched", "list_growth_confirmed",
+                          "list_no_growth"}
         allowed_shapes = {"exception", "missing_code", "wrapped_code",
                           "direct_code", "list_found", "list_missing"}
         trace = []
