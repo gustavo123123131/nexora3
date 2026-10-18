@@ -163,7 +163,12 @@ def _open_socket(host: str, port: int) -> socket.socket:
     return socket.create_connection((host, port), timeout=20)
 
 
-def _pipe_bidirectional(a: socket.socket, b: socket.socket):
+def _pipe_bidirectional(a: socket.socket, b: socket.socket, *, on_forward=None):
+    """Forward a tunnel, optionally counting successfully forwarded bytes.
+
+    The callback only receives byte counts, never payloads or credentials.
+    Legacy callers do not need to supply it.
+    """
     sockets = [a, b]
     try:
         while True:
@@ -187,6 +192,12 @@ def _pipe_bidirectional(a: socket.socket, b: socket.socket):
                     dst.sendall(data)
                 except Exception:
                     return
+                if on_forward is not None:
+                    try:
+                        on_forward(len(data))
+                    except Exception:
+                        # Instrumentation must never affect the active tunnel.
+                        pass
     finally:
         for s in (a, b):
             try:
