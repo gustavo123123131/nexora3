@@ -147,6 +147,36 @@
             el('span', '', 'Resultado: ' + (op.message || '—')),
             el('span', '', 'Etapa: ' + (op.stage || '—'))
           );
+          if (Array.isArray(op.events) && op.events.length) {
+            const trace = el('details', 'operations-pix-trace');
+            const rows = el('div', 'operations-pix-trace-lines');
+            const stages = {
+              withdrawInfoV2: 'Destino e limites',
+              'gameCenter/gold': 'Saldo de jogo',
+              getWithdrawFee: 'Cotação da taxa',
+              contract: 'Validação final'
+            };
+            const events = {
+              request_start: 'Requisição iniciada',
+              api_accepted: 'Resposta aceita',
+              api_rejected: 'Resposta recusada',
+              request_exception: 'Falha de comunicação',
+              shape_checked: 'Formato inspecionado',
+              result: 'Resultado da verificação'
+            };
+            for (const line of op.events) {
+              const words = [
+                stages[line.stage] || line.stage || 'API',
+                events[line.event] || line.event || ''
+              ];
+              if (Number.isInteger(line.httpStatus)) words.push('HTTP ' + line.httpStatus);
+              if (Number.isInteger(line.providerCode)) words.push('Código API ' + line.providerCode);
+              if (Number.isInteger(line.elapsedMs)) words.push(line.elapsedMs + ' ms');
+              rows.append(el('div', 'operations-pix-trace-line', words.filter(Boolean).join(' | ')));
+            }
+            trace.append(el('summary', '', 'Ver etapas (' + op.events.length + ')'), rows);
+            entry.append(trace);
+          }
           withdrawHistory.append(entry);
         }
       } catch (_) {
