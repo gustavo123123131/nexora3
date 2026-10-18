@@ -52,6 +52,61 @@ def _live(profile_id, op_id, message):
         pass
 
 
+def diagnostic_log_summary(operation: dict) -> str:
+    """Human-readable, sanitized preflight result for the global live log.
+
+    Only persistently validated fields from WithdrawalStore.finish are used;
+    never include raw network responses, session data or payment details.
+    """
+    stage = operation.get("stage")
+    if stage not in _STAGES:
+        stage = "client"
+    status = operation.get("status")
+    if status not in _STATES:
+        status = "indeterminate"
+    message = operation.get("message", "")
+    # This helper is fed persisted records, where finish() has already
+    # allowlisted the message. Avoid arbitrary message text from old records.
+    safe_messages = {
+        "PIN de saque não confirmado pela plataforma.",
+        "Nenhum destino de saque vinculado nesta conta.",
+        "Mais de um destino remoto: seleção precisa de contrato validado.",
+        "Conta de destino sem identificador remoto comprovado.",
+        "Consulta de saldo falhou ou não é suportada.",
+        "Consulta de taxa falhou ou não é suportada.",
+        "Limites de saque não foram identificados.",
+        "Saldo realmente sacável não foi identificado em userInfos.game_gold.",
+        "Saldo disponível inferior ao mínimo permitido.",
+        "Tipo de saque remoto não identificado.",
+        "Taxa do saque não foi confirmada.",
+        "Consultas de saque válidas; envio financeiro requer contrato autorizado.",
+        "Não foi possível consultar a conta de saque.",
+        "Não foi possível carregar o cliente autenticado da página.",
+        "Navegador fora do domínio autorizado.",
+        "O valor realmente sacável e os campos de envio ainda não foram validados no domínio real.",
+        "Dados de saque não retornaram no formato esperado.",
+        "Sessão da conta não corresponde à operação.",
+        "Pré-requisitos não verificados; nenhum saque enviado.",
+        "Consulta dos pré-requisitos agendada.",
+    }
+    if message not in safe_messages:
+        message = "Motivo não identificado; confira o histórico."
+    last = None
+    for event in operation.get("events", []):
+        if (isinstance(event, dict) and event.get("stage") == stage
+            and event.get("event") in {"api_accepted", "api_rejected", "request_exception"}):
+            last = event
+    fields = [f"diagnóstico={stage}", f"status={status}",
+              f"motivo={message}"]
+    if last:
+        for key, label in (("httpStatus", "http"), ("providerCode", "codigoAPI")):
+            value = last.get(key)
+            if type(value) is int and 0 <= value <= 999999:
+                fields.append(f"{label}={value}")
+    fields.append("saque enviado=não")
+    return "; ".join(fields)
+
+
 class WithdrawalStore:
     def __init__(self, path=None, *, profiles=None):
         self.path = Path(path) if path else _path()
