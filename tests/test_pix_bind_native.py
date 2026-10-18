@@ -101,7 +101,7 @@ def test_real_chromium_routes_native_pix_api_without_external_network(
                 assert calls[0] == "/api/member/user/security/status"
                 assert any(row["stage"] == "security/status" for row in result["trace"])
             else:
-                assert calls[0] == "/api/finance/certify/withdrawInfoV2")
+                assert calls[0] == "/api/finance/certify/withdrawInfoV2"
             if scenario == "security-failure":
                 assert result["stage"] == "security/status"
                 assert len(calls) == 1
