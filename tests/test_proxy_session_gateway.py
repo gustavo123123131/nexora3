@@ -353,3 +353,90 @@ def test_upstream_refused_connect_is_not_confused_with_authentication():
         server.shutdown()
         server.server_close()
         worker.join(timeout=2)
+
+
+def test_reused_https_connect_is_not_misdiagnosed_as_browser_bypass():
+    """A cached HTTP/2 tunnel has more TLS bytes but no additional CONNECT."""
+    from Settings.session_proxy_gateway import (
+        verify_browser_exit_ip, refresh_browser_exit_ip
+    )
+    class ReusedGateway:
+        def __init__(self):
+            self.tunnels = 1
+            self.bytes = 200
+        def connect_count(self, host):
+            assert host == "api.ipify.org"
+            return self.tunnels
+        def traffic_count(self, host):
+            assert host == "api.ipify.org"
+            return self.bytes
+    gateway = ReusedGateway()
+
+    class ReusedPage:
+        def goto(self, url, *, wait_until, timeout):
+            gateway.bytes += 170
+            return FakeIpResponse()
+        def locator(self, selector):
+            assert selector == "body"
+            return FakeIpLocator(self)
+        text = '{"ip":"203.0.113.18"}'
+        def evaluate(self, script, arg):
+            gateway.bytes += 110
+            return '{"ip":"203.0.113.19"}'
+
+    page = ReusedPage()
+    assert verify_browser_exit_ip(page, gateway) == "203.0.113.18"
+    assert gateway.tunnels == 1
+    assert refresh_browser_exit_ip(page, gateway) == "203.0.113.19"
+    assert gateway.tunnels == 1
+
+
+def test_reused_tunnel_requires_real_new_traffic_for_a_refresh():
+    import pytest
+    from Settings.session_proxy_gateway import refresh_browser_exit_ip, ProxyConnectionError
+
+    class FakeGateway:
+        def connect_count(self, host):
+            return 2
+        def traffic_count(self, host):
+            return 1000
+
+    class UnroutedPage:
+        def evaluate(self, script, arg):
+            return '{"ip":"203.0.113.19"}'
+
+    with pytest.raises(ProxyConnectionError) as caught:
+        refresh_browser_exit_ip(UnroutedPage(), FakeGateway())
+    assert caught.value.code == "browser_proxy_bypassed"
+
+
+def test_forwarded_tls_bytes_are_counted_without_exporting_payload():
+    import socket
+    from Settings.local_proxy_gateway import _pipe_bidirectional
+
+    client, gateway_client = socket.socketpair()
+    gateway_upstream, upstream = socket.socketpair()
+    observed = []
+    thread = threading.Thread(
+        target=_pipe_bidirectional,
+        args=(gateway_client, gateway_upstream),
+        kwargs={"on_forward": lambda size: observed.append(size)},
+        daemon=True,
+    )
+    try:
+        client.settimeout(2)
+        upstream.settimeout(2)
+        thread.start()
+        client.sendall(b"request")
+        assert upstream.recv(7) == b"request"
+        upstream.sendall(b"reply")
+        assert client.recv(5) == b"reply"
+        client.shutdown(socket.SHUT_WR)
+        upstream.shutdown(socket.SHUT_WR)
+        thread.join(2)
+        assert not thread.is_alive()
+        assert sum(observed) == 12
+        assert all(isinstance(n, int) for n in observed)
+    finally:
+        client.close()
+        upstream.close()
