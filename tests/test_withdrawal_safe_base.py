@@ -86,3 +86,30 @@ def test_read_only_browser_checks_balance_and_fee_without_sending_cash():
             assert result["stage"] == "contract"
         finally:
             browser.close()
+
+
+def test_blocked_preflight_global_log_gives_precise_reason_without_secrets():
+    from nexora_accounts.withdrawal_operations import diagnostic_log_summary
+
+    message = diagnostic_log_summary({
+        "stage": "withdrawInfoV2", "status": "blocked",
+        "message": "PIN de saque não confirmado pela plataforma.",
+        "events": [
+            {"stage": "withdrawInfoV2", "event": "api_accepted",
+             "httpStatus": 200, "providerCode": 1,
+             "rawSecret": "NEVER_PRINT_ME"},
+        ],
+    })
+    assert "motivo=PIN de saque não confirmado pela plataforma." in message
+    assert "http=200" in message and "codigoAPI=1" in message
+    assert "saque enviado=não" in message
+    assert "NEVER_PRINT_ME" not in message
+
+    malicious = diagnostic_log_summary({
+        "stage": "withdrawInfoV2", "status": "blocked",
+        "message": "token=secret-token-PIN",
+        "events": [{"stage": "withdrawInfoV2", "event": "api_accepted",
+                    "providerCode": 1, "secret": "sensitive"}],
+    })
+    assert "secret-token" not in malicious and "sensitive" not in malicious
+    assert "Motivo não identificado" in malicious
