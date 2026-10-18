@@ -70,7 +70,9 @@ def test_remote_attempt_isolated_persisted_and_never_leaks_credentials(tmp_path)
     raw=(tmp_path/"pix-operations.json").read_text()
     for sensitive in ("11987654321","Maria Silva","52998224725","772104783","387520"):
         assert sensitive not in raw
-    assert store.list(11)["operations"][0]["status"]=="confirmed"
+    assert any(item["operationId"]==op["operationId"] and
+               item["status"]=="confirmed"
+               for item in store.list(11)["operations"])
 
 
 @pytest.mark.parametrize("change,expected", [
