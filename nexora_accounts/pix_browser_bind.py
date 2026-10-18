@@ -115,8 +115,8 @@ _JS = r"""async ({name, cpf, pin, key, kind, initializePin=false}) => {
       typeof row?.[field] === 'string' &&
       row[field].replace(/\s/g, '') === value));
   try {
-    await post('member/user/security/status');
     if (initializePin === true) {
+      await post('member/user/security/status');
       stage='modifyWithdrawPass';
       await post('member/user/security/modifyWithdrawPass', {
         withdraw_pass:pin, secondVerify:{type:0}
