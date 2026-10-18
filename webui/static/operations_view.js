@@ -94,7 +94,21 @@
     const history = el('div', 'operations-history');
     pixPanel.append(pixControls, preview, prepareButton,
       pixFeedback, historyHeading, history);
-    node.append(heading, selectorPanel, pixPanel, sections);
+    const withdrawPanel = el('section', 'operations-panel operations-withdraw-panel');
+    withdrawPanel.append(
+      el('h2', '', 'Solicitar Saque'),
+      el('p', 'operations-hint',
+        'Confira os dados de retirada vinculados à conta. O envio financeiro ainda não está habilitado.')
+    );
+    const checkWithdraw = el('button', 'accounts-details operations-withdraw-check',
+      'Verificar conta de saque');
+    checkWithdraw.type = 'button';
+    checkWithdraw.disabled = true;
+    const withdrawMessage = el('p', 'operations-withdraw-feedback');
+    withdrawMessage.setAttribute('role', 'status');
+    const withdrawHistory = el('div', 'operations-history');
+    withdrawPanel.append(checkWithdraw, withdrawMessage, withdrawHistory);
+    node.append(heading, selectorPanel, pixPanel, withdrawPanel, sections);
 
     let listRevision = 0;
     let detailRevision = 0;
