@@ -50,7 +50,7 @@ def test_operations_selects_correct_internal_account_and_labels_observed_uid():
             open_view(page)
             expect(page.get_by_role("heading", name="Operações", exact=True)).to_be_visible()
             expect(page.locator(".operations-card")).to_have_count(4)
-            expect(page.get_by_text("Não disponível")).to_have_count(3)
+            expect(page.get_by_text("Não disponível")).to_have_count(2)
             chooser = page.get_by_role("combobox", name="Selecionar conta para operações")
             expect(chooser.locator("option")).to_have_count(4)
             assert page.evaluate("window.ops.getSelectedAccount()") is None
@@ -80,7 +80,8 @@ def test_operations_selects_correct_internal_account_and_labels_observed_uid():
             assert page.evaluate("window.ops.getSelectedAccount()") is None
 
             assert all(path == "/api/local-profiles" or
-                path.startswith("/api/local-profiles/detail?id=")
+                path.startswith("/api/local-profiles/detail?id=") or
+                path.startswith("/api/operations/withdraw/orders?profileId=")
                 for path in page.evaluate("window.calls"))
             assert page.locator(".operations-card button").count() == 0
             assert page.locator(".operations-local form").count() == 0
@@ -293,7 +294,7 @@ def test_direct_pix_preparation_uses_account_details_without_rechecking_id():
             detail = page.locator(".operations-account-details")
             expect(detail).to_contain_text("Marina Souza")
             expect(detail).to_contain_text("usuario52")
-            expect(detail).to_contain_text("Padrão do sistema (387520)")
+            expect(detail).to_contain_text("Protegido no cofre Windows")
             assert "52998224725" not in detail.inner_text()
             assert "Não informado" not in detail.inner_text()
             for obsolete in ("Testar API na conta aberta", "Verificar ID da plataforma",
@@ -312,5 +313,60 @@ def test_direct_pix_preparation_uses_account_details_without_rechecking_id():
                 "profileId":52,"accountId":"acct-local-52",
                 "keyId":"key-52","keyType":"PHONE"
             }
+        finally:
+            browser.close()
+
+
+def test_submit_button_uses_only_selected_account_and_does_not_resubmit_pending():
+    """A single click on the UI sends an account selector, never PIN or tokens."""
+    with sync_playwright() as pw:
+        browser=pw.chromium.launch(headless=True)
+        try:
+            page=browser.new_page()
+            page.set_content('<main id="mount"></main>')
+            page.add_script_tag(path=str(ROOT/'webui/static/operations_view.js'))
+            page.evaluate('''() => {
+              const account={id:81,accountId:'account-81',label:'Conta 81',
+                             platformUserId:'81',hasWithdrawPin:true};
+              window.posts=[];window.orderState=[];
+              const get=async path => {
+                if(path==='/api/local-profiles')return {profiles:[account]};
+                if(path.includes('/api/local-profiles/detail?id='))return {...account};
+                if(path.includes('/api/operations/withdraw/orders'))return {orders:window.orderState};
+                if(path.includes('/api/operations/withdraw/history'))return {operations:[]};
+                if(path==='/api/pix-keys')return {keys:[]};
+                if(path.includes('/api/operations/pix/history'))return {operations:[]};
+                throw Error('unexpected '+path);
+              };
+              const post=async(path,data)=>{
+                window.posts.push({path,data});
+                if(path==='/api/operations/withdraw/submit'){
+                  window.orderState=[{status:'pending',orderNo:'ref-555',
+                    message:'Pedido em acompanhamento; pagamento não confirmado.',amount:26,
+                    providerStatus:1}];
+                  return {operation:window.orderState[0],reused:false};
+                }
+                if(path==='/api/operations/withdraw/refresh')return {operation:window.orderState[0]};
+                throw Error('unexpected post '+path);
+              };
+              const view=NexoraOperationsView.create({get,post});
+              document.querySelector('#mount').append(view.node);
+              view.onShow();
+            }''')
+            page.get_by_role('combobox',name='Selecionar conta para operações').select_option('81')
+            action=page.get_by_role('button',name='Sacar — enviar pedido real')
+            expect(action).to_be_enabled()
+            action.click()
+            expect(page.locator('.operations-withdraw-feedback')).to_contain_text('Pedido em acompanhamento')
+            expect(page.locator('.operations-withdraw-panel .operations-history').last).to_contain_text('ref-555')
+            expect(action).to_be_disabled()
+            assert page.evaluate('window.posts.filter(x=>x.path.endsWith("/submit"))')==[
+                {'path':'/api/operations/withdraw/submit','data':{
+                    'profileId':81,'accountId':'account-81'}}]
+            update=page.get_by_role('button',name='Atualizar estado do pedido')
+            expect(update).to_be_enabled()
+            update.click()
+            expect(action).to_be_disabled()
+            assert len(page.evaluate('window.posts.filter(x=>x.path.endsWith("/submit"))'))==1
         finally:
             browser.close()

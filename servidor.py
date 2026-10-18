@@ -527,6 +527,49 @@ async def withdrawal_preflight(body: dict):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@app.get('/api/operations/withdraw/orders')
+async def withdrawal_orders(profileId: int):
+    """Status of requests submitted by one saved profile."""
+    from nexora_accounts.withdrawal_submit import WithdrawalSubmissionStore, WithdrawalSubmissionError
+    from starlette.concurrency import run_in_threadpool
+    try:
+        return await run_in_threadpool(lambda: WithdrawalSubmissionStore().list(profileId))
+    except WithdrawalSubmissionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post('/api/operations/withdraw/submit')
+async def withdrawal_submit(body: dict):
+    """User explicitly requests a real withdrawal on exactly one active account.
+
+    Never accept PIN, cookies, token, amount or remote destination from the request body.
+    All prerequisites are checked in the owning Chromium worker.
+    """
+    from nexora_accounts.withdrawal_submit import WithdrawalSubmissionError
+    from nexora_accounts.local_profiles import LocalProfileError
+    from nexora_accounts.session_launcher import ACCOUNT_LAUNCHER
+    from starlette.concurrency import run_in_threadpool
+    try:
+        return await run_in_threadpool(lambda: ACCOUNT_LAUNCHER.submit_withdrawal(
+            body.get("profileId"), body.get("accountId")))
+    except (WithdrawalSubmissionError,LocalProfileError,ValueError,TypeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post('/api/operations/withdraw/refresh')
+async def withdrawal_refresh(body: dict):
+    """Read-only follow-up using the same account's already open Chromium."""
+    from nexora_accounts.withdrawal_submit import WithdrawalSubmissionError
+    from nexora_accounts.local_profiles import LocalProfileError
+    from nexora_accounts.session_launcher import ACCOUNT_LAUNCHER
+    from starlette.concurrency import run_in_threadpool
+    try:
+        return await run_in_threadpool(lambda: ACCOUNT_LAUNCHER.refresh_withdrawal(
+            body.get("profileId"),body.get("accountId")))
+    except (WithdrawalSubmissionError,LocalProfileError,ValueError,TypeError) as exc:
+        raise HTTPException(status_code=422,detail=str(exc)) from exc
+
+
 @app.get('/api/local-profiles')
 async def list_local_profiles():
     from nexora_accounts.local_profiles import LocalProfileStore

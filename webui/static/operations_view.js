@@ -6,8 +6,8 @@
   const CATALOG = Object.freeze([
     Object.freeze({id: 'pix-bind', title: 'Cadastrar chave Pix',
       description: 'Vinculação de chave à conta selecionada.'}),
-    Object.freeze({id: 'withdraw', title: 'Consulta de saque',
-      description: 'Consulta de requisitos e histórico de verificações.'}),
+    Object.freeze({id: 'withdraw', title: 'Saque',
+      description: 'Solicitação real por conta selecionada e acompanhamento do pedido.'}),
     Object.freeze({id: 'account-info', title: 'Informações da conta',
       description: 'Consulta de informações autorizadas da plataforma.'}),
     Object.freeze({id: 'future', title: 'Outras operações',
@@ -52,12 +52,12 @@
     const sections = el('section', 'operations-catalog');
     sections.append(el('h2', '', 'Áreas de operações'),
       el('p', 'operations-hint',
-        'O cadastro de chave Pix está disponível abaixo; a verificação de saque pode ser feita nesta aba.'));
+        'Cadastro Pix, envio de saque e acompanhamento por conta, sem trocar de sessão.'));
     const cards = el('div', 'operations-grid');
     for (const item of CATALOG) {
       const card = el('article', 'operations-card');
       card.dataset.operation = item.id;
-      card.append(el('span', 'operations-card-status', item.id === 'pix-bind' ? 'Disponível' : 'Não disponível'),
+      card.append(el('span', 'operations-card-status', ['pix-bind', 'withdraw'].includes(item.id) ? 'Disponível' : 'Não disponível'),
         el('h3', '', item.title), el('p', '', item.description));
       cards.append(card);
     }
@@ -108,6 +108,21 @@
     withdrawMessage.setAttribute('role', 'status');
     const withdrawHistory = el('div', 'operations-history');
     withdrawPanel.append(checkWithdraw, withdrawMessage, withdrawHistory);
+    const submitWithdraw = el('button', 'accounts-open operations-withdraw-submit',
+      'Sacar — enviar pedido real');
+    submitWithdraw.type = 'button';
+    submitWithdraw.disabled = true;
+    const submitHint = el('p', 'operations-hint',
+      'Este botão faz uma solicitação real à plataforma usando o PIN já salvo nesta conta. ' +
+      'O clique autoriza um único pedido; não há reenvio automático. ' +
+      'Confira o destino e o saldo no site antes de usar.');
+    const refreshOrders = el('button', 'accounts-details operations-withdraw-status',
+      'Atualizar estado do pedido');
+    refreshOrders.type = 'button';
+    refreshOrders.disabled = true;
+    const ordersHeading = el('h3', 'operations-history-heading', 'Pedidos enviados');
+    const orders = el('div', 'operations-history');
+    withdrawPanel.append(submitHint, submitWithdraw, refreshOrders, ordersHeading, orders);
     node.append(heading, selectorPanel, pixPanel, withdrawPanel, sections);
 
     let listRevision = 0;
@@ -127,6 +142,78 @@
       checkWithdraw.disabled = checkingWithdraw || !selectedAccount ||
         typeof post !== 'function';
     }
+    let sendingWithdraw = false;
+    let ordersRevision = 0;
+    async function loadOrders() {
+      const rev = ++ordersRevision;
+      const selected = selectedAccount;
+      if (!selected) { orders.replaceChildren(); return; }
+      try {
+        const result = await get('/api/operations/withdraw/orders?profileId=' +
+          encodeURIComponent(selected.profileId));
+        if (rev !== ordersRevision || !selectedAccount ||
+            selectedAccount.accountId !== selected.accountId) return;
+        orders.replaceChildren();
+        for (const op of (result.orders || [])) {
+          const item = el('article', 'operations-history-item');
+          item.append(el('strong', '', 'Pedido — ' + (op.status || '—')),
+            el('span', '', 'Resultado: ' + (op.message || '—')),
+            el('span', '', 'Número do pedido: ' + (op.orderNo || 'Ainda não informado')),
+            el('span', '', 'Valor: ' + (op.amount == null ? '—' : String(op.amount))),
+            el('span', '', 'Estado da plataforma: ' +
+              (op.providerStatus == null ? 'Não confirmado' : String(op.providerStatus))));
+          orders.append(item);
+        }
+        submitWithdraw.disabled = sendingWithdraw || !selectedAccount ||
+          (result.orders || []).some(op =>
+            ['queued', 'attempting', 'accepted', 'pending',
+              'verification_required', 'indeterminate'].includes(op.status));
+        refreshOrders.disabled = !selectedAccount || !(result.orders || []).some(op =>
+          op.orderNo && ['accepted', 'pending', 'verification_required'].includes(op.status));
+      } catch (_) {
+        orders.replaceChildren(el('p', 'operations-hint',
+          'Não foi possível consultar o histórico de pedidos.'));
+        submitWithdraw.disabled = true;
+        refreshOrders.disabled = true;
+      }
+    }
+    refreshOrders.addEventListener('click', async () => {
+      const selected = getSelectedAccount();
+      if (!selected || refreshOrders.disabled) return;
+      refreshOrders.disabled = true;
+      try {
+        await post('/api/operations/withdraw/refresh', {
+          profileId: selected.profileId, accountId: selected.accountId
+        });
+      } catch (error) {
+        withdrawMessage.textContent = 'Consulta não concluída: ' + error.message;
+      } finally { await loadOrders(); }
+    });
+    submitWithdraw.addEventListener('click', async () => {
+      const selected = getSelectedAccount();
+      if (!selected || sendingWithdraw || submitWithdraw.disabled) return;
+      sendingWithdraw = true;
+      submitWithdraw.disabled = true;
+      withdrawMessage.textContent = 'Solicitando saque real. Não repita o pedido...';
+      try {
+        const response = await post('/api/operations/withdraw/submit', {
+          profileId: selected.profileId, accountId: selected.accountId
+        });
+        if (selectedAccount && selectedAccount.accountId === selected.accountId) {
+          withdrawMessage.textContent = response.operation?.message || 'Pedido registrado.';
+          await loadOrders();
+        }
+      } catch (error) {
+        if (selectedAccount && selectedAccount.accountId === selected.accountId) {
+          withdrawMessage.textContent = 'Não foi possível confirmar o resultado. ' +
+            'Confira o histórico antes de tentar novamente: ' + error.message;
+          await loadOrders();
+        }
+      } finally {
+        sendingWithdraw = false;
+        await loadOrders();
+      }
+    });
     async function loadWithdrawHistory() {
       const rev = ++withdrawalRevision;
       const selected = selectedAccount;
@@ -442,6 +529,10 @@
       withdrawMessage.textContent = '';
       withdrawHistory.replaceChildren();
       updateWithdrawButton();
+      submitWithdraw.disabled = true;
+      refreshOrders.disabled = true;
+      orders.replaceChildren();
+      ++ordersRevision;
       selector.value = '';
       details.replaceChildren();
       hint.hidden = false;
@@ -474,7 +565,7 @@
           ? detail.financialRealName : (detail.fullName || 'Não informado')),
         summaryRow('CPF', ((detail.financialRealName && detail.financialCpf)
           ? detail.financialCpf : detail.cpf) ? 'Salvo nos detalhes' : 'Não informado'),
-        summaryRow('PIN de saque', 'Padrão do sistema (387520), separado da senha de login'),
+        summaryRow('PIN de saque', detail.hasWithdrawPin ? 'Protegido no cofre Windows' : 'Salve um PIN em Contas antes de sacar'),
         summaryRow('Identificação', kind === 'verified' ? 'Verificado' :
           kind === 'observed' ? 'Observado, não verificado' : 'Não identificado')
       );
@@ -483,6 +574,7 @@
       loadHistory();
       loadWithdrawHistory();
       updateWithdrawButton();
+      loadOrders();
       feedback.textContent = kind === 'unidentified'
         ? 'Esta conta ainda não possui um ID da plataforma identificado.'
         : 'Dados da conta carregados. Selecione uma chave Pix abaixo.';
@@ -492,6 +584,8 @@
       const revision = ++detailRevision;
       selectedAccount = null;
       updateWithdrawButton();
+      submitWithdraw.disabled = true;
+      refreshOrders.disabled = true;
       details.replaceChildren();
       hint.hidden = false;
       feedback.textContent = 'Carregando identificação...';
@@ -527,6 +621,9 @@
       ++withdrawalRevision;
       history.replaceChildren();
       withdrawHistory.replaceChildren();
+      orders.replaceChildren();
+      submitWithdraw.disabled = true;
+      ++ordersRevision;
       withdrawMessage.textContent = '';
       updatePixPreview();
       updateWithdrawButton();

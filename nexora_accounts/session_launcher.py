@@ -437,6 +437,131 @@ class AccountLauncher:
         _live(profile_id, operation_id, describe_preflight_for_log(operation))
         return operation
 
+    def submit_withdrawal(self, profile_id: int, account_id: str, *, timeout=55):
+        """One user-initiated request, dispatched only to this account's worker.
+
+        No PIN/cookies/credentials are accepted from browser-facing requests.
+        """
+        from nexora_accounts.browser_sessions import active_account_session
+        from nexora_accounts.withdrawal_submit import (
+            WithdrawalSubmissionStore, WithdrawalSubmissionError, _log,
+        )
+        if type(profile_id) is not int or not isinstance(account_id, str):
+            raise WithdrawalSubmissionError("Conta inválida.")
+        profile = LocalProfileStore().public_detail(profile_id)
+        if profile.get("accountId") != account_id:
+            raise WithdrawalSubmissionError("A conta selecionada é divergente.")
+        live = active_account_session(profile.get("origin"), profile_id, account_id)
+        if live is None or live["stop"].is_set() or not live.get("ready"):
+            raise WithdrawalSubmissionError("A sessão Chromium desta conta não está aberta.")
+        run_id=live.get("runId")
+        if not run_id or run_id!=profile.get("lastSessionId"):
+            raise WithdrawalSubmissionError("A sessão Chromium não corresponde à conta.")
+        store=WithdrawalSubmissionStore()
+        reserved=store.reserve(profile_id=profile_id, account_id=account_id, run_id=run_id)
+        operation=reserved["operation"]
+        if reserved["reused"]:
+            return {"operation":operation,"reused":True}
+        reply=queue.Queue(maxsize=1)
+        job={"kind":"withdraw-submit","profileId":profile_id,
+             "accountId":account_id,"runId":run_id,
+             "operationId":operation["operationId"],"result":reply}
+        try:
+            live["requests"].put_nowait(job)
+            _log(profile_id,operation["operationId"],"solicitação única enviada à fila Chromium")
+        except queue.Full:
+            operation=store.update(operation["operationId"],profile_id=profile_id,
+                account_id=account_id,run_id=run_id,status="blocked",stage="local",
+                message="Envio não iniciado: a fila da sessão está ocupada.")
+            return {"operation":operation,"reused":False}
+        try:
+            operation=reply.get(timeout=timeout)
+        except queue.Empty:
+            # Worker may have submitted cashV3. Never schedule it again.
+            operation=store.get(operation["operationId"],profile_id=profile_id,
+                                account_id=account_id,run_id=run_id)
+        return {"operation":operation,"reused":False}
+
+    def _submit_withdrawal_on_owner_thread(self, *, profile_id, account_id,
+                                            run_id, operation_id, page):
+        from nexora_accounts.withdrawal_submit import WithdrawalSubmissionStore, _log, send_in_page
+        from nexora_accounts.local_profiles import LocalProfileError
+        store=WithdrawalSubmissionStore()
+        op=store.get(operation_id,profile_id=profile_id,account_id=account_id,run_id=run_id)
+        if op["status"]!="queued":return op
+        detail=LocalProfileStore().public_detail(profile_id)
+        if (detail.get("accountId")!=account_id or detail.get("lastSessionId")!=run_id):
+            return store.update(operation_id,profile_id=profile_id,account_id=account_id,
+                run_id=run_id,status="blocked",stage="local",
+                message="Envio não iniciado: conta ou sessão divergente.")
+        try:
+            pin=LocalProfileStore().read_withdraw_pin(profile_id)
+        except (LocalProfileError,OSError):
+            return store.update(operation_id,profile_id=profile_id,account_id=account_id,
+                run_id=run_id,status="blocked",stage="local",
+                message="Envio não iniciado: PIN de saque não salvo no cofre Windows.")
+        if not isinstance(pin,str) or len(pin)!=6 or not pin.isascii() or not pin.isdigit():
+            return store.update(operation_id,profile_id=profile_id,account_id=account_id,
+                run_id=run_id,status="blocked",stage="local",
+                message="Envio não iniciado: PIN de saque não salvo no cofre Windows.")
+        # Persist before evaluating code that may send cashV3. A crash or timeout
+        # is indeterminate and cannot silently authorize a retry.
+        store.update(operation_id,profile_id=profile_id,account_id=account_id,
+            run_id=run_id,status="attempting",stage="cashV3",
+            message="Tentativa marcada antes do envio; não repetir automaticamente.")
+        result=send_in_page(page,pin)
+        operation=store.update(operation_id,profile_id=profile_id,account_id=account_id,
+            run_id=run_id,**result)
+        _log(profile_id,operation_id,
+             f"estado={operation['status']}; etapa={operation['stage']}; sem PIN, tokens ou Pix nos logs")
+        return operation
+
+    def refresh_withdrawal(self,profile_id:int,account_id:str,*,timeout=30):
+        from nexora_accounts.withdrawal_submit import WithdrawalSubmissionStore,WithdrawalSubmissionError
+        from nexora_accounts.browser_sessions import active_account_session
+        profile=LocalProfileStore().public_detail(profile_id)
+        if profile.get("accountId")!=account_id:
+            raise WithdrawalSubmissionError("Conta selecionada divergente.")
+        session=active_account_session(profile.get("origin"),profile_id,account_id)
+        if session is None or session["stop"].is_set() or not session.get("ready"):
+            raise WithdrawalSubmissionError("Sessão Chromium desta conta não está ativa.")
+        run_id=session.get("runId")
+        if run_id!=profile.get("lastSessionId"):
+            raise WithdrawalSubmissionError("Sessão da conta divergente.")
+        orders=WithdrawalSubmissionStore().list(profile_id)["orders"]
+        operation=next((x for x in orders if x["accountId"]==account_id and x.get("orderNo")
+                        and x["status"] in {"accepted","pending","verification_required"}),None)
+        if not operation:
+            raise WithdrawalSubmissionError("Nenhum pedido identificado para acompanhamento.")
+        reply=queue.Queue(maxsize=1)
+        job={"kind":"withdraw-refresh","profileId":profile_id,"accountId":account_id,
+             "runId":run_id,"operationRunId":operation["runId"],
+             "operationId":operation["operationId"],"result":reply}
+        try:session["requests"].put_nowait(job)
+        except queue.Full:
+            raise WithdrawalSubmissionError("A sessão desta conta está ocupada.")
+        try:return {"operation":reply.get(timeout=timeout)}
+        except queue.Empty:
+            return {"operation":WithdrawalSubmissionStore().get(operation["operationId"],
+                profile_id=profile_id,account_id=account_id,run_id=operation["runId"])}
+
+    def _refresh_withdrawal_on_owner_thread(self,*,profile_id,account_id,run_id,
+                                             operation_run_id,operation_id,page):
+        from nexora_accounts.withdrawal_submit import WithdrawalSubmissionStore,refresh_order_in_page
+        store=WithdrawalSubmissionStore()
+        operation=store.get(operation_id,profile_id=profile_id,account_id=account_id,
+                            run_id=operation_run_id)
+        detail=LocalProfileStore().public_detail(profile_id)
+        if detail.get("accountId")!=account_id or detail.get("lastSessionId")!=run_id:
+            return operation
+        if not operation.get("orderNo") or operation["status"] not in {
+            "accepted","pending","verification_required"}:
+            return operation
+        status=refresh_order_in_page(page,operation["orderNo"])
+        if status is None:return operation
+        return store.refresh_status(operation_id,profile_id=profile_id,account_id=account_id,
+                                    run_id=operation_run_id,provider_status=status)
+
     def _process_browser_request(self, profile_id: int, account_id: str,
                                  request_queue, page, *, run_id=None):
         """Consume only the exact account's request on its Playwright thread."""
@@ -462,6 +587,23 @@ class AccountLauncher:
                 result = self._inspect_withdrawal_on_owner_thread(
                     profile_id=profile_id, account_id=account_id,
                     run_id=run_id, operation_id=job.get("operationId"), page=page,
+                )
+        elif job.get("kind") == "withdraw-submit":
+            if not run_id or job.get("runId") != run_id:
+                result = {"state": "stale-session", "message": "Sessão de saque divergente."}
+            else:
+                result = self._submit_withdrawal_on_owner_thread(
+                    profile_id=profile_id, account_id=account_id,
+                    run_id=run_id, operation_id=job.get("operationId"), page=page,
+                )
+        elif job.get("kind") == "withdraw-refresh":
+            if not run_id or job.get("runId") != run_id:
+                result = {"state": "stale-session", "message": "Sessão de saque divergente."}
+            else:
+                result = self._refresh_withdrawal_on_owner_thread(
+                    profile_id=profile_id, account_id=account_id,
+                    run_id=run_id, operation_run_id=job.get("operationRunId"),
+                    operation_id=job.get("operationId"), page=page,
                 )
         elif job.get("kind") == "verify-identity":
             if not run_id or job.get("runId") != run_id:
