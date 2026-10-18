@@ -79,12 +79,9 @@ _JS = r"""async () => {
     if(!target || (typeof target.id!=='string' && typeof target.id!=='number')
       || !String(target.id).trim())
       return stop('Conta de destino sem identificador remoto comprovado.');
-    stage='gameCenter/gold';
-    const balance=await post('gameCenter/gold');
-    if(!balance || typeof balance!=='object')
-      return stop('Consulta de saldo falhou ou não é suportada.');
-    mark('shape_checked');
-    // gold, balance, gameGold are *candidates*, not certified withdrawal value.
+    // Only account-linked withdrawal prerequisites are inspected. The user
+    // explicitly requested no balance lookup. A real cashV3 transaction is
+    // not attempted while its production request contract is still unknown.
     stage='contract';
     return stop('O valor realmente sacável e os campos de envio ainda não foram validados no domínio real.');
   }catch(_){
