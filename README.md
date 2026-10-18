@@ -23,9 +23,11 @@ perfis persistentes separados, interface no navegador e gerenciador de proxy.
 - A aba **Chave Pix** mantém o cadastro local de chaves. A seção
   **Operações** possui tentativa de vinculação pela sessão Chromium da
   conta selecionada; o resultado precisa ser confirmado pela plataforma.
-- A seção **Verificar saque** consulta os pré-requisitos conhecidos e mantém
-  histórico do diagnóstico. **Não realiza envio de pedido de saque** nesta
-  versão; nenhuma ação de `cashV3` está implementada no botão.
+- O botão **Sacar** usa a sessão Chromium da conta selecionada e o PIN padrão
+  `387520`, compartilhado com o cadastro Pix, sem exigir cadastro no cofre
+  Windows. O servidor remoto ainda deve validar o PIN. A operação envia no
+  máximo uma solicitação `cashV3` e consulta `orderInfo` para acompanhar o
+  pedido; pedido aceito não significa pagamento concluído.
 - Existem módulos de preparação/preenchimento e observação de cadastro no
   código, portanto esta versão não deve ser descrita como um navegador sem
   recursos de contas. Um clique em Registrar, isoladamente, não comprova a

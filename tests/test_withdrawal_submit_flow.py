@@ -102,12 +102,12 @@ def test_browser_evaluation_filters_secrets_and_requires_exact_host():
     assert submit.send_in_page(p,'123456')['status']=='blocked'
 
 
-def test_submit_uses_exact_account_worker_and_stored_pin(monkeypatch,tmp_path):
+def test_submit_uses_exact_account_worker_and_default_pix_pin_without_vault(monkeypatch,tmp_path):
     people=profiles();a,b=people.values();called=[]
     class Reader:
         def public_detail(self,pid):return dict(people[pid])
         def read_withdraw_pin(self,pid):
-            called.append(('pin-read',pid));return '123456'
+            raise AssertionError('Não pode ler PIN do cofre para enviar saque')
     reader=Reader()
     monkeypatch.setattr(launcher,'LocalProfileStore',lambda:reader)
     store=submit.WithdrawalSubmissionStore(tmp_path/'orders.json',profiles=reader)
@@ -139,8 +139,9 @@ def test_submit_uses_exact_account_worker_and_stored_pin(monkeypatch,tmp_path):
             t.join(timeout=3)
             assert not t.is_alive()
             assert responses[0]['operation']['status']=='pending'
-            assert ('send',pa,'123456') in called
-            assert all(call[1]!=b['id'] for call in called if call[0]=='pin-read')
+            from nexora_accounts.pix_operations import PIX_WITHDRAW_PIN
+            assert PIX_WITHDRAW_PIN == '387520'
+            assert ('send',pa,PIX_WITHDRAW_PIN) in called
             again=app.submit_withdrawal(a['id'],a['accountId'],timeout=.1)
             assert again['reused'] is True
             assert worker_a['requests'].empty()

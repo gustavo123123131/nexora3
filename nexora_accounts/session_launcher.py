@@ -485,7 +485,7 @@ class AccountLauncher:
     def _submit_withdrawal_on_owner_thread(self, *, profile_id, account_id,
                                             run_id, operation_id, page):
         from nexora_accounts.withdrawal_submit import WithdrawalSubmissionStore, _log, send_in_page
-        from nexora_accounts.local_profiles import LocalProfileError
+        from nexora_accounts.pix_operations import PIX_WITHDRAW_PIN
         store=WithdrawalSubmissionStore()
         op=store.get(operation_id,profile_id=profile_id,account_id=account_id,run_id=run_id)
         if op["status"]!="queued":return op
@@ -494,16 +494,10 @@ class AccountLauncher:
             return store.update(operation_id,profile_id=profile_id,account_id=account_id,
                 run_id=run_id,status="blocked",stage="local",
                 message="Envio não iniciado: conta ou sessão divergente.")
-        try:
-            pin=LocalProfileStore().read_withdraw_pin(profile_id)
-        except (LocalProfileError,OSError):
-            return store.update(operation_id,profile_id=profile_id,account_id=account_id,
-                run_id=run_id,status="blocked",stage="local",
-                message="Envio não iniciado: PIN de saque não salvo no cofre Windows.")
-        if not isinstance(pin,str) or len(pin)!=6 or not pin.isascii() or not pin.isdigit():
-            return store.update(operation_id,profile_id=profile_id,account_id=account_id,
-                run_id=run_id,status="blocked",stage="local",
-                message="Envio não iniciado: PIN de saque não salvo no cofre Windows.")
+        # Same operator-defined default PIN used by Pix onboarding. The
+        # remote provider still verifies the PIN when processing cashV3.
+        # No account-specific Windows vault lookup is required for withdrawal.
+        pin=PIX_WITHDRAW_PIN
         # Persist before evaluating code that may send cashV3. A crash or timeout
         # is indeterminate and cannot silently authorize a retry.
         store.update(operation_id,profile_id=profile_id,account_id=account_id,
