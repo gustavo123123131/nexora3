@@ -237,3 +237,28 @@ def test_pin_387520_is_available_for_all_accounts_even_without_saved_vault(tmp_p
         assert first["operation"]["accountId"] == account["accountId"]
     records = (tmp_path / "pix-operations.json").read_text(encoding="utf-8")
     assert "387520" not in records
+
+
+def test_pin_setup_evidence_persists_when_later_pix_step_fails(tmp_path):
+    store, profiles, keys, run = setup_store(tmp_path)
+    profile = profiles[11]
+    first = store.begin_remote(
+        profile_id=11, account_id=profile["accountId"],
+        key_id=keys[0]["id"], key_type="PHONE", run_id=run
+    )["operation"]
+    assert first["initializeWithdrawPin"] is True
+    store.finish_remote(
+        first["operationId"], profile_id=11,
+        account_id=profile["accountId"], run_id=run,
+        result={"state":"failed", "stage":"verifyWithdrawalPasswordV2",
+                "trace":[{"stage":"verifyWithdrawPass",
+                          "event":"withdraw_pin_initialized"}]}
+    )
+    different={"id":str(uuid4()),"type":"EMAIL",
+               "value":"second@example.com","updatedAt":"t2"}
+    keys.append(different)
+    next_op = store.begin_remote(
+        profile_id=11, account_id=profile["accountId"],
+        key_id=different["id"], key_type="EMAIL", run_id=run
+    )["operation"]
+    assert next_op["initializeWithdrawPin"] is False
