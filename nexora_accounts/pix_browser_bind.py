@@ -12,7 +12,7 @@ FINAL_STATES = frozenset((
     "failed", "unsupported",
 ))
 
-_JS = r"""async ({name, cpf, pin, key, kind}) => {
+_JS = r"""async ({name, cpf, pin, key, kind, initializePin=false}) => {
   // Keep ONLY bounded, enumerated metadata; never log PIN, Pix, CPF,
   // response bodies, request bodies, tokens or browser exceptions.
   const timeline = [];
@@ -68,7 +68,7 @@ _JS = r"""async ({name, cpf, pin, key, kind}) => {
   }
   let bindStarted=false;
   let bindAccepted=false;
-  let stage='withdrawInfoV2-antes';
+  let stage='security/status';
   async function post(route, data) {
     // stage is one of the pre-defined routes below; never capture payload.
     const started=performance.now();
@@ -115,6 +115,19 @@ _JS = r"""async ({name, cpf, pin, key, kind}) => {
       typeof row?.[field] === 'string' &&
       row[field].replace(/\s/g, '') === value));
   try {
+    await post('member/user/security/status');
+    if (initializePin === true) {
+      stage='modifyWithdrawPass';
+      await post('member/user/security/modifyWithdrawPass', {
+        withdraw_pass:pin, secondVerify:{type:0}
+      });
+      stage='verifyWithdrawPass';
+      await post('member/user/security/verifyWithdrawPass', {
+        withdraw_pass:pin
+      });
+      mark(stage, 'withdraw_pin_initialized');
+    }
+    stage='withdrawInfoV2-antes';
     const before = await post('finance/certify/withdrawInfoV2');
     const beforeList=list(before);
     mark(stage, 'list_check', {responseShape:beforeList ? 'list_found' : 'list_missing'});
@@ -170,7 +183,8 @@ _JS = r"""async ({name, cpf, pin, key, kind}) => {
 }"""
 
 
-def bind_in_page(page, *, name: str, cpf: str, pin: str, key: str, kind: str) -> dict:
+def bind_in_page(page, *, name: str, cpf: str, pin: str, key: str,
+                 kind: str, initialize_pin: bool = False) -> dict:
     """Runs only on the Playwright owner thread, no new navigation."""
     try:
         url = urlsplit(str(page.url or ""))
@@ -179,6 +193,7 @@ def bind_in_page(page, *, name: str, cpf: str, pin: str, key: str, kind: str) ->
                     "message": "Abra a 5gbet na janela Chromium desta conta."}
         result = page.evaluate(_JS, {
             "name": name, "cpf": cpf, "pin": pin, "key": key, "kind": kind,
+            "initializePin": initialize_pin is True,
         })
         if not isinstance(result, dict) or result.get("state") not in FINAL_STATES:
             return {"state": "uncertain", "stage": "client",
@@ -188,13 +203,15 @@ def bind_in_page(page, *, name: str, cpf: str, pin: str, key: str, kind: str) ->
                   if key in result and
                   (key != "providerCode" or type(result[key]) is int) and
                   (key != "message" or isinstance(result[key], str))}
-        allowed_stages = {"site", "client", "withdrawInfoV2-antes",
+        allowed_stages = {"site", "client", "security/status",
+                          "modifyWithdrawPass", "verifyWithdrawPass",
+                          "withdrawInfoV2-antes",
                           "verifyWithdrawalPasswordV2", "bindalipayV3",
                           "withdrawInfoV2-depois"}
         allowed_events = {"request_start", "request_exception", "api_accepted",
                           "api_rejected", "result", "list_check",
                           "authorization_missing", "authorization_received",
-                          "two_step_required"}
+                          "two_step_required", "withdraw_pin_initialized"}
         allowed_shapes = {"exception", "missing_code", "wrapped_code",
                           "direct_code", "list_found", "list_missing"}
         trace = []
