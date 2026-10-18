@@ -43,6 +43,7 @@ def test_remote_attempt_isolated_persisted_and_never_leaks_credentials(tmp_path)
     other=store.begin_remote(profile_id=12, account_id=profiles[12]["accountId"],
                              key_id=key,key_type="PHONE",run_id=run)
     assert other["operation"]["operationId"]!=op["operationId"]
+    assert other["operation"]["initializeWithdrawPin"] is True
     assert other["operation"]["platformIdentityRef"]!=op["platformIdentityRef"]
     assert store.begin_remote(profile_id=11,account_id=profiles[11]["accountId"],
                              key_id=key,key_type="PHONE",run_id=run)["reused"]
