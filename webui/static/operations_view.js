@@ -94,7 +94,21 @@
     const history = el('div', 'operations-history');
     pixPanel.append(pixControls, preview, prepareButton,
       pixFeedback, historyHeading, history);
-    node.append(heading, selectorPanel, pixPanel, sections);
+    const withdrawPanel = el('section', 'operations-panel operations-withdraw-panel');
+    withdrawPanel.append(
+      el('h2', '', 'Solicitar Saque'),
+      el('p', 'operations-hint',
+        'Confira os dados de retirada vinculados à conta. O envio financeiro ainda não está habilitado.')
+    );
+    const checkWithdraw = el('button', 'accounts-details operations-withdraw-check',
+      'Verificar conta de saque');
+    checkWithdraw.type = 'button';
+    checkWithdraw.disabled = true;
+    const withdrawMessage = el('p', 'operations-withdraw-feedback');
+    withdrawMessage.setAttribute('role', 'status');
+    const withdrawHistory = el('div', 'operations-history');
+    withdrawPanel.append(checkWithdraw, withdrawMessage, withdrawHistory);
+    node.append(heading, selectorPanel, pixPanel, withdrawPanel, sections);
 
     let listRevision = 0;
     let detailRevision = 0;
@@ -106,6 +120,65 @@
     let pixRevision = 0;
     let historyRevision = 0;
     let preparing = false;
+
+    let checkingWithdraw = false;
+    let withdrawalRevision = 0;
+    function updateWithdrawButton() {
+      checkWithdraw.disabled = checkingWithdraw || !selectedAccount ||
+        typeof post !== 'function';
+    }
+    async function loadWithdrawHistory() {
+      const rev = ++withdrawalRevision;
+      const selected = selectedAccount;
+      if (!selected || typeof post !== 'function') {
+        withdrawHistory.replaceChildren();
+        return;
+      }
+      try {
+        const result = await get('/api/operations/withdraw/history?profileId=' +
+          encodeURIComponent(selected.profileId));
+        if (rev !== withdrawalRevision || !selectedAccount ||
+            selectedAccount.accountId !== selected.accountId) return;
+        withdrawHistory.replaceChildren();
+        for (const op of (result.operations || [])) {
+          const entry = el('article', 'operations-history-item');
+          entry.append(
+            el('strong', '', 'Verificação de saque — ' + (op.status || '—')),
+            el('span', '', 'Resultado: ' + (op.message || '—')),
+            el('span', '', 'Etapa: ' + (op.stage || '—'))
+          );
+          withdrawHistory.append(entry);
+        }
+      } catch (_) {
+        if (rev === withdrawalRevision) {
+          withdrawHistory.replaceChildren(el('p', 'operations-hint',
+            'Não foi possível consultar o histórico de saques.'));
+        }
+      }
+    }
+    checkWithdraw.addEventListener('click', async () => {
+      const selected = getSelectedAccount();
+      if (!selected || checkingWithdraw || typeof post !== 'function') return;
+      checkingWithdraw = true;
+      updateWithdrawButton();
+      withdrawMessage.textContent = 'Verificando requisitos da conta...';
+      try {
+        const response = await post('/api/operations/withdraw/preflight', {
+          profileId: selected.profileId, accountId: selected.accountId
+        });
+        if (selectedAccount && selectedAccount.accountId === selected.accountId) {
+          withdrawMessage.textContent = response.operation?.message || 'Consulta registrada.';
+          await loadWithdrawHistory();
+        }
+      } catch (error) {
+        if (selectedAccount && selectedAccount.accountId === selected.accountId) {
+          withdrawMessage.textContent = 'Falha ao consultar saque: ' + error.message;
+        }
+      } finally {
+        checkingWithdraw = false;
+        updateWithdrawButton();
+      }
+    });
 
     function maskedKey(key) {
       if (!key) return '—';
@@ -335,6 +408,10 @@
       selectedId = null;
       selectedUuid = null;
       selectedAccount = null;
+      ++withdrawalRevision;
+      withdrawMessage.textContent = '';
+      withdrawHistory.replaceChildren();
+      updateWithdrawButton();
       selector.value = '';
       details.replaceChildren();
       hint.hidden = false;
@@ -374,6 +451,8 @@
       hint.hidden = true;
       updatePixPreview();
       loadHistory();
+      loadWithdrawHistory();
+      updateWithdrawButton();
       feedback.textContent = kind === 'unidentified'
         ? 'Esta conta ainda não possui um ID da plataforma identificado.'
         : 'Dados da conta carregados. Selecione uma chave Pix abaixo.';
@@ -382,6 +461,7 @@
     async function loadDetail(profileId, uuid) {
       const revision = ++detailRevision;
       selectedAccount = null;
+      updateWithdrawButton();
       details.replaceChildren();
       hint.hidden = false;
       feedback.textContent = 'Carregando identificação...';
@@ -398,6 +478,7 @@
       } catch (error) {
         if (revision === detailRevision && selectedId === profileId) {
           selectedAccount = null;
+          updateWithdrawButton();
           feedback.textContent = 'Não foi possível carregar a conta: ' + error.message;
         }
       }
@@ -413,8 +494,12 @@
       selectedId = item.id;
       selectedUuid = item.accountId;
       ++historyRevision;
+      ++withdrawalRevision;
       history.replaceChildren();
+      withdrawHistory.replaceChildren();
+      withdrawMessage.textContent = '';
       updatePixPreview();
+      updateWithdrawButton();
       loadDetail(selectedId, selectedUuid);
     }
 
