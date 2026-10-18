@@ -497,6 +497,36 @@ async def bind_pix_operation(body: dict):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@app.get('/api/operations/withdraw/history')
+async def withdrawal_history(profileId: int):
+    """Read-only history of one account's withdrawal prerequisites."""
+    from nexora_accounts.withdrawal_operations import (
+        WithdrawalStore, WithdrawalPreparationError
+    )
+    from starlette.concurrency import run_in_threadpool
+    try:
+        return await run_in_threadpool(lambda: WithdrawalStore().list(profileId))
+    except WithdrawalPreparationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post('/api/operations/withdraw/preflight')
+async def withdrawal_preflight(body: dict):
+    """Check the real account session; never submit cashV3 without a proven contract."""
+    from nexora_accounts.withdrawal_operations import WithdrawalPreparationError
+    from nexora_accounts.local_profiles import LocalProfileError
+    from nexora_accounts.session_launcher import ACCOUNT_LAUNCHER
+    from starlette.concurrency import run_in_threadpool
+    try:
+        return await run_in_threadpool(
+            lambda: ACCOUNT_LAUNCHER.preflight_withdrawal(
+                body.get("profileId"), body.get("accountId"),
+            )
+        )
+    except (WithdrawalPreparationError, LocalProfileError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @app.get('/api/local-profiles')
 async def list_local_profiles():
     from nexora_accounts.local_profiles import LocalProfileStore
