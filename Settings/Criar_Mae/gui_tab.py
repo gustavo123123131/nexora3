@@ -1264,9 +1264,12 @@ def run_instance(
 
                 identity_saved_this_run = False
                 identity_observed_logged_uid = None
+                last_authenticated_id_check = 0.0
+                reported_auth_id_states = set()
 
                 def _poll_identity():
                     nonlocal identity_saved_this_run, identity_observed_logged_uid
+                    nonlocal last_authenticated_id_check
                     if identity_observer is None:
                         return
                     from nexora_accounts.local_profiles import LocalProfileStore
@@ -1292,6 +1295,36 @@ def run_instance(
                             )
                     if identity_saved_this_run:
                         return
+                    # A passive outgoing x-object-id is only an observed
+                    # candidate. Ask the site's authenticated user-info API
+                    # for the independent UID+username pair on THIS page.
+                    # Throttle to avoid repeated API calls while the user
+                    # keeps Chromium open, and never promote an unproven UID.
+                    if (observed is not None
+                        and not identity_observer.observation_conflict
+                        and time.monotonic() - last_authenticated_id_check >= 30):
+                        last_authenticated_id_check = time.monotonic()
+                        try:
+                            from nexora_accounts.session_launcher import ACCOUNT_LAUNCHER
+                            verification = ACCOUNT_LAUNCHER._verify_identity_on_owner_thread(
+                                profile_id, account_id, run_id, page
+                            )
+                            state = verification.get("state")
+                            if state == "verified":
+                                identity_saved_this_run = True
+                                log(f"[#{idx}] [Registro] [ID] Resposta autenticada "
+                                    "confirmou UID e username da conta; ID salvo como verificado.")
+                                return
+                            if state in ("uid-mismatch", "username-mismatch",
+                                         "schema-unconfirmed", "persistence-blocked"):
+                                if state not in reported_auth_id_states:
+                                    reported_auth_id_states.add(state)
+                                    log(f"[#{idx}] [Registro] [ID] Consulta autenticada: "
+                                        f"{state}; sem confirmação, ID continua observado.")
+                        except Exception:
+                            # Identity checks must not interrupt registration or
+                            # the authenticated Chromium session.
+                            pass
                     verified_id = identity_observer.identify(
                         stop_event=stop_event, wait_seconds=0,
                     )

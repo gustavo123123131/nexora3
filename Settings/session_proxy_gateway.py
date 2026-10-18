@@ -242,6 +242,9 @@ def verify_browser_exit_ip(page, gateway, *, timeout_ms=10000):
     failures = []
     for host, url in targets:
         previous = gateway.connect_count(host)
+        previous_bytes = (gateway.traffic_count(host)
+                          if callable(getattr(gateway, "traffic_count", None))
+                          else None)
         try:
             separator = "&" if "?" in url else "?"
             response = page.goto(
@@ -256,7 +259,12 @@ def verify_browser_exit_ip(page, gateway, *, timeout_ms=10000):
             if not ip_value:
                 failures.append("IP_CHECK_INVALID_REPLY")
                 continue
-            if gateway.connect_count(host) <= previous:
+            connect_observed = gateway.connect_count(host) > previous
+            traffic_observed = (
+                previous_bytes is not None
+                and gateway.traffic_count(host) > previous_bytes
+            )
+            if not (connect_observed or traffic_observed):
                 saw_direct_success = True
                 continue
             return ip_value
@@ -282,6 +290,11 @@ def refresh_browser_exit_ip(page, gateway, *, timeout_ms=6000):
     """
     host = "api.ipify.org"
     before = gateway.connect_count(host)
+    # A fetch can reuse a previously established HTTP/2 CONNECT tunnel.
+    # CONNECT count alone is NOT a valid per-request proxy-routing proof.
+    before_bytes = (gateway.traffic_count(host)
+                    if callable(getattr(gateway, "traffic_count", None))
+                    else None)
     try:
         raw = page.evaluate(
             """async ({url, timeoutMs}) => {
@@ -302,7 +315,12 @@ def refresh_browser_exit_ip(page, gateway, *, timeout_ms=6000):
         )
         ip_value = _validated_ip_from_text(raw)
         if ip_value:
-            if gateway.connect_count(host) <= before:
+            new_connect = gateway.connect_count(host) > before
+            reused_tunnel = (
+                before_bytes is not None
+                and gateway.traffic_count(host) > before_bytes
+            )
+            if not (new_connect or reused_tunnel):
                 raise ProxyConnectionError("browser_proxy_bypassed")
             return ip_value
     except ProxyConnectionError:
@@ -327,6 +345,18 @@ class SessionProxyGateway:
         self.thread = None
         self._lock = threading.Lock()
         self._upstream_connects = {}
+        # Aggregate forwarded TLS bytes per hostname (no payload recording).
+        # Count successful traffic over *existing* CONNECTs as well as new ones.
+        self._tunnel_bytes = {}
+
+    def traffic_count(self, host):
+        with self._lock:
+            return self._tunnel_bytes.get(host.lower(), 0)
+
+    def _count_tunnel_bytes(self, host, size):
+        with self._lock:
+            key = host.lower()
+            self._tunnel_bytes[key] = self._tunnel_bytes.get(key, 0) + size
 
     def connect_count(self, host):
         """Only count successfully authenticated upstream CONNECT tunnels."""
@@ -367,7 +397,10 @@ class SessionProxyGateway:
                                 pass
                         if body:
                             upstream.sendall(body)
-                        _pipe_bidirectional(client, upstream)
+                        _pipe_bidirectional(
+                            client, upstream,
+                            on_forward=lambda size: owner._count_tunnel_bytes(host, size),
+                        )
                     else:
                         parsed = urlsplit(target)
                         if parsed.scheme != "http" or not parsed.hostname:
