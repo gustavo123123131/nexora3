@@ -355,7 +355,7 @@ class AccountLauncher:
             # duplicate registration, confirmation, or login-password reuse.
             name, cpf = pix_owner_from_details(details)
             _pix_live(profile_id, operation_id,
-                      "nome e CPF lidos da conta; chave Pix recuperada; PIN de saque configurado")
+                      "nome e CPF lidos da conta; chave Pix recuperada; PIN padrão preparado")
             # O PIN de saque comum não é a senha de login.
             # Nunca realizar leitura de senha da conta para cadastro Pix.
             extra = ({"initialize_pin": True}
