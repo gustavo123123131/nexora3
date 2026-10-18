@@ -98,7 +98,7 @@
     withdrawPanel.append(
       el('h2', '', 'Solicitar Saque'),
       el('p', 'operations-hint',
-        'Confira os dados de retirada vinculados à conta. O envio financeiro ainda não está habilitado.')
+        'Verifica destino, limite, saldo usado pelo frontend e taxa da conta selecionada. Não envia saque enquanto o contrato financeiro não estiver validado.')
     );
     const checkWithdraw = el('button', 'accounts-details operations-withdraw-check',
       'Verificar conta de saque');
