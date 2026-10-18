@@ -84,6 +84,13 @@
     keySelector.append(new Option('Escolha primeiro o tipo', ''));
     keyLabel.append(keySelector);
     pixControls.append(typeLabel, keyLabel);
+    const pinSetupLabel = el('label', 'operations-pix-new-pin');
+    const pinSetupToggle = document.createElement('input');
+    pinSetupToggle.type = 'checkbox';
+    pinSetupToggle.setAttribute('aria-label', 'Esta conta ainda não tem PIN de saque');
+    pinSetupLabel.append(pinSetupToggle, document.createTextNode(
+      ' Esta conta AINDA não tem PIN de saque (configurar antes)'
+    ));
     const pixFeedback = el('p', 'operations-pix-feedback');
     pixFeedback.setAttribute('role', 'status');
     const prepareButton = el('button', 'accounts-open operations-pix-prepare', 'Cadastrar');
@@ -92,7 +99,7 @@
     const preview = el('div', 'operations-pix-preview');
     const historyHeading = el('h3', 'operations-history-heading', 'Histórico local da conta');
     const history = el('div', 'operations-history');
-    pixPanel.append(pixControls, preview, prepareButton,
+    pixPanel.append(pixControls, pinSetupLabel, preview, prepareButton,
       pixFeedback, historyHeading, history);
     node.append(heading, selectorPanel, pixPanel, sections);
 
@@ -199,6 +206,9 @@
           const summary = el('summary', '', 'Ver etapas e logs (' + trace.length + ')');
           const entries = el('div', 'operations-pix-trace-lines');
           const names = {
+            'security/status': 'Estado de segurança',
+            modifyWithdrawPass: 'Configuração inicial do PIN de saque',
+            verifyWithdrawPass: 'Verificação do PIN configurado',
             'withdrawInfoV2-antes': 'Consulta inicial de saque',
             verifyWithdrawalPasswordV2: 'Verificação do PIN de saque',
             bindalipayV3: 'Envio do cadastro Pix',
@@ -217,6 +227,7 @@
               authorization_received: 'Autorização temporária recebida',
               authorization_missing: 'Autorização temporária ausente',
               two_step_required: 'Verificação adicional exigida',
+              withdraw_pin_initialized: 'PIN inicial verificado pela API',
               result: 'Resultado da etapa'
             }[chunks[1]] || chunks[1] || '';
             const fields = [stepName, eventName];
@@ -267,12 +278,14 @@
       updatePixPreview();
       pixFeedback.textContent = 'Cadastrando chave Pix pela sessão Chromium desta conta...';
       try {
-        const result = await post('/api/operations/pix/bind', {
+        const request = {
           profileId: selected.profileId,
           accountId: selected.accountId,
           keyId: key.id,
           keyType: typeSelector.value
-        });
+        };
+        if (pinSetupToggle.checked) request.initializeWithdrawPin = true;
+        const result = await post('/api/operations/pix/bind', request);
         if (selectedAccount && selectedAccount.profileId === selected.profileId &&
             selectedAccount.accountId === selected.accountId) {
           const op = result.operation || {};
@@ -327,6 +340,7 @@
       selectedId = null;
       selectedUuid = null;
       selectedAccount = null;
+      pinSetupToggle.checked = false;
       selector.value = '';
       details.replaceChildren();
       hint.hidden = false;

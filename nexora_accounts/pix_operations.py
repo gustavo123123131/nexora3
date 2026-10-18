@@ -111,13 +111,14 @@ def _safe_pix_trace(trace):
     """Accept ONLY the browser's enumerated diagnostic data, never raw bodies."""
     if not isinstance(trace, list):
         return []
-    stages = {"site", "client", "withdrawInfoV2-antes",
+    stages = {"site", "client", "security/status", "modifyWithdrawPass",
+              "verifyWithdrawPass", "withdrawInfoV2-antes",
               "verifyWithdrawalPasswordV2", "bindalipayV3",
               "withdrawInfoV2-depois"}
     events = {"request_start", "request_exception", "api_accepted",
               "api_rejected", "result", "list_check",
               "authorization_missing", "authorization_received",
-              "two_step_required"}
+              "two_step_required", "withdraw_pin_initialized"}
     shapes = {"exception", "missing_code", "wrapped_code", "direct_code",
               "list_found", "list_missing"}
     rows = []
@@ -258,9 +259,12 @@ class PixOperationStore:
         }
 
 
-    def begin_remote(self, *, profile_id, account_id, key_id, key_type, run_id):
+    def begin_remote(self, *, profile_id, account_id, key_id, key_type, run_id,
+                     initialize_pin=False):
         """Reserve one browser-owned attempt, using saved account/key details."""
         from nexora_accounts.pix_key_store import normalize_key
+        if type(initialize_pin) is not bool:
+            raise PixPreparationError("Opção de PIN inicial inválida.")
         if (type(profile_id) is not int or profile_id < 1 or
                 not _is_uuid(account_id) or not _is_uuid(key_id) or
                 key_type not in TYPES or not _is_uuid(run_id)):
@@ -303,6 +307,7 @@ class PixOperationStore:
                 "operationId": str(uuid4()), "profileId": profile_id,
                 "accountId": account_id, "runId": run_id, "keyId": key_id,
                 "keyType": key_type, "keyUpdatedAt": key.get("updatedAt"),
+                "initializeWithdrawPin": initialize_pin,
                 "keyMasked": masked(normalized, key_type),
                 "platformIdentityRef": remote_ref(uid),
                 "identityStatus": "verified" if profile.get("platformUserId") else "observed",
@@ -334,7 +339,9 @@ class PixOperationStore:
                          "accepted_unconfirmed", "uncertain", "failed"):
             state = "uncertain"
         stage = result.get("stage")
-        if stage not in ("site", "client", "withdrawInfoV2-antes",
+        if stage not in ("site", "client", "security/status",
+                         "modifyWithdrawPass", "verifyWithdrawPass",
+                         "withdrawInfoV2-antes",
                          "verifyWithdrawalPasswordV2", "bindalipayV3",
                          "withdrawInfoV2-depois", "browser"):
             stage = "unknown"

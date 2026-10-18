@@ -487,12 +487,16 @@ async def bind_pix_operation(body: dict):
     from nexora_accounts.session_launcher import ACCOUNT_LAUNCHER
     from starlette.concurrency import run_in_threadpool
     try:
-        return await run_in_threadpool(
-            lambda: ACCOUNT_LAUNCHER.bind_pix_key(
-                body.get("profileId"), body.get("accountId"),
-                body.get("keyId"), body.get("keyType"),
-            )
-        )
+        pin_requested = body.get("initializeWithdrawPin", False)
+        if type(pin_requested) is not bool:
+            raise PixPreparationError("Opção de PIN inicial inválida.")
+        def run():
+            args = (body.get("profileId"), body.get("accountId"),
+                    body.get("keyId"), body.get("keyType"))
+            if pin_requested:
+                return ACCOUNT_LAUNCHER.bind_pix_key(*args, initialize_pin=True)
+            return ACCOUNT_LAUNCHER.bind_pix_key(*args)
+        return await run_in_threadpool(run)
     except (PixPreparationError, LocalProfileError, ValueError, TypeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

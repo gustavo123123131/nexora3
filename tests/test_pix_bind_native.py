@@ -22,6 +22,10 @@ HTML = "<html><body><script src='/commonChunk.test.js' type='module'></script></
     ("ok", "confirmed", 1),
     ("not-listed", "accepted_unconfirmed", 1),
     ("bad-pin", "failed", 0),
+    ("security-failure", "failed", 0),
+    ("setup-ok", "confirmed", 1),
+    ("setup-failure", "failed", 0),
+    ("setup-verify-failure", "failed", 0),
     ("bind-failure", "uncertain", 1),
     ("already", "already_registered", 0),
 ])
@@ -33,6 +37,21 @@ def test_real_chromium_routes_native_pix_api_without_external_network(
       export const n = {request:async ({url, method, data},opts) => {
         window.__calls.push({url,method,data});
         const out=(payload,code=1)=>({data:{code,data:payload}});
+        if(url.endsWith('/member/user/security/status')){
+          return "SCENARIO"==="security-failure" ? out({},401) : out({status:"ok"});
+        }
+        if(url.endsWith('/member/user/security/modifyWithdrawPass')){
+          if("SCENARIO"==="setup-failure") return out({},43000);
+          if(data.withdraw_pass!=="387520" || data.secondVerify.type!==0)
+            throw Error('mismatched PIN setup payload');
+          return out({});
+        }
+        if(url.endsWith('/member/user/security/verifyWithdrawPass')){
+          if("SCENARIO"==="setup-verify-failure") return out({},43001);
+          if(data.withdraw_pass!=="387520")
+            throw Error('mismatched verification payload');
+          return out({});
+        }
         if(url.endsWith('/withdrawInfoV2')){
           const list=window.__bound || "SCENARIO"==="already" ?
             [{account:"11987654321"}]:[];
@@ -73,13 +92,39 @@ def test_real_chromium_routes_native_pix_api_without_external_network(
             context.route("**/*",route_handler)
             page = context.new_page()
             page.goto(SITE,wait_until="domcontentloaded")
-            result=bind_in_page(page, name="Maria Silva",cpf=CPF,pin=PIN,key=KEY,kind="PHONE")
+            setup = scenario.startswith("setup-") or scenario == "security-failure"
+            result=bind_in_page(page, name="Maria Silva",cpf=CPF,pin=PIN,
+                                key=KEY,kind="PHONE",initialize_pin=setup)
             assert result["state"]==expected, result
             calls=page.evaluate("""() => window.__calls.map(x=>x.url)""")
+            if setup:
+                assert calls[0] == "/api/member/user/security/status"
+                assert any(row["stage"] == "security/status" for row in result["trace"])
+            else:
+                assert calls[0] == "/api/finance/certify/withdrawInfoV2"
+            if scenario == "security-failure":
+                assert result["stage"] == "security/status"
+                assert len(calls) == 1
+            if scenario == "setup-failure":
+                assert result["stage"] == "modifyWithdrawPass"
+                assert calls[1].endswith("/modifyWithdrawPass")
+                assert len(calls) == 2
+            if scenario == "setup-verify-failure":
+                assert result["stage"] == "verifyWithdrawPass"
+                assert calls[2].endswith("/verifyWithdrawPass")
+                assert len(calls) == 3
+            if setup and scenario != "security-failure":
+                assert calls[1].endswith("/modifyWithdrawPass")
+                if scenario != "setup-failure":
+                    assert calls[2].endswith("/verifyWithdrawPass")
+            else:
+                assert not any(x.endswith("modifyWithdrawPass") for x in calls)
             assert calls.count("/api/finance/certify/bindalipayV3")==expected_posts
             if expected_posts:
                 assert "/api/finance/certify/verifyWithdrawalPasswordV2" in calls
-            if scenario != "already":
+            if scenario not in (
+                "already", "security-failure", "setup-failure", "setup-verify-failure"
+            ):
                 assert calls.count("/api/finance/certify/verifyWithdrawalPasswordV2") == 1
                 request = page.evaluate("""() => window.__calls.find(
                     x => x.url === '/api/finance/certify/verifyWithdrawalPasswordV2'
@@ -89,6 +134,9 @@ def test_real_chromium_routes_native_pix_api_without_external_network(
                     "withdrawalPassword": "387520",
                     "addWithdrawAccountType": 5,
                 }
+            audit=json.dumps(result,ensure_ascii=False)
+            for secret in (PIN, CPF, KEY, "Maria Silva"):
+                assert secret not in audit
         finally:
             browser.close()
 
