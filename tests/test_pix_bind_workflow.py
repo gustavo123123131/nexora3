@@ -39,6 +39,7 @@ def test_remote_attempt_isolated_persisted_and_never_leaks_credentials(tmp_path)
     assert first["reused"] is False
     op=first["operation"]
     assert op["status"]=="queued"
+    assert op["initializeWithdrawPin"] is True
     other=store.begin_remote(profile_id=12, account_id=profiles[12]["accountId"],
                              key_id=key,key_type="PHONE",run_id=run)
     assert other["operation"]["operationId"]!=op["operationId"]
