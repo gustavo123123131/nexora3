@@ -38,13 +38,13 @@ _JS = r"""async () => {
     if(typeof sdk?.request!=='function')throw Error('unavailable');
   }catch(_){return stop('Não foi possível carregar o cliente autenticado da página.');}
   class Failure extends Error {}
-  async function post(path){
+  async function post(path,data){
     const start=performance.now();
     mark('request_start');
     let response;
     try{
       response=await sdk.request(
-        {url:'/api/'+path,method:'POST'},
+        {url:'/api/'+path,method:'POST',...(data===undefined?{}:{data})},
         {merge:false,maxRetryCount:0,cache:{useCache:false}}
       );
     }catch(err){
@@ -79,14 +79,35 @@ _JS = r"""async () => {
     if(!target || (typeof target.id!=='string' && typeof target.id!=='number')
       || !String(target.id).trim())
       return stop('Conta de destino sem identificador remoto comprovado.');
-    // Only account-linked withdrawal prerequisites are inspected. The user
-    // explicitly requested no balance lookup. A real cashV3 transaction is
-    // not attempted while its production request contract is still unknown.
+    const min=Number(info.withdrawMin), max=Number(info.withdrawMax);
+    if(!Number.isFinite(min)||!Number.isFinite(max)||min<=0||max<min)
+      return stop('Limites de saque não foram identificados.');
+    stage='gameCenter/gold';
+    const wallet=await post('gameCenter/gold');
+    const rawBalance=wallet?.userInfos?.game_gold;
+    if(rawBalance===null || rawBalance===undefined ||
+       !Number.isFinite(Number(rawBalance)) || Number(rawBalance)<0)
+      return stop('Saldo realmente sacável não foi identificado em userInfos.game_gold.');
+    const amount=Math.min(Math.max(0,Math.floor(Number(rawBalance))),max);
+    if(!Number.isFinite(amount)||amount<min)
+      return stop('Saldo disponível inferior ao mínimo permitido.');
+    const method=target?.withdrawTypeId;
+    if(!Number.isSafeInteger(method)||method<0)
+      return stop('Tipo de saque remoto não identificado.');
+    stage='getWithdrawFee';
+    const quote=await post('finance/certify/getWithdrawFee',{
+      withdrawTypeId:method,amount,time:Math.floor(Date.now()/1000)
+    });
+    const fee=quote?.withdrawFee ?? quote?.fee;
+    if(fee===null||fee===undefined||!Number.isFinite(Number(fee)) ||
+       Number(fee)<0||Number(fee)>amount)
+      return stop('Taxa do saque não foi confirmada.');
     stage='contract';
-    return stop('O valor realmente sacável e os campos de envio ainda não foram validados no domínio real.');
+    return stop('Consultas de saque válidas; envio financeiro requer contrato autorizado.');
   }catch(_){
     if(stage==='withdrawInfoV2')return stop('Não foi possível consultar a conta de saque.');
     if(stage==='gameCenter/gold')return stop('Consulta de saldo falhou ou não é suportada.');
+    if(stage==='getWithdrawFee')return stop('Consulta de taxa falhou ou não é suportada.');
     return stop('Pré-requisitos não verificados; nenhum saque enviado.');
   }
 }"""
