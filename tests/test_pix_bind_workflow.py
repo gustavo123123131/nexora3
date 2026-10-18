@@ -197,7 +197,7 @@ def test_browser_worker_passes_saved_profile_name_and_cpf_without_extra_gate(
     monkeypatch.setattr(launcher_module, "LocalProfileStore", SavedAccountStore)
     monkeypatch.setattr(operations, "PixOperationStore", lambda: store)
     monkeypatch.setattr(key_module, "PixKeyStore", lambda: store.keys)
-    def fake_bind(page, *, name, cpf, pin, key, kind):
+    def fake_bind(page, *, name, cpf, pin, key, kind, initialize_pin=False):
         calls.append((page, name, cpf, pin, key, kind))
         return {"state":"confirmed", "stage":"withdrawInfoV2-depois"}
     monkeypatch.setattr(browser_module, "bind_in_page", fake_bind)
