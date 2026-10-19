@@ -40,9 +40,11 @@ _JS = r"""async ({allowedHosts}={}) => {
       elapsedMs:Number.isSafeInteger(elapsedMs)?elapsedMs:null});
   };
   // Only enumerated PIN-field metadata may leave this page; no raw payloads.
-  let pinDiagnostic=null;
+  let pinDiagnostic=null, securityDiagnostic=null;
   const stop=(message)=>{mark('result');return {
-    stage,message,trace,...(pinDiagnostic===null?{}:{pinDiagnostic})
+    stage,message,trace,
+    ...(pinDiagnostic===null?{}:{pinDiagnostic}),
+    ...(securityDiagnostic===null?{}:{securityDiagnostic})
   };};
   const allowed=Array.isArray(allowedHosts)&&allowedHosts.length?
     allowedHosts:['www.5gbet.com','5gbet.com'];
@@ -102,8 +104,31 @@ _JS = r"""async ({allowedHosts}={}) => {
       value:!present?'ausente':raw===true?'true':raw===false?'false':'outro',
       type:!present?'undefined':raw===null?'null':typeof raw
     };
-    if(info.hasWithdrawPasswd!==true)
+    if(info.hasWithdrawPasswd!==true){
+      // The withdrawal endpoint sometimes omits this flag. Inspect the
+      // independently exposed security status without sending a PIN or payout.
+      if(!present){
+        try{
+          const res=await sdk.request({url:'/api/member/user/security/status',
+            method:'POST',timeout:18000},
+            {merge:false,maxRetryCount:0,cache:{useCache:false}});
+          if(Number(res?.data?.code)===1){
+            const data=res?.data?.data;
+            const known=!!data && typeof data==='object' &&
+              Object.prototype.hasOwnProperty.call(data,'hasWithdrawPasswd');
+            const v=known?data.hasWithdrawPasswd:undefined;
+            securityDiagnostic={
+              status:'accepted',
+              value:!known?'ausente':v===true?'true':v===false?'false':'outro',
+              type:!known?'undefined':v===null?'null':typeof v
+            };
+          }else securityDiagnostic={status:'rejected',value:'ausente',type:'undefined'};
+        }catch(_){
+          securityDiagnostic={status:'unavailable',value:'ausente',type:'undefined'};
+        }
+      }
       return stop('PIN de saque não confirmado pela plataforma.');
+    }
     // The source research only confirms "accounts" for withdrawal destinations.
     if(!Array.isArray(info.accounts) || !info.accounts.length)
       return stop('Nenhum destino de saque vinculado nesta conta.');
@@ -181,6 +206,21 @@ def inspect_withdrawal_preflight(page, *, account_start_url=None):
                     publish("Sistema", "[Saque][Diagnóstico] withdrawInfoV2 "
                             f"hasWithdrawPasswd={value}; tipo={kind}; "
                             "consulta somente leitura; saque enviado=não")
+                except Exception:
+                    pass
+        security = result.get("securityDiagnostic")
+        if isinstance(security, dict):
+            state, val, typ = (security.get("status"), security.get("value"),
+                               security.get("type"))
+            if (state in {"accepted", "rejected", "unavailable"} and
+                    val in {"true", "false", "ausente", "outro"} and
+                    typ in {"boolean", "undefined", "null", "string", "number",
+                            "object", "bigint", "symbol", "function"}):
+                try:
+                    from webui.live_logs import publish
+                    publish("Sistema", "[Saque][Diagnóstico] security/status "
+                            f"resposta={state}; hasWithdrawPasswd={val}; tipo={typ}; "
+                            "sem envio de PIN ou saque")
                 except Exception:
                     pass
         # Never return raw SDK errors, destination, PIN, balances or tokens.
