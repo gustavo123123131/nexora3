@@ -23,6 +23,13 @@ perfis persistentes separados, interface no navegador e gerenciador de proxy.
 - A aba **Chave Pix** mantém o cadastro local de chaves. A seção
   **Operações** possui tentativa de vinculação pela sessão Chromium da
   conta selecionada; o resultado precisa ser confirmado pela plataforma.
+- A opção **Identificar plataforma e verificar conta** detecta a origem HTTPS
+  salva no perfil, permite o redirecionamento exato com/sem `www` e faz
+  consultas somente de leitura pela API `/hall/api` da própria sessão.
+  A compatibilidade detectada não autoriza automaticamente envio de saque
+  em todos os domínios: o executor `cashV3` segue com suporte de envio
+  apenas à origem exata auditada nesta versão. Não são enviadas credenciais
+  para sites diferentes da conta selecionada.
 - O botão **Sacar** usa a sessão Chromium da conta selecionada e o PIN padrão
   `387520`, compartilhado com o cadastro Pix, sem exigir cadastro no cofre
   Windows. O servidor remoto ainda deve validar o PIN. A operação envia no

@@ -18,9 +18,11 @@ import nexora_accounts.withdrawal_browser as browser_module
 def test_selected_account_owns_all_withdrawal_requests(monkeypatch, tmp_path):
     profiles = {
         91001: {"id": 91001, "accountId": str(uuid4()),
-                "origin": "mae", "lastSessionId": str(uuid4())},
+                "origin": "mae", "lastSessionId": str(uuid4()),
+                "startUrl": "https://www.80win.net/account"},
         91002: {"id": 91002, "accountId": str(uuid4()),
-                "origin": "filha", "lastSessionId": str(uuid4())},
+                "origin": "filha", "lastSessionId": str(uuid4()),
+                "startUrl": "https://www.5gbet.com/account"},
     }
     reader = SimpleNamespace(public_detail=lambda pid: dict(profiles[pid]))
     store = operations.WithdrawalStore(tmp_path / "withdrawals.json", profiles=reader)
@@ -28,8 +30,8 @@ def test_selected_account_owns_all_withdrawal_requests(monkeypatch, tmp_path):
     monkeypatch.setattr(launcher_module, "LocalProfileStore", lambda: reader)
     requests_seen = []
 
-    def inspect(page):
-        requests_seen.append(page)
+    def inspect(page, *, account_start_url=None):
+        requests_seen.append((page, account_start_url))
         return {"stage": "contract",
                 "message": "O valor realmente sacável e os campos de envio ainda não foram validados no domínio real.",
                 "trace": [{"stage": "withdrawInfoV2", "event": "api_accepted",
@@ -62,8 +64,8 @@ def test_selected_account_owns_all_withdrawal_requests(monkeypatch, tmp_path):
             assert not request_thread.is_alive()
             assert responses[0]["operation"]["accountId"] == first["accountId"]
             assert responses[0]["operation"]["status"] == "blocked"
-            assert requests_seen == [page_a]
-            assert page_b not in requests_seen
+            assert requests_seen == [(page_a, first["startUrl"])]
+            assert not any(page is page_b for page, _ in requests_seen)
             assert not store.list(91002)["operations"]
             with pytest.raises(operations.WithdrawalPreparationError, match="divergente"):
                 app.preflight_withdrawal(91001, second["accountId"], timeout=0.1)
