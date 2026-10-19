@@ -425,9 +425,14 @@ class AccountLauncher:
                        account_id=account_id, run_id=run_id)
         if op["status"] != "queued":
             return op
+        _live(profile_id, operation_id,
+              "[Trilha] versao=pin-logs-v1; worker Chromium iniciado; "
+              "operacao=consulta; cashV3=nao")
         detail = LocalProfileStore().public_detail(profile_id)
         if (detail.get("accountId") != account_id or
                 detail.get("lastSessionId") != run_id):
+            _live(profile_id, operation_id,
+                  "[Trilha] vinculo conta/sessao=invalido; consulta interrompida")
             result = {"stage": "local",
                       "message": "Sessão da conta não corresponde à operação."}
         else:
@@ -436,22 +441,43 @@ class AccountLauncher:
             # Chromium provider origin may perform an independent PIN check.
             from nexora_accounts.withdrawal_browser import ALLOWED_HOSTS
             params = {"account_start_url": detail.get("startUrl")}
+            stored_allowed = actual_allowed = False
             try:
                 stored_origin = urlsplit(str(detail.get("startUrl") or ""))
                 actual_origin = urlsplit(str(getattr(page, "url", "") or ""))
-                if (stored_origin.scheme == "https" and
-                        actual_origin.scheme == "https" and
-                        stored_origin.hostname in ALLOWED_HOSTS and
-                        actual_origin.hostname in ALLOWED_HOSTS and
-                        stored_origin.port in (None, 443) and
-                        actual_origin.port in (None, 443)):
+                stored_allowed = (stored_origin.scheme == "https" and
+                    stored_origin.hostname in ALLOWED_HOSTS and
+                    stored_origin.port in (None, 443))
+                actual_allowed = (actual_origin.scheme == "https" and
+                    actual_origin.hostname in ALLOWED_HOSTS and
+                    actual_origin.port in (None, 443))
+                if stored_allowed and actual_allowed:
                     from nexora_accounts.pix_operations import PIX_WITHDRAW_PIN
                     params["verify_pin"] = PIX_WITHDRAW_PIN
             except (AttributeError, TypeError, ValueError):
                 pass
+            _live(profile_id, operation_id,
+                  "[Trilha] vinculo conta/sessao=valido; "
+                  f"origem_salva_oficial={'sim' if stored_allowed else 'nao'}; "
+                  f"origem_chromium_oficial={'sim' if actual_allowed else 'nao'}; "
+                  f"PIN_elegivel_para_verificacao={'sim' if 'verify_pin' in params else 'nao'}; "
+                  "sem valores sensiveis nos logs")
             result = inspect_withdrawal_preflight(page, **params)
         operation = store.finish(operation_id, profile_id=profile_id,
                                  account_id=account_id, run_id=run_id, result=result)
+        for i, step in enumerate(operation.get("events", ())[:40], 1):
+            # Only allowlisted stages and event names reach persisted events.
+            parts = [f"[Trilha {i:02d}]", f"etapa={step['stage']}",
+                     f"evento={step['event']}"]
+            for field, label in (("httpStatus", "HTTP"), ("providerCode", "codigoAPI"),
+                                 ("elapsedMs", "duracao_ms")):
+                value = step.get(field)
+                if type(value) is int:
+                    parts.append(f"{label}={value}")
+            _live(profile_id, operation_id, "; ".join(parts))
+        _live(profile_id, operation_id,
+              f"[Trilha] fim=sim; passos={len(operation.get('events', ())) }; "
+              "saque_enviado=nao")
         _live(profile_id, operation_id, describe_preflight_for_log(operation))
         return operation
 
