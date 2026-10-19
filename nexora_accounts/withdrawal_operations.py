@@ -18,10 +18,22 @@ from nexora_accounts.pix_key_store import _disk_lock
 
 _LOCK = threading.RLock()
 _STATES = {"queued", "blocked", "indeterminate"}
-_STAGES = {"local", "site", "client", "withdrawInfoV2", "verifyWithdrawPass",
-           "gameCenter/gold", "getWithdrawFee", "contract"}
-_EVENTS = {"request_start", "api_accepted", "api_rejected",
-           "request_exception", "result", "shape_checked"}
+_STAGES = {"local", "site", "client", "withdrawInfoV2", "security/status",
+           "verifyWithdrawPass", "gameCenter/gold", "getWithdrawFee", "contract"}
+_EVENTS = {
+    "request_start", "api_accepted", "api_rejected", "request_exception",
+    "result", "shape_checked", "preflight_started", "origin_accepted",
+    "origin_rejected", "sdk_candidate_found", "sdk_missing", "sdk_ready",
+    "pin_field_true", "pin_field_false", "pin_field_other",
+    "pin_field_absent", "pin_field_present", "pin_check_eligible",
+    "pin_check_skipped", "pin_check_accepted", "pin_check_rejected",
+    "pin_two_step_required", "destination_missing", "destination_multiple",
+    "destination_single", "destination_id_missing",
+    "destination_id_present", "limits_invalid", "limits_valid",
+    "balance_unavailable", "balance_available", "balance_below_minimum",
+    "balance_sufficient", "method_missing", "method_identified",
+    "fee_invalid", "fee_valid", "preflight_complete"
+}
 
 
 class WithdrawalPreparationError(ValueError):
@@ -217,7 +229,7 @@ class WithdrawalStore:
         events = []
         trace = result.get("trace", [])
         if isinstance(trace, list):
-            for row in trace[:25]:
+            for row in trace[:40]:
                 if (isinstance(row, dict) and row.get("stage") in _STAGES
                         and row.get("event") in _EVENTS):
                     clean = {"stage": row["stage"], "event": row["event"]}
