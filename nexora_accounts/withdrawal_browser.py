@@ -173,6 +173,7 @@ _JS = r"""async ({allowedHosts, pin=null}={}) => {
       }else{
         stage='verifyWithdrawPass';
         mark('pin_check_skipped');
+        stage='withdrawInfoV2';
         return stop('PIN de saque não confirmado pela plataforma.');
       }
     }
