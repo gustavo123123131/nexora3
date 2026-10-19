@@ -34,7 +34,7 @@ _JS = r"""async ({allowedHosts, pin=null}={}) => {
   const trace=[];
   let stage='client';
   const mark=(event,status=null,code=null,elapsedMs=null)=>{
-    if(trace.length<25)trace.push({stage,event,
+    if(trace.length<40)trace.push({stage,event,
       httpStatus:Number.isSafeInteger(status)?status:null,
       providerCode:Number.isSafeInteger(code)?code:null,
       elapsedMs:Number.isSafeInteger(elapsedMs)?elapsedMs:null});
@@ -49,10 +49,13 @@ _JS = r"""async ({allowedHosts, pin=null}={}) => {
   };};
   const allowed=Array.isArray(allowedHosts)&&allowedHosts.length?
     allowedHosts:['www.5gbet.com','5gbet.com'];
+  mark('preflight_started');
   if(location.protocol!=='https:' ||
      !allowed.includes(location.hostname.toLowerCase())){
-    stage='site';return stop('Navegador fora do domínio autorizado.');
+    stage='site';mark('origin_rejected');
+    return stop('Navegador fora do domínio autorizado.');
   }
+  mark('origin_accepted');
   const urls=[...performance.getEntriesByType('resource').map(x=>x.name),
     ...Array.from(document.querySelectorAll('script[src]'),x=>x.src)];
   const chunk=[...new Set(urls)].find(x=>{
@@ -62,12 +65,14 @@ _JS = r"""async ({allowedHosts, pin=null}={}) => {
         /\/commonChunk\.[^/?]+\.js$/i.test(u.pathname);
     }catch(_){return false;}
   });
-  if(!chunk)return stop('Não foi possível carregar o cliente autenticado da página.');
+  if(!chunk){mark('sdk_missing');return stop('Não foi possível carregar o cliente autenticado da página.');}
+  mark('sdk_candidate_found');
   let sdk;
   try{
     sdk=(await import(chunk)).n;
     if(typeof sdk?.request!=='function')throw Error('unavailable');
-  }catch(_){return stop('Não foi possível carregar o cliente autenticado da página.');}
+  }catch(_){mark('sdk_missing');return stop('Não foi possível carregar o cliente autenticado da página.');}
+  mark('sdk_ready');
   class Failure extends Error {}
   async function post(path,data){
     const start=performance.now();
@@ -105,15 +110,26 @@ _JS = r"""async ({allowedHosts, pin=null}={}) => {
       value:!present?'ausente':raw===true?'true':raw===false?'false':'outro',
       type:!present?'undefined':raw===null?'null':typeof raw
     };
+    mark(!present?'pin_field_absent':raw===true?'pin_field_true':
+      raw===false?'pin_field_false':'pin_field_other');
     if(info.hasWithdrawPasswd!==true){
       // The withdrawal endpoint sometimes omits this flag. Inspect the
       // independently exposed security status without sending a PIN or payout.
       if(!present){
+        stage='security/status';
+        mark('request_start');
+        const statusStarted=performance.now();
         try{
           const res=await sdk.request({url:'/api/member/user/security/status',
             method:'POST',timeout:18000},
             {merge:false,maxRetryCount:0,cache:{useCache:false}});
-          if(Number(res?.data?.code)===1){
+          const statusCode=Number(res?.data?.code);
+          const statusHttp=Number(res?.status);
+          mark(statusCode===1?'api_accepted':'api_rejected',
+            Number.isSafeInteger(statusHttp)?statusHttp:null,
+            Number.isSafeInteger(statusCode)?statusCode:null,
+            Math.round(performance.now()-statusStarted));
+          if(statusCode===1){
             const data=res?.data?.data;
             const known=!!data && typeof data==='object' &&
               Object.prototype.hasOwnProperty.call(data,'hasWithdrawPasswd');
@@ -124,64 +140,99 @@ _JS = r"""async ({allowedHosts, pin=null}={}) => {
               type:!known?'undefined':v===null?'null':typeof v
             };
           }else securityDiagnostic={status:'rejected',value:'ausente',type:'undefined'};
+          mark(securityDiagnostic.value==='ausente'?'pin_field_absent':'pin_field_present');
         }catch(_){
+          mark('request_exception',null,null,Math.round(performance.now()-statusStarted));
           securityDiagnostic={status:'unavailable',value:'ausente',type:'undefined'};
         }
+        stage='withdrawInfoV2';
       }
       // Only perform credential verification within the authenticated,
       // explicit 5GBet account origin, never on an automatically found site.
       if(!present && typeof pin==='string' && /^\d{6}$/.test(pin) &&
          ['www.5gbet.com','5gbet.com'].includes(location.hostname.toLowerCase())){
         stage='verifyWithdrawPass';
+        mark('pin_check_eligible');
         try{
           const check=await post('member/user/security/verifyWithdrawPass',
             {withdraw_pass:pin});
           if(check?.twoStepVerify || check?.verified===false ||
              check?.success===false){
             pinVerification='additional_verification';
+            mark('pin_two_step_required');
             return stop('PIN de saque não confirmado pela plataforma.');
           }
           pinVerification='api_accepted';
+          mark('pin_check_accepted');
           stage='withdrawInfoV2';
         }catch(_){
           pinVerification='rejected';
+          mark('pin_check_rejected');
           return stop('PIN de saque não confirmado pela plataforma.');
         }
-      }else return stop('PIN de saque não confirmado pela plataforma.');
+      }else{
+        stage='verifyWithdrawPass';
+        mark('pin_check_skipped');
+        return stop('PIN de saque não confirmado pela plataforma.');
+      }
     }
     // The source research only confirms "accounts" for withdrawal destinations.
-    if(!Array.isArray(info.accounts) || !info.accounts.length)
+    if(!Array.isArray(info.accounts) || !info.accounts.length){
+      mark('destination_missing');
       return stop('Nenhum destino de saque vinculado nesta conta.');
-    if(info.accounts.length!==1)
+    }
+    if(info.accounts.length!==1){
+      mark('destination_multiple');
       return stop('Mais de um destino remoto: seleção precisa de contrato validado.');
+    }
+    mark('destination_single');
     const target=info.accounts[0];
     if(!target || (typeof target.id!=='string' && typeof target.id!=='number')
-      || !String(target.id).trim())
+      || !String(target.id).trim()){
+      mark('destination_id_missing');
       return stop('Conta de destino sem identificador remoto comprovado.');
+    }
+    mark('destination_id_present');
     const min=Number(info.withdrawMin), max=Number(info.withdrawMax);
-    if(!Number.isFinite(min)||!Number.isFinite(max)||min<=0||max<min)
+    if(!Number.isFinite(min)||!Number.isFinite(max)||min<=0||max<min){
+      mark('limits_invalid');
       return stop('Limites de saque não foram identificados.');
+    }
+    mark('limits_valid');
     stage='gameCenter/gold';
     const wallet=await post('gameCenter/gold');
     const rawBalance=wallet?.userInfos?.game_gold;
     if(rawBalance===null || rawBalance===undefined ||
-       !Number.isFinite(Number(rawBalance)) || Number(rawBalance)<0)
+       !Number.isFinite(Number(rawBalance)) || Number(rawBalance)<0){
+      mark('balance_unavailable');
       return stop('Saldo realmente sacável não foi identificado em userInfos.game_gold.');
+    }
+    mark('balance_available');
     const amount=Math.min(Math.max(0,Math.floor(Number(rawBalance))),max);
-    if(!Number.isFinite(amount)||amount<min)
+    if(!Number.isFinite(amount)||amount<min){
+      mark('balance_below_minimum');
       return stop('Saldo disponível inferior ao mínimo permitido.');
+    }
+    mark('balance_sufficient');
     const method=target?.withdrawTypeId;
-    if(!Number.isSafeInteger(method)||method<0)
+    if(!Number.isSafeInteger(method)||method<0){
+      mark('method_missing');
       return stop('Tipo de saque remoto não identificado.');
+    }
+    mark('method_identified');
     stage='getWithdrawFee';
     const quote=await post('finance/certify/getWithdrawFee',{
       withdrawTypeId:method,amount,time:Math.floor(Date.now()/1000)
     });
     const fee=quote?.withdrawFee ?? quote?.fee;
     if(fee===null||fee===undefined||!Number.isFinite(Number(fee)) ||
-       Number(fee)<0||Number(fee)>amount)
+       Number(fee)<0||Number(fee)>amount){
+      mark('fee_invalid');
       return stop('Taxa do saque não foi confirmada.');
+    }
+    mark('fee_valid');
     stage='contract';
+    mark('preflight_complete');
     return stop('Consultas de saque válidas; envio financeiro requer contrato autorizado.');
   }catch(_){
     if(stage==='withdrawInfoV2')return stop('Não foi possível consultar a conta de saque.');
