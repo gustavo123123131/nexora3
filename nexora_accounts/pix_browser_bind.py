@@ -1,4 +1,4 @@
-"""Execute the user-supplied 5gbet Pix API flow inside the owning Chromium page.
+"""Execute the Pix binding flow inside the owning Chromium page.
 
 The endpoint names and request bodies come from the operator's provided
 DevTools script. They are NOT a verified published provider contract.
@@ -6,13 +6,13 @@ No secrets, full Pix values, JWTs or response bodies leave page.evaluate().
 """
 from urllib.parse import urlsplit
 
-OFFICIAL_HOSTS = frozenset(("5gbet.com", "www.5gbet.com"))
+DEFAULT_HOST = "5gbet.com"  # Legacy fallback only, not a provider allowlist.
 FINAL_STATES = frozenset((
     "confirmed", "already_registered", "accepted_unconfirmed", "uncertain",
     "failed", "unsupported",
 ))
 
-_JS = r"""async ({name, cpf, pin, key, kind, initializePin=false}) => {
+_JS = r"""async ({name, cpf, pin, key, kind, expectedHost, initializePin=false}) => {
   // Keep ONLY bounded, enumerated metadata; never log PIN, Pix, CPF,
   // response bodies, request bodies, tokens or browser exceptions.
   const timeline = [];
@@ -36,12 +36,16 @@ _JS = r"""async ({name, cpf, pin, key, kind, initializePin=false}) => {
     return {state, stage:step, message,
       providerCode:codeOf(code), trace:timeline};
   };
-  if (location.protocol !== 'https:' ||
-      !['www.5gbet.com', '5gbet.com'].includes(location.hostname.toLowerCase()))
-    return safe('failed', 'site', 'Navegador da conta não está no domínio autorizado.');
+  // Use the origin saved on THIS account, not a casino-specific allowlist.
+  const canonical = x => String(x || '').toLowerCase().replace(/^www\./, '');
+  if (location.protocol !== 'https:' || !expectedHost ||
+      canonical(location.hostname) !== canonical(expectedHost))
+    return safe('failed', 'site',
+      'Navegador fora do endereço configurado para esta conta.');
   const paths = [
     ...performance.getEntriesByType('resource').map(x => x.name),
-    ...Array.from(document.querySelectorAll('script[src]'), x => x.src)
+    ...Array.from(document.querySelectorAll('script[src]'), x => x.src),
+    ...Array.from(document.querySelectorAll('link[rel="modulepreload"][href]'), x => x.href)
   ];
   const chunk = [...new Set(paths)].find(x => {
     try {
@@ -51,13 +55,21 @@ _JS = r"""async ({name, cpf, pin, key, kind, initializePin=false}) => {
     } catch (_) { return false; }
   });
   if (!chunk) return safe('failed', 'client',
-    'Cliente HTTP original não localizado nesta página. Abra a área de saque no navegador da conta.');
+    'Cliente HTTP original não localizado na sessão desta conta.');
   let api;
   try {
-    api = (await import(chunk)).n;
-    if (typeof api?.request !== 'function') throw Error('missing');
+    const exports = await import(chunk);
+    // A mere request() property can also belong to UI components.
+    const matches = Object.values(exports).filter(value =>
+      value?.name === 'lobby' &&
+      typeof value?.request === 'function' &&
+      typeof value?.setupCustomConfig === 'function' &&
+      typeof value?.Request === 'function');
+    if (matches.length !== 1) throw Error('ambiguous-client');
+    api = matches[0];
   } catch (_) {
-    return safe('failed', 'client', 'Cliente HTTP original indisponível.');
+    return safe('failed', 'client',
+      'Cliente HTTP autenticado não identificado de maneira inequívoca.');
   }
   class ProviderError extends Error {
     constructor(stage, code) {
@@ -103,12 +115,13 @@ _JS = r"""async ({name, cpf, pin, key, kind, initializePin=false}) => {
     if (code !== 1) throw new ProviderError(stage,code);
     return outer?.data ?? {};
   }
-  const list = data => {
-    for (const field of ['accounts', 'accountList', 'withdrawAccounts',
-                         'withdrawAccountList']) {
-      if (Array.isArray(data?.[field])) return data[field];
+  const accountLists = data => {
+    const result = {};
+    for (const field of ['accounts', 'accountsV2', 'accountList',
+                         'withdrawAccounts', 'withdrawAccountList']) {
+      if (Array.isArray(data?.[field])) result[field] = data[field];
     }
-    return null;
+    return result;
   };
   const listed = (rows, value) => Array.isArray(rows) && rows.some(row =>
     ['account', 'accountNo', 'account_number', 'addr'].some(field =>
@@ -129,9 +142,11 @@ _JS = r"""async ({name, cpf, pin, key, kind, initializePin=false}) => {
     }
     stage='withdrawInfoV2-antes';
     const before = await post('finance/certify/withdrawInfoV2');
-    const beforeList=list(before);
-    mark(stage, 'list_check', {responseShape:beforeList ? 'list_found' : 'list_missing'});
-    if (listed(beforeList,key)) return safe('already_registered',stage,
+    const beforeLists=accountLists(before);
+    mark(stage, 'list_check', {responseShape:
+      Object.keys(beforeLists).length ? 'list_found' : 'list_missing'});
+    if (Object.values(beforeLists).some(rows => listed(rows,key)))
+      return safe('already_registered',stage,
       'A chave já consta na lista de saques desta conta.');
     const serverCpf=String(before?.cpf || '').replace(/\D/g,'');
     if (serverCpf.length === 11 && serverCpf !== cpf)
@@ -165,9 +180,10 @@ _JS = r"""async ({name, cpf, pin, key, kind, initializePin=false}) => {
     bindAccepted=true;
     stage='withdrawInfoV2-depois';
     const after=await post('finance/certify/withdrawInfoV2');
-    const afterList=list(after);
-    mark(stage, 'list_check', {responseShape:afterList ? 'list_found' : 'list_missing'});
-    if (listed(afterList,key)) {
+    const afterLists=accountLists(after);
+    mark(stage, 'list_check', {responseShape:
+      Object.keys(afterLists).length ? 'list_found' : 'list_missing'});
+    if (Object.values(afterLists).some(rows => listed(rows,key))) {
       mark(stage, 'key_matched');
       return safe('confirmed',stage,
         'Chave Pix identificada na lista de saques da conta.');
@@ -175,8 +191,8 @@ _JS = r"""async ({name, cpf, pin, key, kind, initializePin=false}) => {
     // Some provider lists mask the saved key. The operator's working flow
     // therefore also checks whether a new account entry appeared after an
     // accepted bind. Never infer success from merely finding an array.
-    if (Array.isArray(beforeList) && Array.isArray(afterList) &&
-        afterList.length > beforeList.length) {
+    if (Object.entries(beforeLists).some(([field, rows]) =>
+        Array.isArray(afterLists[field]) && afterLists[field].length > rows.length)) {
       mark(stage, 'list_growth_confirmed');
       return safe('confirmed',stage,
         'API aceitou o cadastro e a listagem ganhou nova entrada; chave individual não identificável.');
@@ -198,16 +214,21 @@ _JS = r"""async ({name, cpf, pin, key, kind, initializePin=false}) => {
 
 
 def bind_in_page(page, *, name: str, cpf: str, pin: str, key: str,
-                 kind: str, initialize_pin: bool = False) -> dict:
+                 kind: str, initialize_pin: bool = False,
+                 expected_host: str = DEFAULT_HOST) -> dict:
     """Runs only on the Playwright owner thread, no new navigation."""
     try:
         url = urlsplit(str(page.url or ""))
-        if url.scheme != "https" or url.hostname not in OFFICIAL_HOSTS:
+        def canonical(host):
+            return (host or "").lower().removeprefix("www.")
+        if (url.scheme != "https" or not expected_host or
+                canonical(url.hostname) != canonical(expected_host)):
             return {"state": "failed", "stage": "site",
-                    "message": "Abra a 5gbet na janela Chromium desta conta."}
+                    "message": "O endereço do Chromium não corresponde ao site salvo nesta conta."}
         result = page.evaluate(_JS, {
             "name": name, "cpf": cpf, "pin": pin, "key": key, "kind": kind,
             "initializePin": initialize_pin is True,
+            "expectedHost": expected_host,
         })
         if not isinstance(result, dict) or result.get("state") not in FINAL_STATES:
             return {"state": "uncertain", "stage": "client",

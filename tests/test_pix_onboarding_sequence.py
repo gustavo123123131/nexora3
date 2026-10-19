@@ -30,7 +30,7 @@ def test_first_time_withdrawal_setup_stages_are_sequential(
     sdk = r"""
         window.__calls=[];
         window.__bound=false;
-        export const n={request:async ({url,method,data})=>{
+        export const n={name:'lobby', setupCustomConfig(){}, Request:class Request {}, request:async ({url,method,data})=>{
           window.__calls.push({url,method,data});
           const reply=(body={},code=1)=>({data:{code,data:body}});
           const scenario="SCENARIO";
