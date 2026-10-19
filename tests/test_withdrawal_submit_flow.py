@@ -148,3 +148,34 @@ def test_submit_uses_exact_account_worker_and_default_pix_pin_without_vault(monk
             assert worker_b['requests'].empty()
             with pytest.raises(submit.WithdrawalSubmissionError):
                 app.submit_withdrawal(a['id'],b['accountId'],timeout=.1)
+
+
+def test_site_block_logs_host_without_full_url(monkeypatch, tmp_path):
+    account = next(iter(profiles().values()))
+    class Reader:
+        def public_detail(self, pid):
+            assert pid == account["id"]
+            return dict(account)
+    reader = Reader()
+    monkeypatch.setattr(launcher, "LocalProfileStore", lambda: reader)
+    store = submit.WithdrawalSubmissionStore(tmp_path / "orders.json", profiles=reader)
+    monkeypatch.setattr(submit, "WithdrawalSubmissionStore", lambda: store)
+    messages = []
+    monkeypatch.setattr(submit, "_log", lambda *args: messages.append(args[-1]))
+    pins = []
+    def blocked_sender(page, pin):
+        pins.append(pin)
+        return {"status": "blocked", "stage": "site",
+                "message": "Envio não iniciado: domínio não autorizado."}
+    monkeypatch.setattr(submit, "send_in_page", blocked_sender)
+    op = store.reserve(profile_id=account["id"], account_id=account["accountId"],
+                       run_id=account["lastSessionId"])["operation"]
+    page = SimpleNamespace(url="https://www.80win.net/finance?token=PRIVATE_TOKEN")
+    result = launcher.AccountLauncher()._submit_withdrawal_on_owner_thread(
+        profile_id=account["id"], account_id=account["accountId"],
+        run_id=account["lastSessionId"], operation_id=op["operationId"],
+        page=page)
+    assert result["status"] == "blocked"
+    assert pins == ["387520"]
+    assert any("dominio observado=www.80win.net" in msg for msg in messages)
+    assert all("PRIVATE_TOKEN" not in msg and "/finance" not in msg for msg in messages)

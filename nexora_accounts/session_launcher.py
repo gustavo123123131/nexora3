@@ -504,6 +504,18 @@ class AccountLauncher:
             run_id=run_id,status="attempting",stage="cashV3",
             message="Tentativa marcada antes do envio; não repetir automaticamente.")
         result=send_in_page(page,pin)
+        if result.get("status")=="blocked" and result.get("stage")=="site":
+            # Log only the hostname, never a full URL, cookies or parameters.
+            try:
+                host=urlsplit(str(getattr(page,"url","") or "")).hostname or ""
+                host=host.lower()
+                safe_host=(host if 0<len(host)<=253 and
+                           all(ch in "abcdefghijklmnopqrstuvwxyz0123456789.-" for ch in host)
+                           else "indisponivel")
+            except (TypeError,ValueError,AttributeError):
+                safe_host="indisponivel"
+            _log(profile_id,operation_id,
+                 f"dominio observado={safe_host}; executor atual exige www.5gbet.com; envio nao iniciado")
         operation=store.update(operation_id,profile_id=profile_id,account_id=account_id,
             run_id=run_id,**result)
         _log(profile_id,operation_id,
