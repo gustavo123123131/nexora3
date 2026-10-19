@@ -98,10 +98,10 @@
     withdrawPanel.append(
       el('h2', '', 'Verificar saque'),
       el('p', 'operations-hint',
-        'Consulta o destino, os limites, os dados de saldo e a taxa da conta selecionada quando disponíveis. Esta ação não envia pedido de saque.')
+        'Identifica automaticamente a API /hall/api no domínio da conta selecionada e consulta destino, saldo e taxa. Esta verificação não envia saque.')
     );
     const checkWithdraw = el('button', 'accounts-details operations-withdraw-check',
-      'Verificar conta de saque');
+      'Identificar plataforma e verificar conta');
     checkWithdraw.type = 'button';
     checkWithdraw.disabled = true;
     const withdrawMessage = el('p', 'operations-withdraw-feedback');
@@ -113,7 +113,7 @@
     submitWithdraw.type = 'button';
     submitWithdraw.disabled = true;
     const submitHint = el('p', 'operations-hint',
-      'Este botão faz uma solicitação real à plataforma usando o PIN já salvo nesta conta. ' +
+      'O envio usa o PIN padrão do projeto e exige uma integração de saque compatível com a plataforma. ' +
       'O clique autoriza um único pedido; não há reenvio automático. ' +
       'Confira o destino e o saldo no site antes de usar.');
     const refreshOrders = el('button', 'accounts-details operations-withdraw-status',
