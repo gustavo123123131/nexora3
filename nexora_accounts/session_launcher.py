@@ -515,7 +515,7 @@ class AccountLauncher:
             except (TypeError,ValueError,AttributeError):
                 safe_host="indisponivel"
             _log(profile_id,operation_id,
-                 f"dominio observado={safe_host}; origem suportada: 5gbet.com ou www.5gbet.com; envio nao iniciado")
+                 f"dominio observado={safe_host}; executor atual exige www.5gbet.com; envio nao iniciado")
         operation=store.update(operation_id,profile_id=profile_id,account_id=account_id,
             run_id=run_id,**result)
         _log(profile_id,operation_id,
