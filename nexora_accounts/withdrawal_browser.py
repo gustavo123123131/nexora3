@@ -39,7 +39,11 @@ _JS = r"""async ({allowedHosts}={}) => {
       providerCode:Number.isSafeInteger(code)?code:null,
       elapsedMs:Number.isSafeInteger(elapsedMs)?elapsedMs:null});
   };
-  const stop=(message)=>{mark('result');return {stage,message,trace};};
+  // Only enumerated PIN-field metadata may leave this page; no raw payloads.
+  let pinDiagnostic=null;
+  const stop=(message)=>{mark('result');return {
+    stage,message,trace,...(pinDiagnostic===null?{}:{pinDiagnostic})
+  };};
   const allowed=Array.isArray(allowedHosts)&&allowedHosts.length?
     allowedHosts:['www.5gbet.com','5gbet.com'];
   if(location.protocol!=='https:' ||
@@ -92,6 +96,12 @@ _JS = r"""async ({allowedHosts}={}) => {
     const info=await post('finance/certify/withdrawInfoV2');
     if(!info || typeof info!=='object')return stop('Dados de saque não retornaram no formato esperado.');
     mark('shape_checked');
+    const present=Object.prototype.hasOwnProperty.call(info,'hasWithdrawPasswd');
+    const raw=info.hasWithdrawPasswd;
+    pinDiagnostic={
+      value:!present?'ausente':raw===true?'true':raw===false?'false':'outro',
+      type:!present?'undefined':raw===null?'null':typeof raw
+    };
     if(info.hasWithdrawPasswd!==true)
       return stop('PIN de saque não confirmado pela plataforma.');
     // The source research only confirms "accounts" for withdrawal destinations.
@@ -156,6 +166,23 @@ def inspect_withdrawal_preflight(page, *, account_start_url=None):
             return {"stage": "client",
                     "message": "Não foi possível carregar o cliente autenticado da página.",
                     "trace": []}
+        # The page sends only enumerated field presence/type, not the field
+        # content (for strings) or any raw API response.
+        diag = result.get("pinDiagnostic")
+        if isinstance(diag, dict):
+            value = diag.get("value")
+            kind = diag.get("type")
+            if (type(value) is str and type(kind) is str and
+                    value in {"true", "false", "ausente", "outro"} and
+                    kind in {"undefined", "boolean", "null", "string", "number",
+                             "object", "bigint", "symbol", "function"}):
+                try:
+                    from webui.live_logs import publish
+                    publish("Sistema", "[Saque][Diagnóstico] withdrawInfoV2 "
+                            f"hasWithdrawPasswd={value}; tipo={kind}; "
+                            "consulta somente leitura; saque enviado=não")
+                except Exception:
+                    pass
         # Never return raw SDK errors, destination, PIN, balances or tokens.
         return {
             "stage": result.get("stage"),
