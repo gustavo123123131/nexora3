@@ -223,3 +223,63 @@ def test_remote_pin_check_read_only_never_submits_cash(
         assert not any(c["pinPayload"] for c in out["calls"])
     # Neither status response bodies nor the PIN may escape the browser.
     assert "123456" not in json.dumps(out)
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="Node.js unavailable")
+@pytest.mark.parametrize("scenario,stage,expected,field,alternate", [
+    ("nested_valid", "contract", "positive", "none", "absent"),
+    ("nested_zero", "gameCenter/gold", "zero", "none", "absent"),
+    ("root_game_gold", "gameCenter/gold", "absent", "root_game_gold", "positive"),
+    ("root_balance_zero", "gameCenter/gold", "absent", "root_balance", "zero"),
+    ("nested_array", "gameCenter/gold", "absent", "single_userInfo_game_gold", "positive"),
+    ("unknown", "gameCenter/gold", "absent", "none", "absent"),
+])
+def test_read_only_wallet_shape_diagnostic(
+        scenario, stage, expected, field, alternate):
+    js = _JS.replace("await import(chunk)", "await loadModule(chunk)")
+    harness = r'''(async()=>{
+      const variant=process.argv[2];
+      global.location={protocol:"https:",hostname:"5gbet.com",
+        origin:"https://5gbet.com",href:"https://5gbet.com/account"};
+      global.performance={now:()=>0,getEntriesByType:()=>
+        [{name:"https://5gbet.com/commonChunk.mock.js"}]};
+      global.document={querySelectorAll:()=>[]};
+      const routes=[];
+      global.loadModule=async()=>({n:{request:async({url})=>{
+        routes.push(url);
+        let data;
+        if(url.endsWith("/withdrawInfoV2")){
+          data={hasWithdrawPasswd:true,withdrawMin:5,withdrawMax:100,
+            accounts:[{id:"remote-account",withdrawTypeId:7}]};
+        }else if(url.endsWith("/gameCenter/gold")){
+          const layouts={
+            nested_valid:{userInfos:{game_gold:20}},
+            nested_zero:{userInfos:{game_gold:0}},
+            root_game_gold:{game_gold:20},
+            root_balance_zero:{balance:0},
+            nested_array:{userInfos:[{game_gold:20}]},
+            unknown:{unrelated:123}
+          };
+          data=layouts[variant];
+        }else if(url.endsWith("/getWithdrawFee")){
+          data={withdrawFee:0};
+        }else throw Error("Unexpected API read");
+        return {status:200,data:{code:1,data}};
+      }}});
+      const result=await eval("("+process.argv[1]+")")({
+        allowedHosts:["5gbet.com","www.5gbet.com"]});
+      process.stdout.write(JSON.stringify({result,routes}));
+    })().catch(e=>{console.error(e);process.exit(1)});'''
+    done=subprocess.run(["node","-e",harness,js,scenario],
+                        text=True,capture_output=True,timeout=15)
+    assert done.returncode==0,done.stderr
+    data=json.loads(done.stdout)
+    assert data["result"]["stage"] == stage
+    diag=data["result"]["balanceDiagnostic"]
+    assert diag["expectedState"] == expected
+    assert diag["alternateField"] == field
+    assert diag["alternateState"] == alternate
+    assert "balance_shape_checked" in [e["event"] for e in data["result"]["trace"]]
+    assert not any("cashV3" in url for url in data["routes"])
+    # No raw balance amounts or remote identifiers returned by the diagnostic.
+    assert "remote-account" not in json.dumps(data)
