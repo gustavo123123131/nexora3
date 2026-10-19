@@ -30,6 +30,7 @@ _EVENTS = {
     "pin_two_step_required", "destination_missing", "destination_multiple",
     "destination_single", "destination_id_missing",
     "destination_id_present", "limits_invalid", "limits_valid",
+    "balance_shape_checked", "balance_alternate_field_found",
     "balance_unavailable", "balance_available", "balance_below_minimum",
     "balance_sufficient", "method_missing", "method_identified",
     "fee_invalid", "fee_valid", "preflight_complete"

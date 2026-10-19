@@ -41,11 +41,13 @@ _JS = r"""async ({allowedHosts, pin=null}={}) => {
   };
   // Only enumerated PIN-field metadata may leave this page; no raw payloads.
   let pinDiagnostic=null, securityDiagnostic=null, pinVerification=null;
+  let balanceDiagnostic=null;
   const stop=(message)=>{mark('result');return {
     stage,message,trace,
     ...(pinDiagnostic===null?{}:{pinDiagnostic}),
     ...(securityDiagnostic===null?{}:{securityDiagnostic}),
-    ...(pinVerification===null?{}:{pinVerification})
+    ...(pinVerification===null?{}:{pinVerification}),
+    ...(balanceDiagnostic===null?{}:{balanceDiagnostic})
   };};
   const allowed=Array.isArray(allowedHosts)&&allowedHosts.length?
     allowedHosts:['www.5gbet.com','5gbet.com'];
@@ -203,6 +205,37 @@ _JS = r"""async ({allowedHosts, pin=null}={}) => {
     stage='gameCenter/gold';
     const wallet=await post('gameCenter/gold');
     const rawBalance=wallet?.userInfos?.game_gold;
+    // Log only bounded structural categories, never balances or response bodies.
+    const shape=x=>Array.isArray(x)?'array':x===null?'null':typeof x;
+    const valueState=x=>{
+      if(x===undefined)return 'absent';
+      if(x===null)return 'null';
+      if(typeof x!=='number' && typeof x!=='string')return 'invalid';
+      if(typeof x==='string' && x.trim()==='')return 'invalid';
+      const n=Number(x);
+      return !Number.isFinite(n)?'invalid':n<0?'negative':n===0?'zero':'positive';
+    };
+    const candidates=[
+      ['root_game_gold',wallet?.game_gold],
+      ['root_gold',wallet?.gold],
+      ['root_balance',wallet?.balance],
+      ['root_gameGold',wallet?.gameGold],
+      ['root_numeric',typeof wallet==='number'||typeof wallet==='string'?wallet:undefined],
+      ['single_userInfo_game_gold',
+        Array.isArray(wallet?.userInfos)&&wallet.userInfos.length===1?
+          wallet.userInfos[0]?.game_gold:undefined]
+    ];
+    const candidate=candidates.find(x=>['positive','zero'].includes(valueState(x[1])))||
+      candidates.find(x=>valueState(x[1])!=='absent');
+    balanceDiagnostic={
+      rootType:shape(wallet),userInfosType:shape(wallet?.userInfos),
+      expectedState:valueState(rawBalance),
+      alternateField:candidate?candidate[0]:'none',
+      alternateState:candidate?valueState(candidate[1]):'absent'
+    };
+    mark('balance_shape_checked');
+    if(balanceDiagnostic.expectedState==='absent' && candidate)
+      mark('balance_alternate_field_found');
     if(rawBalance===null || rawBalance===undefined ||
        !Number.isFinite(Number(rawBalance)) || Number(rawBalance)<0){
       mark('balance_unavailable');
@@ -313,6 +346,32 @@ def inspect_withdrawal_preflight(page, *, account_start_url=None, verify_pin=Non
                         "saque enviado=não")
             except Exception:
                 pass
+        balance = result.get("balanceDiagnostic")
+        if isinstance(balance, dict):
+            root = balance.get("rootType")
+            users = balance.get("userInfosType")
+            expected = balance.get("expectedState")
+            other = balance.get("alternateField")
+            alternate = balance.get("alternateState")
+            shape_types = {"object", "array", "number", "string", "null",
+                           "undefined", "boolean", "bigint", "symbol", "function"}
+            states = {"absent", "null", "invalid", "negative", "zero", "positive"}
+            known_fields = {"none", "root_game_gold", "root_gold", "root_balance",
+                            "root_gameGold", "root_numeric",
+                            "single_userInfo_game_gold"}
+            if (root in shape_types and users in shape_types and
+                    expected in states and other in known_fields and
+                    alternate in states):
+                try:
+                    from webui.live_logs import publish
+                    publish("Sistema",
+                            "[Saque][Diagnóstico] gameCenter/gold "
+                            f"raiz={root}; userInfos={users}; "
+                            f"campo_esperado={expected}; "
+                            f"campo_alternativo={other}; alternativa={alternate}; "
+                            "valores financeiros ocultos; saque enviado=não")
+                except Exception:
+                    pass
         # Never return raw SDK errors, destination, PIN, balances or tokens.
         return {
             "stage": result.get("stage"),
