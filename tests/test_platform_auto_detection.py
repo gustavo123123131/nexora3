@@ -165,7 +165,7 @@ def test_official_pin_verification_is_account_scoped():
 
 @pytest.mark.skipif(not shutil.which("node"), reason="Node.js unavailable")
 @pytest.mark.parametrize("scenario,expected_stage,expected_state,expected_routes", [
-    ("valid", "contract", "api_accepted", 6),
+    ("valid", "contract", "api_accepted", 5),
     ("wrong_pin", "verifyWithdrawPass", "rejected", 3),
     ("two_step", "verifyWithdrawPass", "additional_verification", 3),
     ("explicit_false", "withdrawInfoV2", None, 1),
