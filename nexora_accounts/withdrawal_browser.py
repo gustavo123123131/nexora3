@@ -8,7 +8,29 @@ from urllib.parse import urlsplit
 
 ALLOWED_HOSTS = frozenset(("5gbet.com", "www.5gbet.com"))
 
-_JS = r"""async () => {
+
+def _account_hosts(start_url):
+    """Resolve only the exact account site and its optional www redirect.
+
+    No arbitrary-site fallback: the origin is the one saved in this account.
+    """
+    try:
+        target = urlsplit(str(start_url or ""))
+        host = target.hostname
+        if target.scheme != "https" or not host or target.username or target.password:
+            return frozenset()
+        if target.port not in (None, 443):
+            return frozenset()
+        if not all(ch in "abcdefghijklmnopqrstuvwxyz0123456789.-" for ch in host):
+            return frozenset()
+        bare = host[4:] if host.startswith("www.") else host
+        if "." not in bare or bare.startswith(".") or bare.endswith("."):
+            return frozenset()
+        return frozenset((bare, "www." + bare))
+    except (ValueError, AttributeError, TypeError):
+        return frozenset()
+
+_JS = r"""async ({allowedHosts}={}) => {
   const trace=[];
   let stage='client';
   const mark=(event,status=null,code=null,elapsedMs=null)=>{
@@ -18,8 +40,10 @@ _JS = r"""async () => {
       elapsedMs:Number.isSafeInteger(elapsedMs)?elapsedMs:null});
   };
   const stop=(message)=>{mark('result');return {stage,message,trace};};
+  const allowed=Array.isArray(allowedHosts)&&allowedHosts.length?
+    allowedHosts:['www.5gbet.com','5gbet.com'];
   if(location.protocol!=='https:' ||
-     !['www.5gbet.com','5gbet.com'].includes(location.hostname.toLowerCase())){
+     !allowed.includes(location.hostname.toLowerCase())){
     stage='site';return stop('Navegador fora do domínio autorizado.');
   }
   const urls=[...performance.getEntriesByType('resource').map(x=>x.name),
@@ -113,13 +137,21 @@ _JS = r"""async () => {
 }"""
 
 
-def inspect_withdrawal_preflight(page):
+def inspect_withdrawal_preflight(page, *, account_start_url=None):
+    """Read-only API compatibility discovery in the selected account's site.
+
+    A verified matching origin is necessary but not sufficient for real
+    transaction support; this function never sends a withdrawal.
+    """
     try:
         origin = urlsplit(str(page.url or ""))
-        if origin.scheme != "https" or origin.hostname not in ALLOWED_HOSTS:
+        hosts = (_account_hosts(account_start_url) if account_start_url is not None
+                 else ALLOWED_HOSTS)
+        if (origin.scheme != "https" or origin.hostname not in hosts or
+                origin.port not in (None, 443) or origin.username or origin.password):
             return {"stage": "site", "message": "Navegador fora do domínio autorizado.",
                     "trace": []}
-        result = page.evaluate(_JS)
+        result = page.evaluate(_JS, {"allowedHosts": sorted(hosts)})
         if not isinstance(result, dict):
             return {"stage": "client",
                     "message": "Não foi possível carregar o cliente autenticado da página.",
