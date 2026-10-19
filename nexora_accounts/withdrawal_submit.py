@@ -205,7 +205,7 @@ class WithdrawalSubmissionStore:
 # the browser's authenticated 5GBet SDK. It never logs auth credentials or PINs.
 _JS = r"""async ({pin}) => {
   const done=(status,stage,message,more={})=>({status,stage,message,...more});
-  const allow=['www.5gbet.com'];
+  const allow=['www.5gbet.com','5gbet.com'];
   if(location.protocol!=='https:' || !allow.includes(location.hostname.toLowerCase()))
     return done('blocked','site','Envio não iniciado: domínio não autorizado.');
   if(typeof pin!=='string' || !/^\d{6}$/.test(pin))
@@ -302,7 +302,7 @@ def send_in_page(page, pin):
     """Return only safe metadata; never leak API bodies, PIN or destination."""
     try:
         origin=urlsplit(str(page.url or ""))
-        if origin.scheme!="https" or origin.hostname!="www.5gbet.com":
+        if origin.scheme!="https" or origin.hostname not in {"www.5gbet.com", "5gbet.com"}:
             return {"status":"blocked","stage":"site",
                     "message":"Envio não iniciado: domínio não autorizado."}
         result=page.evaluate(_JS,{"pin":pin})
@@ -325,7 +325,7 @@ def send_in_page(page, pin):
                 "message":"Resposta ambígua após envio. Verifique o histórico antes de tentar novamente."}
 
 _STATUS_JS = r"""async ({orderNo}) => {
-  if(location.protocol!=='https:'||location.hostname.toLowerCase()!=='www.5gbet.com')
+  if(location.protocol!=='https:'||!['www.5gbet.com','5gbet.com'].includes(location.hostname.toLowerCase()))
     return {ok:false};
   const resources=[...performance.getEntriesByType('resource').map(x=>x.name),
     ...Array.from(document.querySelectorAll('script[src]'),x=>x.src)];
@@ -357,7 +357,7 @@ _STATUS_JS = r"""async ({orderNo}) => {
 def refresh_order_in_page(page, order_no):
     try:
         origin=urlsplit(str(page.url or ""))
-        if origin.scheme!="https" or origin.hostname!="www.5gbet.com":return None
+        if origin.scheme!="https" or origin.hostname not in {"www.5gbet.com", "5gbet.com"}:return None
         if type(order_no) is not str or not 0<len(order_no)<=100:return None
         result=page.evaluate(_STATUS_JS,{"orderNo":order_no})
         if type(result) is dict and result.get("ok") is True and \
