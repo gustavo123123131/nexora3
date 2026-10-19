@@ -431,7 +431,10 @@ class AccountLauncher:
             result = {"stage": "local",
                       "message": "Sessão da conta não corresponde à operação."}
         else:
-            result = inspect_withdrawal_preflight(page)
+            # Detect the /hall/api family against this account's saved site
+            # without using cookies, PINs or a site URL from another profile.
+            result = inspect_withdrawal_preflight(
+                page, account_start_url=detail.get("startUrl"))
         operation = store.finish(operation_id, profile_id=profile_id,
                                  account_id=account_id, run_id=run_id, result=result)
         _live(profile_id, operation_id, describe_preflight_for_log(operation))
