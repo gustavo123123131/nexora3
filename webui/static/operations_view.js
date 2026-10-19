@@ -239,6 +239,7 @@
             const rows = el('div', 'operations-pix-trace-lines');
             const stages = {
               withdrawInfoV2: 'Destino e limites',
+              verifyWithdrawPass: 'Validação independente do PIN',
               'gameCenter/gold': 'Saldo de jogo',
               getWithdrawFee: 'Cotação da taxa',
               contract: 'Validação final'

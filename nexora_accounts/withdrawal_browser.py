@@ -30,7 +30,7 @@ def _account_hosts(start_url):
     except (ValueError, AttributeError, TypeError):
         return frozenset()
 
-_JS = r"""async ({allowedHosts}={}) => {
+_JS = r"""async ({allowedHosts, pin=null}={}) => {
   const trace=[];
   let stage='client';
   const mark=(event,status=null,code=null,elapsedMs=null)=>{
@@ -40,11 +40,12 @@ _JS = r"""async ({allowedHosts}={}) => {
       elapsedMs:Number.isSafeInteger(elapsedMs)?elapsedMs:null});
   };
   // Only enumerated PIN-field metadata may leave this page; no raw payloads.
-  let pinDiagnostic=null, securityDiagnostic=null;
+  let pinDiagnostic=null, securityDiagnostic=null, pinVerification=null;
   const stop=(message)=>{mark('result');return {
     stage,message,trace,
     ...(pinDiagnostic===null?{}:{pinDiagnostic}),
-    ...(securityDiagnostic===null?{}:{securityDiagnostic})
+    ...(securityDiagnostic===null?{}:{securityDiagnostic}),
+    ...(pinVerification===null?{}:{pinVerification})
   };};
   const allowed=Array.isArray(allowedHosts)&&allowedHosts.length?
     allowedHosts:['www.5gbet.com','5gbet.com'];
@@ -127,7 +128,26 @@ _JS = r"""async ({allowedHosts}={}) => {
           securityDiagnostic={status:'unavailable',value:'ausente',type:'undefined'};
         }
       }
-      return stop('PIN de saque não confirmado pela plataforma.');
+      // Only perform credential verification within the authenticated,
+      // explicit 5GBet account origin, never on an automatically found site.
+      if(!present && typeof pin==='string' && /^\d{6}$/.test(pin) &&
+         ['www.5gbet.com','5gbet.com'].includes(location.hostname.toLowerCase())){
+        stage='verifyWithdrawPass';
+        try{
+          const check=await post('member/user/security/verifyWithdrawPass',
+            {withdraw_pass:pin});
+          if(check?.twoStepVerify || check?.verified===false ||
+             check?.success===false){
+            pinVerification='additional_verification';
+            return stop('PIN de saque não confirmado pela plataforma.');
+          }
+          pinVerification='api_accepted';
+          stage='withdrawInfoV2';
+        }catch(_){
+          pinVerification='rejected';
+          return stop('PIN de saque não confirmado pela plataforma.');
+        }
+      }else return stop('PIN de saque não confirmado pela plataforma.');
     }
     // The source research only confirms "accounts" for withdrawal destinations.
     if(!Array.isArray(info.accounts) || !info.accounts.length)
@@ -172,7 +192,7 @@ _JS = r"""async ({allowedHosts}={}) => {
 }"""
 
 
-def inspect_withdrawal_preflight(page, *, account_start_url=None):
+def inspect_withdrawal_preflight(page, *, account_start_url=None, verify_pin=None):
     """Read-only API compatibility discovery in the selected account's site.
 
     A verified matching origin is necessary but not sufficient for real
@@ -186,7 +206,16 @@ def inspect_withdrawal_preflight(page, *, account_start_url=None):
                 origin.port not in (None, 443) or origin.username or origin.password):
             return {"stage": "site", "message": "Navegador fora do domínio autorizado.",
                     "trace": []}
-        result = page.evaluate(_JS, {"allowedHosts": sorted(hosts)})
+        params = {"allowedHosts": sorted(hosts)}
+        # Never pass a PIN to a generic platform. Both the account's saved
+        # origin and current Chromium page must be a documented official host.
+        saved = urlsplit(str(account_start_url or ""))
+        if (saved.scheme == "https" and saved.hostname in ALLOWED_HOSTS and
+                origin.hostname in ALLOWED_HOSTS and
+                type(verify_pin) is str and len(verify_pin) == 6 and
+                verify_pin.isascii() and verify_pin.isdigit()):
+            params["pin"] = verify_pin
+        result = page.evaluate(_JS, params)
         if not isinstance(result, dict):
             return {"stage": "client",
                     "message": "Não foi possível carregar o cliente autenticado da página.",
@@ -223,6 +252,15 @@ def inspect_withdrawal_preflight(page, *, account_start_url=None):
                             "sem envio de PIN ou saque")
                 except Exception:
                     pass
+        pin_verification = result.get("pinVerification")
+        if pin_verification in {"api_accepted", "rejected", "additional_verification"}:
+            try:
+                from webui.live_logs import publish
+                publish("Sistema", "[Saque][Diagnóstico] verifyWithdrawPass "
+                        f"resultado={pin_verification}; sem exibição de PIN; "
+                        "saque enviado=não")
+            except Exception:
+                pass
         # Never return raw SDK errors, destination, PIN, balances or tokens.
         return {
             "stage": result.get("stage"),

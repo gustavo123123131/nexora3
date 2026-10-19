@@ -136,3 +136,90 @@ def test_missing_withdraw_pin_field_probes_security_status_safely(
     else:
         assert "securityDiagnostic" not in result
     assert "PRIVATE_TOKEN" not in json.dumps(response)
+
+
+def test_official_pin_verification_is_account_scoped():
+    class Page:
+        url = "https://5gbet.com/account"
+        def __init__(self):
+            self.params = []
+        def evaluate(self, src, params):
+            self.params.append(params)
+            return {"stage": "verifyWithdrawPass",
+                    "message": "PIN de saque não confirmado pela plataforma.",
+                    "trace": []}
+
+    page = Page()
+    for start in ("https://5gbet.com/", "https://www.5gbet.com/"):
+        inspect_withdrawal_preflight(page, account_start_url=start,
+                                     verify_pin="123456")
+        assert page.params[-1]["pin"] == "123456"
+    inspect_withdrawal_preflight(page, account_start_url="https://80win.net/")
+    assert len(page.params) == 2
+    # Generic discovery can never receive a PIN even when the page is valid.
+    page.url = "https://www.80win.net/"
+    inspect_withdrawal_preflight(page, account_start_url="https://80win.net/",
+                                 verify_pin="123456")
+    assert "pin" not in page.params[-1]
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="Node.js unavailable")
+@pytest.mark.parametrize("scenario,expected_stage,expected_state,expected_routes", [
+    ("valid", "contract", "api_accepted", 5),
+    ("wrong_pin", "verifyWithdrawPass", "rejected", 3),
+    ("two_step", "verifyWithdrawPass", "additional_verification", 3),
+    ("explicit_false", "withdrawInfoV2", None, 1),
+    ("without_pin", "withdrawInfoV2", None, 2),
+])
+def test_remote_pin_check_read_only_never_submits_cash(
+        scenario,expected_stage,expected_state,expected_routes):
+    script=_JS.replace("await import(chunk)", "await loadModule(chunk)")
+    harness=r'''(async()=>{
+      const scenario=process.argv[2];
+      global.location={protocol:"https:",hostname:"www.5gbet.com",
+        origin:"https://www.5gbet.com",href:"https://www.5gbet.com/account"};
+      global.performance={now:()=>0,getEntriesByType:()=>
+        [{name:"https://www.5gbet.com/commonChunk.mock.js"}]};
+      global.document={querySelectorAll:()=>[]};
+      const calls=[];
+      global.loadModule=async()=>({n:{request:async({url,data})=>{
+        calls.push({url,pinPayload:!!data&&("withdraw_pass" in data)});
+        if(url.endsWith("/withdrawInfoV2")){
+          const data=scenario==="explicit_false"?{hasWithdrawPasswd:false}:{
+            withdrawMin:5,withdrawMax:100,accounts:[{id:"dest1",withdrawTypeId:7}]};
+          return {status:200,data:{code:1,data}};
+        }
+        if(url.endsWith("/member/user/security/status"))
+          return {status:200,data:{code:1,data:{}}};
+        if(url.endsWith("/member/user/security/verifyWithdrawPass")){
+          if(data?.withdraw_pass!=="123456")throw Error("wrong verification argument");
+          if(scenario==="wrong_pin")return {status:200,data:{code:401,data:{}}};
+          return {status:200,data:{code:1,data:
+            scenario==="two_step"?{twoStepVerify:true}:{}}};
+        }
+        if(url.endsWith("/gameCenter/gold"))
+          return {status:200,data:{code:1,data:{userInfos:{game_gold:26}}}};
+        if(url.endsWith("/getWithdrawFee"))
+          return {status:200,data:{code:1,data:{withdrawFee:0}}};
+        throw Error("unexpected: "+url);
+      }}});
+      const fn=eval("("+process.argv[1]+")");
+      const result=await fn({allowedHosts:["5gbet.com","www.5gbet.com"],
+        ...(scenario==="without_pin"?{}:{pin:"123456"})});
+      process.stdout.write(JSON.stringify({result,calls}));
+    })().catch(e=>{console.error(e);process.exit(1)});'''
+    proc=subprocess.run(["node","-e",harness,script,scenario],text=True,
+                        capture_output=True,timeout=15)
+    assert proc.returncode==0,proc.stderr
+    out=json.loads(proc.stdout)
+    assert out["result"]["stage"] == expected_stage
+    assert len(out["calls"]) == expected_routes
+    assert all("cashV3" not in c["url"] for c in out["calls"])
+    assert ("pinVerification" in out["result"]) == (expected_state is not None)
+    if expected_state is not None:
+        assert out["result"]["pinVerification"] == expected_state
+        assert sum(c["pinPayload"] for c in out["calls"]) == 1
+    else:
+        assert not any(c["pinPayload"] for c in out["calls"])
+    # Neither status response bodies nor the PIN may escape the browser.
+    assert "123456" not in json.dumps(out)

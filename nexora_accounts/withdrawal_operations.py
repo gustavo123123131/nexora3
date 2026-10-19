@@ -18,7 +18,7 @@ from nexora_accounts.pix_key_store import _disk_lock
 
 _LOCK = threading.RLock()
 _STATES = {"queued", "blocked", "indeterminate"}
-_STAGES = {"local", "site", "client", "withdrawInfoV2",
+_STAGES = {"local", "site", "client", "withdrawInfoV2", "verifyWithdrawPass",
            "gameCenter/gold", "getWithdrawFee", "contract"}
 _EVENTS = {"request_start", "api_accepted", "api_rejected",
            "request_exception", "result", "shape_checked"}
