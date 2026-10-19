@@ -79,3 +79,60 @@ def test_80win_like_site_api_is_detected_read_only_with_fake_sdk():
         "/api/finance/certify/getWithdrawFee",
     ]
     assert all("cashV3" not in url for url in data["requests"])
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="Node.js unavailable")
+@pytest.mark.parametrize("scenario,expected_status,expected_value,count", [
+    ("missing_status_field", "accepted", "ausente", 2),
+    ("security_has_true", "accepted", "true", 2),
+    ("security_reject", "rejected", "ausente", 2),
+    ("security_network_fail", "unavailable", "ausente", 2),
+    ("explicit_false", None, None, 1),
+])
+def test_missing_withdraw_pin_field_probes_security_status_safely(
+        scenario, expected_status, expected_value, count):
+    script = _JS.replace("await import(chunk)", "await loadModule(chunk)")
+    harness = r'''(async()=>{
+      const scenario=process.argv[2];
+      global.location={protocol:"https:",hostname:"www.5gbet.com",
+        origin:"https://www.5gbet.com",href:"https://www.5gbet.com/account"};
+      global.performance={now:()=>0,getEntriesByType:()=>
+        [{name:"https://www.5gbet.com/commonChunk.mock.js"}]};
+      global.document={querySelectorAll:()=>[]};
+      const requests=[];
+      global.loadModule=async()=>({n:{request:async({url,data})=>{
+        requests.push({url,hasPin:!!data && ("withdraw_pass" in data)});
+        if(url.endsWith("/withdrawInfoV2")){
+          return {status:200,data:{code:1,data:
+            scenario==="explicit_false"?{hasWithdrawPasswd:false}:{}}};
+        }
+        if(url.endsWith("/member/user/security/status")){
+          if(scenario==="security_network_fail")throw Error("PRIVATE_TOKEN");
+          if(scenario==="security_reject")return {status:200,data:{code:2,data:{}}};
+          return {status:200,data:{code:1,data:
+            scenario==="security_has_true"?
+            {hasWithdrawPasswd:true,secret:"PRIVATE_TOKEN"}:{secret:"PRIVATE_TOKEN"}}};
+        }
+        throw Error("Unexpected route "+url);
+      }}});
+      const result=await eval("("+process.argv[1]+")")({
+        allowedHosts:["www.5gbet.com","5gbet.com"]});
+      process.stdout.write(JSON.stringify({result,requests}));
+    })().catch(err=>{console.error(err);process.exit(1)});'''
+    done=subprocess.run(["node", "-e", harness, script, scenario],
+                        text=True, capture_output=True, timeout=15)
+    assert done.returncode == 0, done.stderr
+    response=json.loads(done.stdout)
+    result=response["result"]
+    assert result["stage"] == "withdrawInfoV2"
+    assert len(response["requests"]) == count
+    assert response["requests"][0]["url"].endswith("/withdrawInfoV2")
+    assert not any(x["hasPin"] for x in response["requests"])
+    assert not any("cashV3" in x["url"] for x in response["requests"])
+    if count == 2:
+        assert response["requests"][1]["url"].endswith("/member/user/security/status")
+        assert result["securityDiagnostic"]["status"] == expected_status
+        assert result["securityDiagnostic"]["value"] == expected_value
+    else:
+        assert "securityDiagnostic" not in result
+    assert "PRIVATE_TOKEN" not in json.dumps(response)
