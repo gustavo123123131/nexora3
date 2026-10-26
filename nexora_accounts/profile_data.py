@@ -22,8 +22,8 @@ def make_password() -> str:
     chars = (
         [secrets.choice("abcdefghijklmnopqrstuvwxyz") for _ in range(6)]
         + [secrets.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ") for _ in range(1)]
-        + [secrets.choice("0123456789") for _ in range(2)]
-        + [secrets.choice("#!@?") for _ in range(2)]
+        + [secrets.choice("0123456789") for _ in range(1)]
+        + [secrets.choice("#!@?") for _ in range(1)]
     )
     secrets.SystemRandom().shuffle(chars)
     return "".join(chars)
