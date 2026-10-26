@@ -141,8 +141,8 @@ def validate_values(values, fields):
             errors[key] = "E-mail inválido"
         elif key == "phone" and not re.fullmatch(r"\+?[\d\s()\-]{10,20}", value):
             errors[key] = "Telefone inválido"
-        elif key == "password" and not 12 <= len(value) <= 128:
-            errors[key] = "Senha deve ter de 12 a 128 caracteres"
+        elif key == "password" and not 9 <= len(value) <= 128:
+            errors[key] = "Senha deve ter de 9 a 128 caracteres"
         elif key == "fullName" and len(value) < 3:
             errors[key] = "Nome inválido"
         elif key == "cpf" and not _cpf_valid(value):
@@ -190,7 +190,7 @@ class AccountsRepository:
                         and isinstance(demo_data, dict)
                         and demo_data.get("isTestData") is True
                         and isinstance(demo_data.get("password"), str)
-                        and len(demo_data["password"]) < 12):
+                        and len(demo_data["password"]) < 9):
                     demo_data["password"] = make_password()
                     account["updatedAt"] = _now()
                     upgraded += 1
