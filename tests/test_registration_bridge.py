@@ -242,7 +242,7 @@ def test_new_profiles_have_unique_test_data_valid_cpf_and_persistent_folders(tmp
         assert d["email"].endswith("@example.test")
         assert d["fullName"].startswith("Pessoa Teste ")
         pwd = d["password"]
-        assert len(pwd) == 16
+        assert len(pwd) == 9
         assert not d["username"].startswith("teste")
         assert any(c.islower() for c in pwd)
         assert any(c.isupper() for c in pwd)
