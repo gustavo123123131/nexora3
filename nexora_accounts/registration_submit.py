@@ -40,8 +40,8 @@ def _real_values(values, generated=None):
 
     if not 3 <= len(cleaned["username"]) <= 80:
         raise AccountError("Nome de usuário inválido: use entre 3 e 80 caracteres.")
-    if not 12 <= len(cleaned["password"]) <= 128:
-        raise AccountError("Senha curta: são necessários pelo menos 12 caracteres. Gere um novo perfil.")
+    if not 9 <= len(cleaned["password"]) <= 128:
+        raise AccountError("Senha curta: são necessários pelo menos 9 caracteres. Gere um novo perfil.")
     if cleaned["password"] != cleaned["confirmPassword"]:
         raise AccountError("A confirmação da senha não coincide.")
     if len(cleaned["fullName"]) < 3:
