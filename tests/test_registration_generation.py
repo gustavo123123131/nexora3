@@ -69,10 +69,10 @@ def test_new_profiles_have_usable_generated_usernames_and_passwords():
     assert len({x["password"] for x in profiles}) == len(profiles)
     for item in profiles:
         assert not item["username"].startswith("teste")
-        assert len(item["password"]) == 16
+        assert len(item["password"]) == 9
         assert item["email"] == item["username"] + "@example.test"
         assert item["isTestData"] is True
-    assert len(make_password()) == 16
+    assert len(make_password()) == 9
 
 
 def test_existing_profile_credentials_auto_reused_without_retyping():
@@ -110,11 +110,11 @@ def test_old_local_test_passwords_upgrade_when_repository_reopens(tmp_path):
     )[0]
     account_id = plan["profile_record_id"]
     saved = json.loads(db.read_text(encoding="utf-8"))
-    saved["accounts"][0]["profileData"]["password"] = "aaAB#0123"
+    saved["accounts"][0]["profileData"]["password"] = "abc"
     db.write_text(json.dumps(saved), encoding="utf-8")
     new = AccountsRepository(db)
     account = new.account(account_id)
-    assert len(account["profileData"]["password"]) == 16
+    assert len(account["profileData"]["password"]) == 9
     assert account["profileData"]["isTestData"] is True
     assert account["stage"] == "profile-created"
 
